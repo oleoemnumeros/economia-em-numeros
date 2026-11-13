@@ -1,5 +1,5 @@
 {
- "inicio": "2026-11-13T18:33:42",
+ "inicio": "2026-11-13T18:36:40",
  "avisos": [
   "Desocupação: último trimestre ['202602', '2º trimestre 2026', 5.4]; último trimestre móvel ['202609', 'jul-ago-set 2026', 5.2]",
   "Caged SGS 28763 (estoque): últimas leituras [('2026-07-01', 48077210.0), ('2026-08-01', 48238272.0), ('2026-09-01', 48359577.0)]",
@@ -38,36 +38,28 @@
   "Balança (MDIC): 142 meses; último 2026-10: exportação 37807.2, importação 28489.7",
   "Balança: saldo do balanço de pagamentos (SGS 22707) menos saldo MDIC, soma de 11 meses: -8367 US$ milhões",
   "População: 5571 municípios, soma 214211951, ano 2026",
-  "Bolsa Família 2026-11: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208253 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
-  "Sonda MI Social, GET simples (agente do robô): HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
-  "Sonda MI Social, GET simples (agente de navegador): HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
-  "Sonda MI Social, GET consulta real (agente de navegador): HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
-  "Sonda MI Social, GET simples sem seguir redirecionamento: HTTP 302, None, 0 bytes, histórico [], local 'https://www.gov.br/mds/pt-br/avisos', início ''",
-  "Sonda MI Social, GET com barra final: HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
-  "Sonda MI Social, POST consulta real: HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
-  "Sonda MI Social, GET host antigo (cidadania): HTTP 404, text/html; charset=utf-8, 1118 bytes, histórico [], local '', início '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\\n  \"h'",
-  "Bolsa Família 2026-10: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208253 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')"
+  "Bolsa Família 2026-11: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208259 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
+  "Bolsa Família 2026-10: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208259 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
+  "Bolsa Família: o MDS está com o MI Social fora do ar (redireciona para gov.br/mds/pt-br/avisos); nada foi atualizado nesta execução"
  ],
- "erros": [
-  "bolsa_familia: Bolsa Família: duas falhas seguidas, última em 2026-10: MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208253 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT'"
- ],
+ "erros": [],
  "tempos": {
-  "selic": 2.6,
-  "ipca": 5.0,
-  "areas": 0.8,
-  "focus": 10.1,
+  "selic": 1.6,
+  "ipca": 3.1,
+  "areas": 1.0,
+  "focus": 5.6,
   "atas": 0.0,
-  "desocupacao": 2.0,
-  "caged": 1.0,
-  "cambio": 2.0,
-  "ibc": 1.5,
-  "pib": 0.3,
-  "fiscal": 5.6,
-  "credito": 9.0,
+  "desocupacao": 1.0,
+  "caged": 0.6,
+  "cambio": 1.0,
+  "ibc": 1.1,
+  "pib": 0.2,
+  "fiscal": 3.0,
+  "credito": 5.3,
   "industria": 1.2,
-  "varejo": 2.2,
-  "externo": 7.4,
+  "varejo": 0.9,
+  "externo": 5.2,
   "balanca": 0.9,
-  "bolsa_familia": 18.9
+  "bolsa_familia": 4.2
  }
 }
