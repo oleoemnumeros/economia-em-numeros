@@ -451,6 +451,15 @@ def setor_externo():
     out["reservas"] = [[m, v] for m, v in sorted(fim_mes.items())]
     out["reservas_ultima"] = [ult_dia.isoformat(), ult_v]
     debug["avisos"].append(f"Reservas (SGS {RESERVAS_SGS}): {len(diaria)} dias; última leitura {out['reservas_ultima']}; fim de mês {out['reservas'][-3:]}")
+    # Conferência provisória: o número que a imprensa cita (BC: US$ 357,103 bi em out/2025 e US$ 364,4 bi em jan/2026) é menor que o da série 13982 por causa das linhas com recompra
+    for cod in (13621, 3545, 3546, 3547):
+        try:
+            outras = {}
+            for d, v in sgs(cod, dt.date(2025, 9, 1)):
+                outras[d.strftime("%Y-%m")] = v
+            debug["avisos"].append(f"Reservas, conferência SGS {cod}: " + ", ".join(f"{m}={outras[m]:.0f}" for m in ("2025-09", "2025-10", "2026-01", max(outras)) if m in outras))
+        except Exception as e:  # noqa: BLE001 - só diagnóstico
+            debug["avisos"].append(f"Reservas, conferência SGS {cod}: falhou ({str(e)[:120]})")
     return out
 
 
