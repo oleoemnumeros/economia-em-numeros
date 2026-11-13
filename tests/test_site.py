@@ -813,6 +813,19 @@ class TestBolsaFamilia(unittest.TestCase):
     def ler(self, rel):
         return (self.saida / rel).read_text(encoding="utf-8")
 
+    def test_bolsa_familia_fica_logo_depois_de_emprego(self):
+        topo = self.ler("index.html")
+        topo = topo[topo.index("<nav"):topo.index("</nav>")]
+        hrefs = re.findall(r'<a href="([^"]+)"', topo)
+        self.assertEqual(hrefs[hrefs.index("/emprego/") + 1], "/bolsa-familia/")
+        self.assertEqual(hrefs[hrefs.index("/bolsa-familia/") + 1], "/inflacao/")
+        d = self.ler("dados/index.html")
+        self.assertLess(d.index("<strong>Emprego por estado</strong>"), d.index("<h2>Bolsa Família</h2>"))
+        self.assertLess(d.index("<h2>Bolsa Família</h2>"), d.index("<h2>Inflação</h2>"))
+        s = self.ler("sobre/index.html")
+        self.assertLess(s.index("<strong>Vagas formais:"), s.index("<strong>Bolsa Família por município:"))
+        self.assertLess(s.index("<strong>Bolsa Família por município:"), s.index("<strong>IPCA do Brasil:"))
+
     def test_paginas_geradas(self):
         mun = [c for c in self.caminhos if c.count("/") == 4 and c.startswith("/bolsa-familia/")]
         self.assertEqual(len(mun), len(self.esperados))
