@@ -1,5 +1,5 @@
 {
- "inicio": "2026-11-13T19:57:13",
+ "inicio": "2026-11-13T20:14:49",
  "avisos": [
   "Desocupação: último trimestre ['202602', '2º trimestre 2026', 5.4]; último trimestre móvel ['202609', 'jul-ago-set 2026', 5.2]",
   "Caged SGS 28763 (estoque): últimas leituras [('2026-07-01', 48077210.0), ('2026-08-01', 48238272.0), ('2026-09-01', 48359577.0)]",
@@ -44,22 +44,22 @@
  ],
  "erros": [],
  "tempos": {
-  "selic": 2.1,
-  "ipca": 24.2,
-  "areas": 0.9,
-  "focus": 8.3,
+  "selic": 8.1,
+  "ipca": 6.8,
+  "areas": 1.0,
+  "focus": 11.4,
   "atas": 0.0,
-  "desocupacao": 1.0,
-  "caged": 0.6,
-  "cambio": 1.6,
-  "ibc": 1.2,
-  "pib": 0.2,
-  "fiscal": 4.1,
-  "credito": 5.3,
-  "industria": 1.5,
-  "varejo": 2.8,
-  "externo": 6.5,
-  "balanca": 1.2,
-  "bolsa_familia": 5.3
+  "desocupacao": 2.4,
+  "caged": 1.0,
+  "cambio": 6.0,
+  "ibc": 1.5,
+  "pib": 0.3,
+  "fiscal": 9.0,
+  "credito": 11.9,
+  "industria": 3.3,
+  "varejo": 1.4,
+  "externo": 14.5,
+  "balanca": 1.1,
+  "bolsa_familia": 5.0
  }
 }
