@@ -1,5 +1,5 @@
 {
- "inicio": "2026-11-13T18:30:43",
+ "inicio": "2026-11-13T18:33:42",
  "avisos": [
   "Desocupação: último trimestre ['202602', '2º trimestre 2026', 5.4]; último trimestre móvel ['202609', 'jul-ago-set 2026', 5.2]",
   "Caged SGS 28763 (estoque): últimas leituras [('2026-07-01', 48077210.0), ('2026-08-01', 48238272.0), ('2026-09-01', 48359577.0)]",
@@ -39,28 +39,35 @@
   "Balança: saldo do balanço de pagamentos (SGS 22707) menos saldo MDIC, soma de 11 meses: -8367 US$ milhões",
   "População: 5571 municípios, soma 214211951, ano 2026",
   "Bolsa Família 2026-11: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208253 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
+  "Sonda MI Social, GET simples (agente do robô): HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
+  "Sonda MI Social, GET simples (agente de navegador): HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
+  "Sonda MI Social, GET consulta real (agente de navegador): HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
+  "Sonda MI Social, GET simples sem seguir redirecionamento: HTTP 302, None, 0 bytes, histórico [], local 'https://www.gov.br/mds/pt-br/avisos', início ''",
+  "Sonda MI Social, GET com barra final: HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
+  "Sonda MI Social, POST consulta real: HTTP 200, text/html;charset=utf-8, 208259 bytes, histórico [(302, 'https://www.gov.br/mds/pt-br/avisos')], local '', início '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n  '",
+  "Sonda MI Social, GET host antigo (cidadania): HTTP 404, text/html; charset=utf-8, 1118 bytes, histórico [], local '', início '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\\n  \"h'",
   "Bolsa Família 2026-10: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208253 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')"
  ],
  "erros": [
   "bolsa_familia: Bolsa Família: duas falhas seguidas, última em 2026-10: MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208253 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT'"
  ],
  "tempos": {
-  "selic": 2.1,
-  "ipca": 3.5,
-  "areas": 1.1,
-  "focus": 8.2,
+  "selic": 2.6,
+  "ipca": 5.0,
+  "areas": 0.8,
+  "focus": 10.1,
   "atas": 0.0,
-  "desocupacao": 0.8,
-  "caged": 0.2,
-  "cambio": 2.1,
-  "ibc": 1.0,
+  "desocupacao": 2.0,
+  "caged": 1.0,
+  "cambio": 2.0,
+  "ibc": 1.5,
   "pib": 0.3,
-  "fiscal": 4.4,
-  "credito": 6.5,
-  "industria": 1.5,
-  "varejo": 2.4,
-  "externo": 7.2,
+  "fiscal": 5.6,
+  "credito": 9.0,
+  "industria": 1.2,
+  "varejo": 2.2,
+  "externo": 7.4,
   "balanca": 0.9,
-  "bolsa_familia": 5.1
+  "bolsa_familia": 18.9
  }
 }
