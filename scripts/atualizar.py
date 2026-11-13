@@ -137,11 +137,25 @@ def focus():
     """Medianas anuais do Boletim Focus (Selic, IPCA, PIB e câmbio) e variação na semana."""
     url = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais"
     desde = (HOJE - dt.timedelta(days=24)).isoformat()
-    linhas = []
+    linhas, falhas = [], []
     for ind in ("Selic", "IPCA", "PIB Total", "Câmbio"):
-        r = get(url, {"$top": "1000", "$format": "json", "$orderby": "Data desc",
-                      "$filter": f"Indicador eq '{ind}' and Data ge '{desde}'"})
-        linhas += r.json().get("value", [])
+        # O serviço Olinda já recusou filtros com data; tentamos do mais simples para o mais completo.
+        tentativas = [
+            {"$top": "600", "$format": "json", "$orderby": "Data desc", "$filter": f"Indicador eq '{ind}'"},
+            {"$top": "3000", "$format": "json", "$filter": f"Indicador eq '{ind}'"},
+            {"$top": "600", "$format": "json", "$orderby": "Data desc", "$filter": f"Indicador eq '{ind}' and Data ge '{desde}'"},
+        ]
+        for params in tentativas:
+            try:
+                linhas += get(url, params, tentativas=2).json().get("value", [])
+                break
+            except Exception as e:  # noqa: BLE001
+                falhas.append(f"{ind} {params.get('$filter')}: {str(e)[:160]}")
+        else:
+            falhas.append(f"{ind}: nenhuma tentativa funcionou")
+    if falhas:
+        debug["avisos"].append("Focus: " + " | ".join(falhas))
+    linhas = [x for x in linhas if str(x.get("Data", "")) >= desde]
     base0 = [x for x in linhas if x.get("baseCalculo") in (0, "0", False)]  # base: últimos 30 dias
     linhas = base0 or linhas
     anos = {str(HOJE.year), str(HOJE.year + 1)}
