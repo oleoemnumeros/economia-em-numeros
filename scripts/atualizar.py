@@ -496,6 +496,7 @@ BF_ORCAMENTO_S = 600   # tempo máximo da coleta do Bolsa Família; o que faltar
 
 class RespostaNaoJson(RuntimeError):
     """O servidor respondeu com uma página (aviso, bloqueio, manutenção) em vez de JSON."""
+    manutencao = False   # True quando o MDS redireciona para a página de avisos ("serviço temporariamente indisponível")
 
 
 def bf_sonda():
@@ -545,8 +546,10 @@ def bf_baixa_mes(ym):
         try:
             corpo = r.json()
         except ValueError:
-            raise RespostaNaoJson(f"MI Social não devolveu JSON (HTTP {r.status_code}, {r.headers.get('content-type')}, {len(r.content)} bytes, "
-                               f"endereço final {r.url[:300]}): {r.text[:300]!r}") from None
+            erro = RespostaNaoJson(f"MI Social não devolveu JSON (HTTP {r.status_code}, {r.headers.get('content-type')}, {len(r.content)} bytes, "
+                                   f"endereço final {r.url[:300]}): {r.text[:300]!r}")
+            erro.manutencao = "gov.br/mds/pt-br/avisos" in str(r.url)
+            raise erro from None
         resp = (corpo or {}).get("response") or {}
         docs = resp.get("docs") or []
         total = resp.get("numFound", len(docs)) if total is None else total
@@ -635,9 +638,15 @@ def bolsa_familia():
         except Exception as e:  # noqa: BLE001
             seguidas += 1
             debug["avisos"].append(f"Bolsa Família {ym}: falhou ({e})")
-            if isinstance(e, RespostaNaoJson) and not sondou:
+            manutencao = isinstance(e, RespostaNaoJson) and e.manutencao
+            if isinstance(e, RespostaNaoJson) and not manutencao and not sondou:
                 sondou = True
                 bf_sonda()
+            if seguidas >= 2 and manutencao:
+                # O MDS tirou o serviço do ar ("manutenção preventiva de segurança") e redireciona tudo para a página de avisos.
+                # Não é defeito do robô: não derruba a execução; o que já estiver guardado continua valendo e a próxima execução tenta de novo.
+                debug["avisos"].append("Bolsa Família: o MDS está com o MI Social fora do ar (redireciona para gov.br/mds/pt-br/avisos); nada foi atualizado nesta execução")
+                return None
             if seguidas >= 2:
                 raise RuntimeError(f"Bolsa Família: duas falhas seguidas, última em {ym}: {e}") from e
             continue
