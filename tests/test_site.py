@@ -59,7 +59,7 @@ class TestSite(unittest.TestCase):
 
     def test_canonical_e_sitemap(self):
         s = self.ler("sitemap.xml")
-        self.assertEqual(s.count("<url>"), 5 + 16 + 1 + 27 + 2 + 1 + 1 + 2 + 1)
+        self.assertEqual(s.count("<url>"), 6 + 16 + 1 + 27 + 2 + 1 + 1 + 2 + 1)
         self.assertNotIn("404", s)
         self.assertIn('<link rel="canonical" href="https://economiaemnumeros.com.br/inflacao/salvador/">', self.ler("inflacao/salvador/index.html"))
         self.assertIn('content="noindex"', self.ler("404.html"))
@@ -106,6 +106,19 @@ class TestSite(unittest.TestCase):
         t = self.ler("index.html")
         for nome in ["Óleo em Números", "Comex em Números", "Voo em Números", "Economia em Números", "você está aqui"]:
             self.assertIn(nome, t)
+
+    def test_formulario_de_sugestoes(self):
+        t = self.ler("sugestoes/index.html")
+        self.assertIn('action="https://formsubmit.co/oleoemnumeros@gmail.com"', t)
+        self.assertIn('https://formsubmit.co/ajax/oleoemnumeros@gmail.com', t)
+        for campo in ('name="mensagem"', 'name="_honey"', 'name="_subject" value="[Economia em Números] Sugestão ou crítica"',
+                      'name="_next" value="https://economiaemnumeros.com.br/sugestoes/#enviado"', 'id="enviado"', 'name="pagina"'):
+            self.assertIn(campo, t)
+        self.assertIn("required", t)
+        self.assertEqual(t.count("<h1"), 1)
+        self.assertIn('href="/sugestoes/"', self.ler("index.html"))                 # link no rodapé de todas as páginas
+        self.assertIn('href="/sugestoes/"', self.ler("sobre/index.html"))
+        self.assertIn("/sugestoes/", self.ler("sitemap.xml"))
 
     def test_numeracao_das_reunioes_e_ata_281(self):
         B = g.Base(json.loads(self.dados.read_text(encoding="utf-8")), json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")), dt.date(2026, 11, 13))
@@ -220,7 +233,7 @@ class TestSemDadosNovos(unittest.TestCase):
                 dados.pop(k)
             (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
             cam = g.gerar(d / "dados.json", d / "docs", resumos_path=d / "nao_existe.json")
-            self.assertEqual(len(cam), 22)  # sem Emprego/Atividade/Indústria/Crédito/Câmbio/Contas públicas: 5 básicas + 16 áreas + /dados/
+            self.assertEqual(len(cam), 23)  # sem Emprego/Atividade/Indústria/Crédito/Câmbio/Contas públicas: 6 básicas (com /sugestoes/) + 16 áreas + /dados/
             self.assertFalse((d / "docs" / "emprego").exists())
             for rel in ("index.html", "juros/index.html"):
                 t = (d / "docs" / rel).read_text(encoding="utf-8")
