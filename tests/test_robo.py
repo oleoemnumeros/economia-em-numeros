@@ -575,6 +575,22 @@ class TestBolsaFamilia(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self._roda(self._get(pub, falha_em=("2026-10", "2026-09")), hoje=dt.date(2026, 10, 20), inicio="2026-08")
 
+    def test_pagina_html_no_lugar_do_json_dispara_a_sonda_uma_vez(self):
+        class Html:
+            status_code, headers, url, text, content = 200, {"content-type": "text/html"}, "https://www.gov.br/mds/pt-br/avisos", "<html>aviso</html>", b"<html>aviso</html>"
+
+            def json(self):
+                raise ValueError("Expecting value")
+
+        def get(url, params=None, **kw):
+            return FakeResp(self._sidra_pop()) if "/t/6579/" in url else Html()
+        with mock.patch.object(r, "bf_sonda") as sonda:
+            with self.assertRaises(RuntimeError) as cm:
+                self._roda(get, hoje=dt.date(2026, 10, 20), inicio="2026-08")
+        self.assertEqual(sonda.call_count, 1)
+        self.assertIn("avisos", str(cm.exception.__cause__))
+        self.assertFalse(self.arq.exists())
+
     def test_confere_mes_pega_unidade_e_total_absurdos(self):
         bom = {c: [3400, 8500, 2.3e6] for c in self.codigos}
         self.assertIsNone(r.bf_confere_mes("2026-10", bom, None))

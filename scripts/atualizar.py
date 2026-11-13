@@ -494,6 +494,35 @@ BF_LINHAS = 10000      # linhas por página da consulta (o Brasil tem ~5,6 mil m
 BF_ORCAMENTO_S = 600   # tempo máximo da coleta do Bolsa Família; o que faltar entra na próxima execução
 
 
+class RespostaNaoJson(RuntimeError):
+    """O servidor respondeu com uma página (aviso, bloqueio, manutenção) em vez de JSON."""
+
+
+def bf_sonda():
+    """Diagnóstico para quando o MI Social responde com uma página em vez de JSON: testa algumas variações do pedido e registra o resultado."""
+    import requests
+    navegador = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+                 "Accept": "application/json,text/plain,*/*", "Accept-Language": "pt-BR,pt;q=0.9"}
+    simples = {"q": "*:*", "wt": "json", "rows": "1"}
+    real = {"q": "*", "fq": ["anomes_s:202609", "tipo_s:mes_mu"], "wt": "json", "omitHeader": "true", "fl": BF_CAMPOS, "rows": "2", "sort": "codigo_ibge asc"}
+    testes = [("GET simples (agente do robô)", "GET", BF_URL, UA, simples, True),
+              ("GET simples (agente de navegador)", "GET", BF_URL, navegador, simples, True),
+              ("GET consulta real (agente de navegador)", "GET", BF_URL, navegador, real, True),
+              ("GET simples sem seguir redirecionamento", "GET", BF_URL, UA, simples, False),
+              ("GET com barra final", "GET", BF_URL + "/", navegador, simples, True),
+              ("POST consulta real", "POST", BF_URL, navegador, real, True),
+              ("GET host antigo (cidadania)", "GET", BF_URL.replace("mds.gov.br", "cidadania.gov.br"), navegador, simples, False)]
+    for rotulo, metodo, url, hdr, params, seguir in testes:
+        try:
+            r = (requests.post(url, data=params, headers=hdr, timeout=30, allow_redirects=seguir) if metodo == "POST"
+                 else requests.get(url, params=params, headers=hdr, timeout=30, allow_redirects=seguir))
+            hist = [(h.status_code, h.headers.get("location", "")[:120]) for h in r.history]
+            debug["avisos"].append(f"Sonda MI Social, {rotulo}: HTTP {r.status_code}, {r.headers.get('content-type')}, {len(r.content)} bytes, "
+                                   f"histórico {hist}, local {r.headers.get('location', '')[:150]!r}, início {r.text[:100]!r}")
+        except Exception as e:  # noqa: BLE001
+            debug["avisos"].append(f"Sonda MI Social, {rotulo}: erro {e!r}")
+
+
 def bf_meses_candidatos(hoje=None):
     """Meses AAAA-MM de BF_INICIO até o mês atual (no máximo BF_MAX_MESES, os mais recentes)."""
     hoje = hoje or HOJE
@@ -516,7 +545,7 @@ def bf_baixa_mes(ym):
         try:
             corpo = r.json()
         except ValueError:
-            raise RuntimeError(f"MI Social não devolveu JSON (HTTP {r.status_code}, {r.headers.get('content-type')}, {len(r.content)} bytes, "
+            raise RespostaNaoJson(f"MI Social não devolveu JSON (HTTP {r.status_code}, {r.headers.get('content-type')}, {len(r.content)} bytes, "
                                f"endereço final {r.url[:300]}): {r.text[:300]!r}") from None
         resp = (corpo or {}).get("response") or {}
         docs = resp.get("docs") or []
@@ -596,6 +625,7 @@ def bolsa_familia():
     refazer = [max(meses)] if meses else []
     seguidas = 0
     novos = 0
+    sondou = False
     for ym in refazer + faltam:
         if time.time() - t0 > BF_ORCAMENTO_S:
             debug["avisos"].append(f"Bolsa Família: orçamento de {BF_ORCAMENTO_S}s esgotado; faltam {[m for m in faltam if m not in meses][:6]}... para a próxima execução")
@@ -605,6 +635,9 @@ def bolsa_familia():
         except Exception as e:  # noqa: BLE001
             seguidas += 1
             debug["avisos"].append(f"Bolsa Família {ym}: falhou ({e})")
+            if isinstance(e, RespostaNaoJson) and not sondou:
+                sondou = True
+                bf_sonda()
             if seguidas >= 2:
                 raise RuntimeError(f"Bolsa Família: duas falhas seguidas, última em {ym}: {e}") from e
             continue
