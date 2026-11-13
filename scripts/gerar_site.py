@@ -836,7 +836,7 @@ def pg_sobre(B: Base) -> str:
                  "<li><strong>Expectativas de mercado:</strong> Boletim Focus, do Banco Central.</li>"
                  "<li><strong>Atas do Copom:</strong> documentos oficiais do Banco Central; os resumos são nossos.</li>"
                  "<li><strong>Taxa de desocupação:</strong> IBGE, PNAD Contínua (SIDRA, tabelas 4099 e 6381).</li>"
-                 "<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego, pela série 28763 do SGS do Banco Central.</li></ul>"
+                 "<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego; o saldo do mês é a variação do estoque de empregos formais (série 28763 do SGS, Banco Central).</li></ul>"
                  "<h2>Atualização</h2>"
                  "<p>Um robô confere as fontes todos os dias e republica o site quando há dado novo. A data da última atualização aparece no alto de cada página.</p>"
                  "<h2>Importante</h2>"

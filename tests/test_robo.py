@@ -111,12 +111,31 @@ class TestEmprego(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 r.desocupacao()
 
-    def test_caged_formato_e_guarda(self):
-        ok = [(dt.date(2026, m, 1), 100000.0 + m) for m in range(1, 10)] + [(dt.date(2025, m, 1), 80000.0) for m in range(1, 13)]
-        with mock.patch.object(r, "sgs", lambda *a: sorted(ok)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
-            self.assertEqual(r.caged()["saldo"][-1], ["2026-09", 100009.0])
-        estranha = [(dt.date(2025, m, 1), 20_000_000.0) for m in range(1, 13)]  # estoque de empregos, não saldo
-        with mock.patch.object(r, "sgs", lambda *a: estranha), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+    def test_caged_saldo_e_a_variacao_do_estoque(self):
+        estoque, v, y, m = [(dt.date(2019, 12, 1), 40_000_000.0)], 40_000_000.0, 2020, 1
+        while (y, m) <= (2026, 9):
+            v += 50_000 if (y, m) == (2020, 1) else 100_000
+            estoque.append((dt.date(y, m, 1), v))
+            y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+        with mock.patch.object(r, "sgs", lambda *a: estoque), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            out = r.caged()["saldo"]
+        self.assertEqual(out[0], ["2020-01", 50000])        # dez/2019 serve só de base
+        self.assertEqual(out[-1], ["2026-09", 100000])
+        self.assertEqual(len(out), 12 * 6 + 9)
+
+    def test_caged_confere_o_valor_conhecido_de_setembro_de_2026(self):
+        estoque = [(dt.date(2025, m, 1), 47_000_000.0 + 10_000 * m) for m in range(1, 13)] + [
+            (dt.date(2026, 7, 1), 48_077_210.0), (dt.date(2026, 8, 1), 48_238_272.0), (dt.date(2026, 9, 1), 48_359_577.0)]
+        with mock.patch.object(r, "sgs", lambda *a: sorted(estoque)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            self.assertEqual(dict(r.caged()["saldo"])["2026-09"], 121305)
+
+    def test_caged_recusa_serie_que_nao_e_estoque(self):
+        ja_saldo = [(dt.date(2025, m, 1), 100_000.0 + m) for m in range(1, 13)] + [(dt.date(2026, m, 1), 90_000.0) for m in range(1, 5)]
+        with mock.patch.object(r, "sgs", lambda *a: sorted(ja_saldo)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.caged()
+        salto = [(dt.date(2025, m, 1), 48_000_000.0) for m in range(1, 13)] + [(dt.date(2026, 1, 1), 52_000_000.0)]
+        with mock.patch.object(r, "sgs", lambda *a: sorted(salto)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
             with self.assertRaises(RuntimeError):
                 r.caged()
 

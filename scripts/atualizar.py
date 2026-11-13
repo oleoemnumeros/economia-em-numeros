@@ -271,14 +271,19 @@ def desocupacao():
 
 
 def caged():
-    """Saldo mensal de vagas formais (Novo Caged, admissões menos desligamentos), série 28763 do SGS."""
-    serie = sgs(28763, dt.date(2020, 1, 1))
-    debug["avisos"].append(f"Caged SGS 28763: últimas leituras {[(d.isoformat(), v) for d, v in serie[-3:]]}")
-    if any(abs(v) > 1_500_000 for _, v in serie):
-        raise RuntimeError("SGS 28763 não parece um saldo mensal de vagas (valores fora do esperado); conferir a série")
-    if len(serie) < 12:
+    """Saldo mensal de vagas formais (Novo Caged). A série 28763 do SGS é o ESTOQUE de empregos formais (~48 milhões);
+    o saldo do mês é a variação do estoque (conferido: set/2026 = 48.359.577 − 48.238.272 = +121.305)."""
+    serie = sgs(28763, dt.date(2019, 12, 1))
+    debug["avisos"].append(f"Caged SGS 28763 (estoque): últimas leituras {[(d.isoformat(), v) for d, v in serie[-3:]]}")
+    if len(serie) < 14:
         raise RuntimeError("SGS 28763 com poucos meses")
-    return {"saldo": [[d.strftime("%Y-%m"), v] for d, v in serie]}
+    if min(v for _, v in serie) < 10_000_000:
+        raise RuntimeError("SGS 28763 não parece um estoque de empregos (esperado: dezenas de milhões); conferir a série")
+    saldo = [[d.strftime("%Y-%m"), round(v - antes)] for (_, antes), (d, v) in zip(serie, serie[1:])]
+    if any(abs(v) > 1_500_000 for _, v in saldo):
+        raise RuntimeError("Variação mensal do estoque fora do esperado (>1,5 milhão); conferir a série 28763")
+    debug["avisos"].append(f"Caged: saldo calculado, últimos meses {saldo[-3:]}")
+    return {"saldo": [x for x in saldo if x[0] >= "2020-01"]}
 
 
 def main():
