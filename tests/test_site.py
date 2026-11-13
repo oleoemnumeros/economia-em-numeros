@@ -104,7 +104,7 @@ class TestSite(unittest.TestCase):
 
     def test_familia_no_rodape(self):
         t = self.ler("index.html")
-        for nome in ["Óleo em Números", "Comex em Números", "Voo em Números", "você está aqui"]:
+        for nome in ["Óleo em Números", "Comex em Números", "Voo em Números", "Economia em Números", "você está aqui"]:
             self.assertIn(nome, t)
 
     def test_numeracao_das_reunioes_e_ata_281(self):

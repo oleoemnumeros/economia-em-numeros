@@ -28,7 +28,7 @@ FAMILIA = [
     ("Óleo em Números", "Petróleo e gás", "https://oleoemnumeros.com.br/", "#B45309"),
     ("Comex em Números", "Exportações e importações", "https://comexemnumeros.com.br/", "#0b7a68"),
     ("Voo em Números", "Pontualidade aérea", "https://vooemnumeros.com.br/", "#7C5CE0"),
-    ("Economia em Números", "Juros, preços e emprego", "https://economiaemnumeros.com.br/", "var(--eco)"),
+    ("Economia em Números", "Macroeconomia", "https://economiaemnumeros.com.br/", "var(--eco)"),
 ]
 # Ordem de leitura do analista (menu, rodapé, início, /dados/ e fontes seguem a mesma lógica):
 # atividade → trabalho e renda → preços → juros → crédito → câmbio → setor externo → fiscal.
