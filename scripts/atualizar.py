@@ -29,7 +29,7 @@ CALENDARIO = RAIZ / "data" / "copom_calendario.json"
 ATAS_URL = "https://www.bcb.gov.br/content/copom/atascopom/"
 NUM_PRIMEIRA_REUNIAO = 260  # 30–31/01/2024; conferido com as atas 266 (06/11/2024), 268, 274, 276 a 281
 ORCAMENTO_S = 480  # depois disso, as fontes não essenciais que faltam são puladas e o site sai com o dado anterior
-UA = {"User-Agent": "EconomiaEmNumeros/1.0 (+https://economiaemnumeros.com.br)"}
+UA = {"User-Agent": "EconomiaEmNumeros/1.0 (+https://economiaemnumeros.com.br)", "Cache-Control": "no-cache"}
 HOJE = dt.date.today()
 
 # código IBGE da área -> (identificador do endereço, nome, sigla da UF)
@@ -400,25 +400,13 @@ def _limpo(nome):
     return str(nome).lower().strip().lstrip("0123456789. ").strip()
 
 
-def sidra_tabela(tabela, ultimos, quero):
-    """Tabela mensal do SIDRA (IBGE) para o Brasil, com todas as variáveis, nos últimos `ultimos` meses.
-    `quero(nome)` diz quais categorias interessam: a classificação que tiver alguma categoria aceita é restringida a elas
-    (as demais vêm inteiras). Os ids vêm dos metadados da própria tabela, para não depender de códigos decorados.
-    Devolve linhas {dims: nomes (variável e categorias), unid, per: 'AAAAMM', v}."""
-    classes = ""
-    try:
-        meta = get(f"https://servicodados.ibge.gov.br/api/v3/agregados/{tabela}/metadados", tentativas=2, timeout=45).json()
-        for c in meta.get("classificacoes", []):
-            ids = [str(k["id"]) for k in c.get("categorias", []) if quero(k.get("nome", ""))]
-            classes += f"/c{c['id']}/" + (",".join(ids) if ids else "all")
-        debug["avisos"].append(f"SIDRA {tabela}: variáveis {[(v['id'], v['nome']) for v in meta.get('variaveis', [])]}; "
-                               f"classificações {[(c['id'], c['nome'], len(c.get('categorias', []))) for c in meta.get('classificacoes', [])]}; consulta{classes}")
-    except Exception as e:  # noqa: BLE001
-        debug["avisos"].append(f"SIDRA {tabela}: metadados indisponíveis ({e!r}); usando as categorias padrão")
+def sidra_tabela(tabela, ultimos, classes):
+    """Tabela mensal do SIDRA (IBGE) para o Brasil, com todas as variáveis, nos últimos `ultimos` meses; `classes` = '/c544/all' etc.
+    (a consulta sem classificação devolve só '..'). Devolve linhas {dims: nomes da variável e das categorias, unid, per: 'AAAAMM', v},
+    sem as células sem número. O servidor de metadados do IBGE (servicodados) não responde a partir do GitHub Actions, por isso os ids são fixos."""
     url = f"https://apisidra.ibge.gov.br/values/t/{tabela}/n1/all/v/all/p/last%20{ultimos}{classes}"
-    linhas = get(url, tentativas=2, timeout=60).json()
+    linhas = get(url, tentativas=3, timeout=60).json()
     cab, dados = linhas[0], linhas[1:]
-    debug["avisos"].append(f"SIDRA {tabela}: {len(dados)} linhas em {url}; amostra {dados[:2]}")
     chaves = [k for k in cab if k.startswith("D") and k.endswith("C")]
     k_per = next((k for k in chaves if str(cab[k]).lower().startswith("mês")), None)
     k_ter = next((k for k in chaves if any(t in str(cab[k]) for t in ("Brasil", "Territ"))), None)
@@ -432,6 +420,7 @@ def sidra_tabela(tabela, ultimos, quero):
             continue
         out.append({"dims": [str(x.get(k[:-1] + "N", x.get(k, ""))) for k in chaves if k not in (k_per, k_ter)],
                     "unid": str(x.get("MN", "")), "per": str(x[k_per]), "v": v})
+    debug["avisos"].append(f"SIDRA {tabela}: {len(dados)} linhas, {len(out)} com número, em {url}; amostra {dados[:1]}")
     if not out:
         raise RuntimeError(f"SIDRA {tabela}: nenhuma linha numérica ({len(dados)} linhas); amostra {dados[:3]}; cabeçalho: {cab}")
     return out
@@ -486,53 +475,50 @@ def _completa(med):
     return derivadas
 
 
-def indicador_ibge(tabela, ultimos, atividades, nome):
-    """Série mensal do IBGE por atividade. `atividades`: {chave: nome da categoria (minúsculo, sem número)}.
-    Devolve {chave: {sa, idx, mm, yoy, a12: [[AAAA-MM, valor], ...]}}; uma atividade que não vier não derruba as outras."""
-    alvos = set(atividades.values())
-    linhas = sidra_tabela(tabela, ultimos, lambda n: _limpo(n) in alvos)
-    saida, soltas = {}, set()
-    for chave, alvo in atividades.items():
-        med = {}
-        for ln in linhas:
-            if not any(_limpo(d) == alvo for d in ln["dims"]):
-                continue
-            texto = " | ".join(d for d in ln["dims"] if _limpo(d) != alvo)
-            m = medida_ibge(texto, ln["unid"])
-            if m is None:
-                soltas.add(f"{texto} [{ln['unid']}]")
-                continue
-            med.setdefault(m, {})[ln["per"]] = ln["v"]
-        if "sa" not in med:
-            debug["avisos"].append(f"{nome}/{chave}: sem número-índice com ajuste sazonal (medidas achadas: {sorted(med)})")
+def indicador_ibge(tabela, ultimos, classes, filtro, nome):
+    """Série mensal do IBGE. `filtro(dims)` escolhe as linhas da atividade/tipo de índice que interessa.
+    Devolve {sa, idx, mm, yoy, a12: [[AAAA-MM, valor], ...]}."""
+    med, soltas, vistas = {}, set(), set()
+    for ln in sidra_tabela(tabela, ultimos, classes):
+        texto = " | ".join(ln["dims"])
+        vistas.add(texto)
+        if not filtro(ln["dims"]):
             continue
-        derivadas = _completa(med)
-        sa = med["sa"]
-        if len(sa) < 30 or not all(50 < v < 160 for v in sa.values()):
-            raise RuntimeError(f"{nome}/{chave}: índice com ajuste sazonal fora do esperado ({len(sa)} meses; últimos {sorted(sa.items())[-3:]})")
-        if any(abs(v) > 15 for v in med["mm"].values()) or any(abs(v) > 40 for v in med["yoy"].values()):
-            raise RuntimeError(f"{nome}/{chave}: variação fora do esperado (mm {sorted(med['mm'].items())[-3:]}, yoy {sorted(med['yoy'].items())[-3:]})")
-        saida[chave] = {m: [[f"{p[:4]}-{p[4:6]}", v] for p, v in sorted(d.items())] for m, d in med.items() if m in ("sa", "idx", "mm", "yoy", "a12")}
-        debug["avisos"].append(f"{nome}/{chave}: último mês {saida[chave]['sa'][-1][0]}; sa {saida[chave]['sa'][-1][1]}, "
-                               f"mm {saida[chave]['mm'][-1]}, yoy {saida[chave]['yoy'][-1]}, a12 {saida[chave].get('a12', [None])[-1]}; calculadas aqui: {derivadas or 'nenhuma'}")
+        m = medida_ibge(texto, ln["unid"])
+        if m is None:
+            soltas.add(f"{texto} [{ln['unid']}]")
+            continue
+        med.setdefault(m, {})[ln["per"]] = ln["v"]
     if soltas:
         debug["avisos"].append(f"{nome}: linhas ignoradas {sorted(soltas)[:12]}")
+    if "sa" not in med:
+        raise RuntimeError(f"{nome}: sem número-índice com ajuste sazonal (medidas achadas: {sorted(med)}; textos vistos: {sorted(vistas)[:10]})")
+    derivadas = _completa(med)
+    sa = med["sa"]
+    if len(sa) < 30 or not all(50 < v < 160 for v in sa.values()):
+        raise RuntimeError(f"{nome}: índice com ajuste sazonal fora do esperado ({len(sa)} meses; últimos {sorted(sa.items())[-3:]})")
+    if any(abs(v) > 15 for v in med["mm"].values()) or any(abs(v) > 40 for v in med["yoy"].values()):
+        raise RuntimeError(f"{nome}: variação fora do esperado (mm {sorted(med['mm'].items())[-3:]}, yoy {sorted(med['yoy'].items())[-3:]})")
+    saida = {m: [[f"{p[:4]}-{p[4:6]}", v] for p, v in sorted(d.items())] for m, d in med.items() if m in ("sa", "idx", "mm", "yoy", "a12")}
+    debug["avisos"].append(f"{nome}: último mês {saida['sa'][-1][0]}; sa {saida['sa'][-1][1]}, mm {saida['mm'][-1]}, yoy {saida['yoy'][-1]}, "
+                           f"a12 {(saida.get('a12') or [None])[-1]}; calculadas aqui: {derivadas or 'nenhuma'}")
     return saida
 
 
 def producao_industrial():
-    """Produção industrial (IBGE, PIM-PF, tabela 8888, base 2022=100): indústria geral."""
-    out = indicador_ibge(8888, 62, {"geral": "indústria geral"}, "Indústria")
-    if "geral" not in out:
-        raise RuntimeError("PIM-PF: categoria 'Indústria geral' não encontrada; ver debug['avisos']")
-    return out["geral"]
+    """Produção industrial (IBGE, PIM-PF, tabela 8888, base 2022=100): indústria geral (categoria 129314 da classificação 544)."""
+    return indicador_ibge(8888, 62, "/c544/all", lambda dims: any(_limpo(d) == "indústria geral" for d in dims), "Indústria")
 
 
 def varejo():
-    """Volume de vendas do comércio varejista (IBGE, PMC, tabela 8880, base 2022=100): restrito e ampliado."""
-    out = indicador_ibge(8880, 62, {"restrito": "comércio varejista", "ampliado": "comércio varejista ampliado"}, "Varejo")
-    if "restrito" not in out:
-        raise RuntimeError("PMC: categoria 'Comércio varejista' não encontrada; ver debug['avisos']")
+    """Volume de vendas do comércio varejista (IBGE, PMC, base 2022=100): restrito (tabela 8880) e ampliado (8881).
+    Em cada tabela, a classificação 11046 separa 'receita nominal' de 'volume de vendas'; só o volume interessa."""
+    volume = lambda dims: any("volume" in d.lower() for d in dims)
+    out = {"restrito": indicador_ibge(8880, 62, "/c11046/all", volume, "Varejo")}
+    try:
+        out["ampliado"] = indicador_ibge(8881, 62, "/c11046/all", volume, "Varejo ampliado")
+    except Exception as e:  # noqa: BLE001 - o ampliado é um complemento: sem ele, o restrito segue
+        debug["avisos"].append(f"Varejo ampliado indisponível: {e}")
     return out
 
 

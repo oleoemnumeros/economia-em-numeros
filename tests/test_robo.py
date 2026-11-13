@@ -240,106 +240,125 @@ class TestAtividadeECambio(unittest.TestCase):
                 r.credito()
 
     # ---- IBGE mensal (PIM-PF e PMC) ----
-    CAB_MENSAL = {"NC": "Nível Territorial (Código)", "NN": "Nível Territorial", "MC": "Unidade de Medida (Código)", "MN": "Unidade de Medida", "V": "Valor",
-                  "D1C": "Brasil (Código)", "D1N": "Brasil", "D2C": "Variável (Código)", "D2N": "Variável", "D3C": "Mês (Código)", "D3N": "Mês",
-                  "D4C": "Atividades (Código)", "D4N": "Atividades"}
+    @staticmethod
+    def _cab(classe):
+        return {"NC": "Nível Territorial (Código)", "NN": "Nível Territorial", "MC": "Unidade de Medida (Código)", "MN": "Unidade de Medida", "V": "Valor",
+                "D1C": "Brasil (Código)", "D1N": "Brasil", "D2C": "Variável (Código)", "D2N": "Variável", "D3C": "Mês (Código)", "D3N": "Mês",
+                "D4C": f"{classe} (Código)", "D4N": classe}
 
-    def _ibge(self, atividades=("1 Indústria geral",), com_variacoes=True, n=62):
+    def _sidra(self, prefixo, classe, categorias, com_variacoes=True, n=62, valor=lambda cod, i: None):
+        """Resposta no formato real do SIDRA: variáveis 'PIMPF - ...'/'PMC - ...', uma coluna de classificação e '..' onde não há dado."""
         pers = [f"{2021 + (i + 7) // 12}{(i + 7) % 12 + 1:02d}" for i in range(n)]
-        vars_ = [("A", "Número-índice (2022=100)", "Número-índice", lambda i: 100 + 0.1 * i),
-                 ("B", "Número-índice com ajuste sazonal (2022=100)", "Número-índice", lambda i: 101 + 0.1 * i)]
+        vars_ = [("12606", "Número-índice (2022=100)", "Número-índice", lambda i: 100 + 0.1 * i),
+                 ("12607", "Número-índice com ajuste sazonal (2022=100)", "Número-índice", lambda i: 101 + 0.1 * i)]
         if com_variacoes:
-            vars_ += [("C", "Variação mês/mês imediatamente anterior, com ajuste sazonal", "%", lambda i: 0.1),
-                      ("D", "Variação mês/mesmo mês do ano anterior", "%", lambda i: 1.2),
-                      ("E", "Variação acumulada em 12 meses", "%", lambda i: 1.1),
-                      ("F", "Variação acumulada no ano", "%", lambda i: 9.9)]
-        vars_ += [("G", "Receita nominal de vendas", "Número-índice", lambda i: 500.0)]
-        linhas = [dict(self.CAB_MENSAL)]
-        for at in atividades:
-            for i, p in enumerate(pers):
+            vars_ += [("11601", "Variação mês/mês imediatamente anterior, com ajuste sazonal", "%", lambda i: 0.1),
+                      ("11602", "Variação mês/mesmo mês do ano anterior", "%", lambda i: 1.2),
+                      ("11603", "Variação acumulada no ano", "%", lambda i: 9.9),
+                      ("11604", "Variação acumulada em 12 meses", "%", lambda i: 1.1)]
+        linhas = [self._cab(classe)]
+        for cat in categorias:
+            for i, per in enumerate(pers):
                 for cod, nome, un, f in vars_:
-                    linhas.append({"NC": "1", "MN": un, "V": f"{f(i):.2f}", "D1C": "1", "D1N": "Brasil", "D2C": cod, "D2N": nome, "D3C": p, "D3N": p, "D4C": "9", "D4N": at})
+                    v = valor(cod, i)
+                    linhas.append({"NC": "1", "MN": un, "V": f"{f(i):.2f}" if v is None else v, "D1C": "1", "D1N": "Brasil", "D2C": cod, "D2N": f"{prefixo} - {nome}",
+                                   "D3C": per, "D3N": per, "D4C": "9", "D4N": cat})
         return linhas
 
-    META = {"variaveis": [{"id": 1, "nome": "x"}], "classificacoes": [{"id": 544, "nome": "Atividades", "categorias": [
-        {"id": 1, "nome": "1 Indústria geral"}, {"id": 2, "nome": "2 Indústrias extrativas"}, {"id": 3, "nome": "Comércio varejista"}, {"id": 4, "nome": "Comércio varejista ampliado"}]}]}
+    def _pim(self, **kw):
+        return self._sidra("PIMPF", "Seções e atividades industriais (CNAE 2.0)", ("1 Indústria geral", "2 Indústrias extrativas"), **kw)
 
-    def _get_ibge(self, linhas, urls=None):
+    def _pmc(self, **kw):
+        return self._sidra("PMC", "Tipos de índice", ("Índice de receita nominal de vendas no comércio varejista", "Índice de volume de vendas no comércio varejista"), **kw)
+
+    def _get_ibge(self, **tabelas):
+        """tabelas: {'8888': linhas, ...}; tabela sem resposta falha como o IBGE fora do ar."""
+        urls = []
+
         def get(url, *a, **k):
-            if urls is not None:
-                urls.append(url)
-            return FakeResp(self.META if "metadados" in url else linhas)
+            urls.append(url)
+            for t, linhas in tabelas.items():
+                if f"/t/{t}/" in url:
+                    return FakeResp(linhas)
+            raise RuntimeError(f"{url} falhou")
+        get.urls = urls
         return get
 
-    def test_industria_le_variacoes_do_ibge_e_restringe_a_classificacao(self):
-        urls = []
-        with mock.patch.object(r, "get", self._get_ibge(self._ibge(), urls)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+    def test_industria_le_variacoes_do_ibge_so_da_industria_geral(self):
+        g = self._get_ibge(**{"8888": self._pim()})
+        with mock.patch.object(r, "get", g), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
             out = r.producao_industrial()
         self.assertEqual(set(out), {"sa", "idx", "mm", "yoy", "a12"})
         self.assertEqual(len(out["sa"]), 62)
+        self.assertEqual(out["sa"][0][0], "2021-08")
         self.assertEqual(out["mm"][-1][1], 0.1)   # variação oficial, não calculada
         self.assertEqual(out["yoy"][-1][1], 1.2)
         self.assertEqual(out["a12"][-1][1], 1.1)
         self.assertRegex(out["sa"][-1][0], r"^\d{4}-\d{2}$")
-        self.assertTrue(any("/c544/1" in u and "/v/all" in u for u in urls), urls)  # só 'indústria geral'
+        self.assertEqual(len(g.urls), 1)
+        self.assertIn("/t/8888/n1/all/v/all/p/last%2062/c544/all", g.urls[0])   # sem classificação o SIDRA devolve só '..'
         self.assertTrue(any("calculadas aqui: nenhuma" in a for a in dbg["avisos"]))
         ignoradas = " ".join(a for a in dbg["avisos"] if a.startswith("Indústria: linhas ignoradas"))
-        self.assertIn("Receita nominal", ignoradas)       # receita e acumulado no ano ficam de fora
-        self.assertIn("acumulada no ano", ignoradas)
+        self.assertIn("acumulada no ano", ignoradas)       # acumulado no ano fica de fora
 
     def test_calcula_variacoes_quando_o_ibge_nao_devolve(self):
-        with mock.patch.object(r, "get", self._get_ibge(self._ibge(com_variacoes=False))), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+        with mock.patch.object(r, "get", self._get_ibge(**{"8888": self._pim(com_variacoes=False)})), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
             out = r.producao_industrial()
         self.assertAlmostEqual(out["mm"][-1][1], round((101 + 0.1 * 61) / (101 + 0.1 * 60) * 100 - 100, 1), places=1)
         self.assertAlmostEqual(out["yoy"][-1][1], round((100 + 0.1 * 61) / (100 + 0.1 * 49) * 100 - 100, 1), places=1)
         self.assertGreater(len(out["a12"]), 30)
         self.assertTrue(any("calculadas aqui: ['mm', 'yoy', 'a12']" in a for a in dbg["avisos"]))
 
-    def test_varejo_restrito_e_ampliado(self):
-        meta_varejo = self.META
-        linhas = self._ibge(atividades=("Comércio varejista", "Comércio varejista ampliado"))
-        with mock.patch.object(r, "get", self._get_ibge(linhas)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+    def test_varejo_usa_so_volume_e_busca_o_ampliado_na_8881(self):
+        g = self._get_ibge(**{"8880": self._pmc(), "8881": self._pmc()})
+        with mock.patch.object(r, "get", g), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
             out = r.varejo()
         self.assertEqual(set(out), {"restrito", "ampliado"})
+        self.assertEqual(len(out["restrito"]["sa"]), 62)
         self.assertEqual(len(out["ampliado"]["sa"]), 62)
+        self.assertTrue(all("/c11046/all" in u for u in g.urls))
+        self.assertEqual(len(g.urls), 2)
 
-    def test_varejo_sem_ampliado_segue_so_com_restrito(self):
-        with mock.patch.object(r, "get", self._get_ibge(self._ibge(atividades=("Comércio varejista",)))), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+    def test_varejo_ignora_receita_nominal(self):
+        linhas = self._pmc(valor=lambda cod, i: None)
+        for x in linhas[1:]:
+            if "receita" in x["D4N"]:
+                x["V"] = "9999.0"             # se a receita entrasse, o índice sairia fora da faixa e o robô recusaria
+        with mock.patch.object(r, "get", self._get_ibge(**{"8880": linhas})), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
             out = r.varejo()
         self.assertEqual(set(out), {"restrito"})
-        self.assertTrue(any("Varejo/ampliado" in a for a in dbg["avisos"]))
+        self.assertLess(max(v for _, v in out["restrito"]["sa"]), 120)
 
-    def test_ibge_recusa_atividade_ausente_e_indice_absurdo(self):
-        with mock.patch.object(r, "get", self._get_ibge(self._ibge(atividades=("Outra coisa",)))), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+    def test_varejo_sem_ampliado_segue_so_com_restrito(self):
+        with mock.patch.object(r, "get", self._get_ibge(**{"8880": self._pmc()})), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            out = r.varejo()
+        self.assertEqual(set(out), {"restrito"})
+        self.assertTrue(any("Varejo ampliado indisponível" in a for a in dbg["avisos"]))
+
+    def test_ibge_recusa_atividade_ausente_celulas_vazias_e_indice_absurdo(self):
+        linhas = self._sidra("PIMPF", "Seções e atividades industriais (CNAE 2.0)", ("2 Indústrias extrativas",))
+        with mock.patch.object(r, "get", self._get_ibge(**{"8888": linhas})), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
             with self.assertRaises(RuntimeError):
                 r.producao_industrial()
-        linhas = self._ibge()
-        for x in linhas[1:]:
-            if x["D2C"] in ("A", "B"):
-                x["V"] = "9000.00"
-        with mock.patch.object(r, "get", self._get_ibge(linhas)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+        vazio = self._pim(valor=lambda cod, i: "..")      # o que o SIDRA devolveu no primeiro teste real
+        with mock.patch.object(r, "get", self._get_ibge(**{"8888": vazio})), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaisesRegex(RuntimeError, "nenhuma linha numérica"):
+                r.producao_industrial()
+        absurdo = self._pim(valor=lambda cod, i: "9000.00" if cod in ("12606", "12607") else None)
+        with mock.patch.object(r, "get", self._get_ibge(**{"8888": absurdo})), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
             with self.assertRaises(RuntimeError):
                 r.producao_industrial()
 
-    def test_ibge_segue_sem_metadados(self):
-        linhas = self._ibge()
-
-        def get(url, *a, **k):
-            if "metadados" in url:
-                raise RuntimeError("fora do ar")
-            return FakeResp(linhas)
-        with mock.patch.object(r, "get", get), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
-            out = r.producao_industrial()
-        self.assertEqual(len(out["sa"]), 62)
-        self.assertTrue(any("metadados indisponíveis" in a for a in dbg["avisos"]))
-
-    def test_desloca_periodo(self):
+    def test_desloca_periodo_e_tipo_de_medida(self):
         self.assertEqual(r._desloca("202601", -1), "202512")
         self.assertEqual(r._desloca("202612", 1), "202701")
         self.assertEqual(r._desloca("202603", -12), "202503")
-        self.assertEqual(r.medida_ibge("Número-índice com ajuste sazonal (2022=100)", "Número-índice"), "sa")
-        self.assertEqual(r.medida_ibge("Variação acumulada no ano", "%"), None)
-        self.assertEqual(r.medida_ibge("Variação mês/mesmo mês do ano anterior", "%"), "yoy")
+        self.assertEqual(r.medida_ibge("PIMPF - Número-índice com ajuste sazonal (2022=100) | 1 Indústria geral", "Número-índice"), "sa")
+        self.assertEqual(r.medida_ibge("PIMPF - Número-índice (2022=100)", "Número-índice"), "idx")
+        self.assertEqual(r.medida_ibge("PIMPF - Variação acumulada no ano", "%"), None)
+        self.assertEqual(r.medida_ibge("PIMPF - Variação mês/mesmo mês do ano anterior", "%"), "yoy")
+        self.assertEqual(r.medida_ibge("PMC - Variação mês/mês imediatamente anterior, com ajuste sazonal", "%"), "mm")
+        self.assertEqual(r.medida_ibge("PMC - Variação acumulada em 12 meses", "%"), "a12")
 
 
 if __name__ == "__main__":
