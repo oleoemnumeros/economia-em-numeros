@@ -384,7 +384,7 @@ def blocos_focus(B: Base) -> str:
     dia = data_br(dt.date.fromisoformat(f["data"]))
     return card(cab("Expectativas do mercado (Boletim Focus)") +
                 tabela(["Indicador"] + [str(a) for a in anos] + ["Semana"], linhas, ["l"] + ["r"] * (len(anos) + 1)) +
-                f'<span class="src">Mediana das projeções do mercado, Boletim Focus de {dia}. \"Semana\" é a variação da projeção para {anos[0]} desde o boletim anterior. Fonte: Banco Central do Brasil.</span>')
+                f'<span class="src">Mediana das projeções do mercado, Boletim Focus (posição de {dia}). \"Semana\" é a variação da projeção para {anos[0]} desde o boletim anterior. Fonte: Banco Central do Brasil.</span>')
 
 
 def card_copom(B: Base) -> str:
