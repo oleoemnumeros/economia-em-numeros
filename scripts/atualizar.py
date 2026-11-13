@@ -6,6 +6,8 @@ Baixa as séries públicas e grava data/dados.json:
   - IPCA mensal (SGS 433) e acumulado em 12 meses (SGS 13522)
   - IPCA das 16 áreas pesquisadas pelo IBGE (SIDRA, tabela 7060)
   - Expectativas do Boletim Focus (Banco Central, Olinda)
+  - Atas do Copom: confere no site do Banco Central se o PDF de cada ata já existe
+  - Desocupação (PNAD Contínua, SIDRA 4099 por UF e 6381 trimestre móvel) e saldo de vagas formais (Novo Caged, SGS 28763)
 
 Roda no GitHub Actions (a rede do ambiente de desenvolvimento não alcança essas APIs).
 Se uma fonte opcional falhar, o robô mantém o dado anterior daquela fonte e segue.
@@ -22,6 +24,9 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 DADOS = RAIZ / "data" / "dados.json"
 DEBUG = RAIZ / "data" / "debug.json"
+CALENDARIO = RAIZ / "data" / "copom_calendario.json"
+ATAS_URL = "https://www.bcb.gov.br/content/copom/atascopom/"
+NUM_PRIMEIRA_REUNIAO = 260  # 30–31/01/2024; conferido com as atas 266 (06/11/2024), 268, 274, 276 a 281
 UA = {"User-Agent": "EconomiaEmNumeros/1.0 (+https://economiaemnumeros.com.br)"}
 HOJE = dt.date.today()
 
@@ -180,11 +185,108 @@ def focus():
     return {"data": ultima, "itens": itens}
 
 
+def arquivo_pdf_existe(url):
+    """True se o PDF existe, False se não, None se não deu para verificar (rede, bloqueio)."""
+    import requests
+
+    achou_erro = False
+    for metodo in ("head", "get"):
+        try:
+            r = requests.request(metodo, url, headers=UA, timeout=30, allow_redirects=True, stream=(metodo == "get"))
+            status, tipo = r.status_code, r.headers.get("content-type", "").lower()
+            r.close()
+        except requests.RequestException:
+            achou_erro = True
+            continue
+        if status == 200 and "pdf" in tipo:
+            return True
+        if status in (404, 410) or (status == 200 and "pdf" not in tipo):
+            return False
+        achou_erro = True  # 403/405/5xx: tenta o outro método
+    return None if achou_erro else False
+
+
+def ata_depois(fim: dt.date) -> dt.date:
+    return fim + dt.timedelta(days=(1 - fim.weekday()) % 7 or 7)  # primeira terça-feira depois da reunião
+
+
+def atas():
+    """Links dos PDFs das atas do Copom já publicadas (o endereço segue um padrão; só guardamos os que existem)."""
+    cal = json.loads(CALENDARIO.read_text(encoding="utf-8"))["reunioes"]
+    antigo = (json.loads(DADOS.read_text(encoding="utf-8")) if DADOS.exists() else {}).get("atas") or {}
+    out = {}
+    for idx, (_, fim) in enumerate(cal):
+        f = dt.date.fromisoformat(fim)
+        if ata_depois(f) > HOJE:
+            continue
+        n = NUM_PRIMEIRA_REUNIAO + idx
+        if (antigo.get(str(n)) or {}).get("pdf"):
+            out[str(n)] = antigo[str(n)]
+            continue
+        url = f"{ATAS_URL}Copom{n}-not{f:%Y%m%d}{n}.pdf"
+        ok = arquivo_pdf_existe(url)
+        if ok:
+            out[str(n)] = {"pdf": url}
+        else:
+            debug["avisos"].append(f"Ata {n}: {'PDF não encontrado' if ok is False else 'não deu para verificar'} em {url}")
+    return out
+
+
+def sidra_linhas(url):
+    linhas = get(url).json()
+    cab, dados = linhas[0], linhas[1:]
+    chave_per = next(k for k, v in cab.items() if k.startswith("D") and k.endswith("C") and str(v).lower().startswith(("trimestre", "mês")))
+    chave_ter = next((k for k, v in cab.items() if k.startswith("D") and k.endswith("C") and any(t in str(v) for t in ("Brasil", "Unidade da Federa", "Territ"))), "D1C")
+    chave_nome = chave_ter[:-1] + "N"
+    return cab, dados, chave_per, chave_ter, chave_nome
+
+
+def desocupacao():
+    """Taxa de desocupação (PNAD Contínua, IBGE): trimestral por UF (tabela 4099) e trimestre móvel do Brasil (tabela 6381)."""
+    cab, dados, k_per, k_ter, k_nome = sidra_linhas("https://apisidra.ibge.gov.br/values/t/4099/n1/all/n3/all/v/4099/p/last%2013")
+    tri = {}
+    for x in dados:
+        try:
+            v = float(x.get("V"))
+        except (TypeError, ValueError):
+            continue
+        cod = str(x[k_ter])
+        t = tri.setdefault(cod, {"nome": x.get(k_nome, cod), "serie": {}})
+        t["serie"][str(x[k_per])] = [str(x[k_per]), str(x.get(k_per[:-1] + "N", "")), v]
+    for t in tri.values():
+        t["serie"] = [t["serie"][c] for c in sorted(t["serie"])]
+    if "1" not in tri or len(tri) < 20:
+        raise RuntimeError(f"Desocupação por UF: só {len(tri)} territórios; códigos: {sorted(tri)[:30]}; cabeçalho: {cab}")
+    cab2, dados2, k_per2, k_ter2, _ = sidra_linhas("https://apisidra.ibge.gov.br/values/t/6381/n1/all/v/4099/p/last%2036")
+    movel = {}
+    for x in dados2:
+        try:
+            movel[str(x[k_per2])] = [str(x[k_per2]), str(x.get(k_per2[:-1] + "N", "")), float(x.get("V"))]
+        except (TypeError, ValueError):
+            continue
+    if len(movel) < 12:
+        raise RuntimeError(f"Desocupação (trimestre móvel): só {len(movel)} períodos; cabeçalho: {cab2}")
+    debug["avisos"].append(f"Desocupação: último trimestre {tri['1']['serie'][-1]}; último trimestre móvel {movel[max(movel)]}")
+    return {"trimestral": tri, "movel": [movel[c] for c in sorted(movel)]}
+
+
+def caged():
+    """Saldo mensal de vagas formais (Novo Caged, admissões menos desligamentos), série 28763 do SGS."""
+    serie = sgs(28763, dt.date(2020, 1, 1))
+    debug["avisos"].append(f"Caged SGS 28763: últimas leituras {[(d.isoformat(), v) for d, v in serie[-3:]]}")
+    if any(abs(v) > 1_500_000 for _, v in serie):
+        raise RuntimeError("SGS 28763 não parece um saldo mensal de vagas (valores fora do esperado); conferir a série")
+    if len(serie) < 12:
+        raise RuntimeError("SGS 28763 com poucos meses")
+    return {"saldo": [[d.strftime("%Y-%m"), v] for d, v in serie]}
+
+
 def main():
     antigo = json.loads(DADOS.read_text(encoding="utf-8")) if DADOS.exists() else {}
     novo = dict(antigo)
     essenciais_ok = True
-    for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("focus", focus, False)]:
+    for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("focus", focus, False),
+                             ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False)]:
         try:
             novo[nome] = fn()
             print(f"ok: {nome}")

@@ -1,0 +1,35 @@
+{
+  "_nota": "Resumos editoriais escritos a partir do texto oficial de cada ata (Banco Central do Brasil). Cada resumo guarda o link do PDF lido. Para a ata seguinte, ler o PDF e acrescentar uma entrada com o número da reunião (mesmo número do calendário). Entradas sem resumo mostram só decisão e link.",
+  "atas": {
+    "281": {
+      "votacao": "unanimidade",
+      "publicado_em": "2026-11-13",
+      "pdf": "https://www.bcb.gov.br/content/copom/atascopom/Copom281-not20260916281.pdf",
+      "pontos": [
+        {"t": "Cenário externo e atividade", "x": "O ambiente externo seguiu incerto, por causa dos conflitos no Oriente Médio e das dúvidas sobre a política monetária em economias avançadas. No Brasil, a atividade continuou em moderação gradual, e o PIB do 2º trimestre de 2026 confirmou a desaceleração. O desemprego está historicamente baixo, mas a ocupação cresce em ritmo menor."},
+        {"t": "Inflação e projeções", "x": "O IPCA cheio e a média das medidas subjacentes recuaram para abaixo do limite superior da meta, mas ainda acima dela. O Focus apontava 4,9% para 2026 e 4,3% para 2027. A projeção do Copom para o 1º trimestre de 2028, o horizonte relevante, era de 3,2%, com 5,2% para 2026 e 3,9% para 2027."},
+        {"t": "Riscos e próximos passos", "x": "Os riscos para a inflação, de alta e de baixa, seguiram mais elevados que o usual, com assimetria para cima. O comitê disse que ajustará a magnitude do ciclo de calibração conforme o cenário: não reage a efeitos primários de choques de oferta, mas reage com firmeza se houver efeitos de segunda ordem. A ata não indicou o que fará na reunião seguinte."}
+      ]
+    },
+    "280": {
+      "votacao": "unanimidade",
+      "publicado_em": "2026-11-13",
+      "pdf": "https://www.bcb.gov.br/content/copom/atascopom/Copom280-not20260805280.pdf",
+      "pontos": [
+        {"t": "Cenário externo e atividade", "x": "O ambiente externo permaneceu incerto, com conflitos no Oriente Médio e dúvidas sobre a política econômica dos EUA. A atividade seguiu em moderação gradual, com desaceleração do 1º para o 2º trimestre de 2026. O mercado de trabalho continuou aquecido, com desemprego historicamente baixo e ocupação crescendo menos."},
+        {"t": "Inflação e projeções", "x": "O IPCA cheio desacelerou, mas seguia acima do limite superior da meta em 12 meses; as medidas subjacentes ficaram ligeiramente abaixo desse limite. O Focus apontava 5,0% para 2026 e 4,2% para 2027. A projeção do Copom para o 1º trimestre de 2028 era de 3,2%, com 5,1% para 2026 e 3,8% para 2027."},
+        {"t": "Riscos e próximos passos", "x": "Os riscos seguiram assimétricos para cima. O comitê concluiu que, com expectativas de inflação desancoradas, é preciso manter uma restrição monetária maior e por mais tempo do que seria normal, ajustando a calibragem conforme o cenário e sem reagir a efeitos primários de choques de oferta."}
+      ]
+    },
+    "279": {
+      "votacao": "unanimidade",
+      "publicado_em": "2026-11-13",
+      "pdf": "https://www.bcb.gov.br/content/copom/atascopom/Copom279-not20260617279.pdf",
+      "pontos": [
+        {"t": "Cenário externo e atividade", "x": "O ambiente externo seguiu incerto, pela indefinição sobre o fim dos conflitos no Oriente Médio e pela política econômica dos EUA. A atividade acelerou no 1º trimestre de 2026, com os setores mais sensíveis ao ciclo ganhando peso, e o mercado de trabalho seguiu resiliente, com desemprego historicamente baixo."},
+        {"t": "Inflação e projeções", "x": "O IPCA cheio e as medidas subjacentes aceleraram, e a última leitura ficou acima do limite superior da meta. O Focus apontava 5,30% para 2026 e 4,10% para 2027, e as expectativas de prazo mais longo se desancoraram um pouco mais. A projeção do Copom para o 4º trimestre de 2027, então o horizonte relevante, subiu de 3,5% para 3,7%, com 5,2% para 2026."},
+        {"t": "Riscos e próximos passos", "x": "Os riscos de alta, como a desancoragem prolongada das expectativas e os efeitos de segunda ordem de choques de petróleo e clima, seguiram predominando. O comitê disse que ajustaria a magnitude do ciclo de calibração conforme o cenário e que manteria serenidade e cautela, sem indicar o passo seguinte."}
+      ]
+    }
+  }
+}

@@ -33,6 +33,18 @@ NAV = [("/juros/", "Juros e Copom"), ("/inflacao/", "Inflação"), ("/calculador
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 MES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 MUNICIPIOS = {"brasilia", "goiania", "campo-grande", "rio-branco", "sao-luis", "aracaju"}  # as outras 10 áreas são regiões metropolitanas
+NUM_PRIMEIRA_REUNIAO = 260  # 30–31/01/2024; mesma regra do robô (conferida com as atas 266, 268, 274 e 276 a 281)
+ATAS_LISTA = "https://www.bcb.gov.br/publicacoes/atascopom/cronologicos"
+UFS = {  # código IBGE -> (endereço, nome, sigla)
+    "11": ("rondonia", "Rondônia", "RO"), "12": ("acre", "Acre", "AC"), "13": ("amazonas", "Amazonas", "AM"), "14": ("roraima", "Roraima", "RR"),
+    "15": ("para", "Pará", "PA"), "16": ("amapa", "Amapá", "AP"), "17": ("tocantins", "Tocantins", "TO"), "21": ("maranhao", "Maranhão", "MA"),
+    "22": ("piaui", "Piauí", "PI"), "23": ("ceara", "Ceará", "CE"), "24": ("rio-grande-do-norte", "Rio Grande do Norte", "RN"),
+    "25": ("paraiba", "Paraíba", "PB"), "26": ("pernambuco", "Pernambuco", "PE"), "27": ("alagoas", "Alagoas", "AL"), "28": ("sergipe", "Sergipe", "SE"),
+    "29": ("bahia", "Bahia", "BA"), "31": ("minas-gerais", "Minas Gerais", "MG"), "32": ("espirito-santo", "Espírito Santo", "ES"),
+    "33": ("rio-de-janeiro", "Rio de Janeiro", "RJ"), "35": ("sao-paulo", "São Paulo", "SP"), "41": ("parana", "Paraná", "PR"),
+    "42": ("santa-catarina", "Santa Catarina", "SC"), "43": ("rio-grande-do-sul", "Rio Grande do Sul", "RS"), "50": ("mato-grosso-do-sul", "Mato Grosso do Sul", "MS"),
+    "51": ("mato-grosso", "Mato Grosso", "MT"), "52": ("goias", "Goiás", "GO"), "53": ("distrito-federal", "Distrito Federal", "DF"),
+}
 
 
 # ------------------------------------------------------------------ formatação
@@ -83,9 +95,35 @@ def ordinal_f(n: int) -> str:
     return f"{n}ª"
 
 
+EM = {  # "em" + artigo: "na Bahia", "no Ceará", "em São Paulo"
+    "RO": "em Rondônia", "AC": "no Acre", "AM": "no Amazonas", "RR": "em Roraima", "PA": "no Pará", "AP": "no Amapá", "TO": "no Tocantins",
+    "MA": "no Maranhão", "PI": "no Piauí", "CE": "no Ceará", "RN": "no Rio Grande do Norte", "PB": "na Paraíba", "PE": "em Pernambuco",
+    "AL": "em Alagoas", "SE": "em Sergipe", "BA": "na Bahia", "MG": "em Minas Gerais", "ES": "no Espírito Santo", "RJ": "no Rio de Janeiro",
+    "SP": "em São Paulo", "PR": "no Paraná", "SC": "em Santa Catarina", "RS": "no Rio Grande do Sul", "MS": "no Mato Grosso do Sul",
+    "MT": "no Mato Grosso", "GO": "em Goiás", "DF": "no Distrito Federal",
+}
+
+
+def rot_tri(cod: str, longo: bool = False) -> str:
+    """'202602' -> '2º tri/26' (curto) ou '2º trimestre de 2026'."""
+    q, ano = int(cod[4:]), cod[:4]
+    return f"{q}º trimestre de {ano}" if longo else f"{q}º tri/{ano[2:]}"
+
+
+def rot_movel(cod: str) -> str:
+    """Trimestre móvel pelo mês final: '202606' -> 'abr-mai-jun de 2026'."""
+    m, ano = int(cod[4:]), cod[:4]
+    nomes = [MES_CURTO[(m - 3 + i) % 12] for i in range(3)]
+    return "-".join(nomes) + f" de {ano}"
+
+
+def saldo_txt(v: float) -> str:
+    return ("+" if v > 0 else "−" if v < 0 else "") + nf(abs(v), 0)
+
+
 # ------------------------------------------------------------------ dados
 class Base:
-    def __init__(self, dados: dict, calendario: dict, hoje: dt.date):
+    def __init__(self, dados: dict, calendario: dict, hoje: dt.date, resumos: dict | None = None):
         self.d = dados
         self.hoje = hoje
         self.mud = [(dt.date.fromisoformat(a), float(v)) for a, v in dados["selic"]["meta"]]
@@ -100,11 +138,52 @@ class Base:
         meses_areas = [max(a["acum12"]) for a in self.areas.values() if a["acum12"]]
         self.ref_areas = min(meses_areas) if meses_areas else None
         self.reunioes = []
-        for ini, fim in calendario["reunioes"]:
+        for idx, (ini, fim) in enumerate(calendario["reunioes"]):
             i, f = dt.date.fromisoformat(ini), dt.date.fromisoformat(fim)
             ata = f + dt.timedelta(days=(1 - f.weekday()) % 7 or 7)  # primeira terça-feira depois da reunião
-            self.reunioes.append({"ini": i, "fim": f, "ata": ata})
+            self.reunioes.append({"ini": i, "fim": f, "ata": ata, "num": NUM_PRIMEIRA_REUNIAO + idx})
         self.focus = dados.get("focus")
+        self.atas = dados.get("atas") or {}
+        self.resumos = (resumos or {}).get("atas", {})
+        self.des = dados.get("desocupacao") or None
+        self.caged = dados.get("caged") or None
+
+    # Atas, emprego ----------------------------------------------------------
+    def ata_pdf(self, n: int):
+        return (self.resumos.get(str(n)) or {}).get("pdf") or (self.atas.get(str(n)) or {}).get("pdf")
+
+    @property
+    def tem_emprego(self) -> bool:
+        return bool(self.des and "1" in (self.des.get("trimestral") or {}) and self.des.get("movel"))
+
+    def nav(self) -> list:
+        itens = list(NAV)
+        if self.tem_emprego:
+            itens.insert(1, ("/emprego/", "Emprego"))
+        return itens
+
+    def uf_lista(self) -> list:
+        """UFs com a taxa do último trimestre, ordenadas da maior para a menor taxa de desocupação."""
+        if not self.tem_emprego:
+            return []
+        tri = self.des["trimestral"]
+        ult = max(c for c, _, _ in tri["1"]["serie"])
+        out = []
+        for cod, t in tri.items():
+            if cod not in UFS:
+                continue
+            serie = {c: v for c, _, v in t["serie"]}
+            if ult not in serie:
+                continue
+            ant = sorted(serie)[sorted(serie).index(ult) - 1] if sorted(serie).index(ult) > 0 else None
+            ano = f"{int(ult[:4]) - 1}{ult[4:]}"
+            slug, nome, sigla = UFS[cod]
+            out.append({"cod": cod, "slug": slug, "nome": nome, "sigla": sigla, "serie": serie, "ult": ult, "taxa": serie[ult],
+                        "dif_tri": serie[ult] - serie[ant] if ant else None, "dif_ano": serie[ult] - serie[ano] if ano in serie else None})
+        return sorted(out, key=lambda u: -u["taxa"])
+
+    def caged_serie(self) -> list:
+        return [(m, float(v)) for m, v in (self.caged or {}).get("saldo", [])]
 
     # Selic -------------------------------------------------------------
     def selic_em(self, dia: dt.date) -> float:
@@ -305,7 +384,7 @@ def familia_html(atual="Economia em Números") -> str:
 
 def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, noindex=False) -> str:
     url = BASE + caminho
-    nav = "".join(f'<a href="{h}"' + (' aria-current="page"' if h == ativo else "") + f">{t}</a>" for h, t in NAV)
+    nav = "".join(f'<a href="{h}"' + (' aria-current="page"' if h == ativo else "") + f">{t}</a>" for h, t in B.nav())
     bc = ""
     if migalhas:
         partes = ['<a href="/">Início</a>'] + [f'<a href="{h}">{esc(t)}</a>' if h else esc(t) for h, t in migalhas]
@@ -313,6 +392,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
     gerado = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
     v = B.d["gerado_em"][:10]
     robots = '<meta name="robots" content="noindex">\n' if noindex else ""
+    emprego_link = '<a href="/emprego/">Emprego</a> · ' if B.tem_emprego else ""
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -348,7 +428,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <footer><div>
 <span><strong>Economia em Números</strong> · versão beta</span>
 <span>Portal independente, sem ligação com o governo. Os números vêm de fontes públicas (Banco Central e IBGE) e não são recomendação de investimento nem aconselhamento financeiro.</span>
-<span><a href="/juros/">Juros e Copom</a> · <a href="/inflacao/">Inflação</a> · <a href="/calculadora/">Calculadora</a> · <a href="/sobre/">Como funciona</a></span>
+<span><a href="/juros/">Juros e Copom</a> · {emprego_link}<a href="/inflacao/">Inflação</a> · <a href="/calculadora/">Calculadora</a> · <a href="/sobre/">Como funciona</a></span>
 </div>{familia_html()}</footer>
 {GOAT}
 </body>
@@ -402,6 +482,8 @@ def card_copom(B: Base) -> str:
         txt = (f'Na última reunião ({periodo_reuniao(u["ini"], u["fim"])}), o Copom {verbo} a meta da Selic'
                + ("" if u["delta"] == 0 else f' em {nf(abs(u["delta"]), 2)} ponto percentual') + f', para {pct(u["depois"], 2)} ao ano.')
         partes.append(f'<p>{txt}</p>')
+        if u["ata"] <= B.hoje:
+            partes.append(f'<p class="small">A ata saiu em {data_br(u["ata"])}: <a href="/juros/#ata-{u["num"]}">ver o resumo e o link</a>.</p>')
     partes.append('<p><a href="/juros/">Calendário, decisões e expectativas →</a></p>')
     return card("".join(partes))
 
@@ -437,10 +519,50 @@ def pg_inicio(B: Base) -> str:
     calc = card('<span class="eyebrow">Ferramenta</span><h2>Calculadora de correção pelo IPCA</h2>'
                 '<p class="small">Quanto R$ 1.000 de alguns anos atrás valem hoje? Corrija qualquer valor pela inflação oficial, mês a mês, desde 2000.</p>'
                 '<p><a href="/calculadora/">Abrir a calculadora →</a></p>')
-    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{calc}'
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{card_emprego_inicio(B)}{calc}'
     return pagina(B, "/", "Economia em Números: Selic, inflação (IPCA) e Copom em dados oficiais",
                   f"Selic em {pct(B.selic, 2)} ao ano e IPCA de {pct(B.ipca_12[ref], 2)} em 12 meses. Juros, inflação por região, calendário do Copom e expectativas do Focus, com fonte e data.",
                   corpo)
+
+
+def decisao_frase(u: dict) -> str:
+    verbo = "manteve" if u["delta"] == 0 else "reduziu" if u["delta"] < 0 else "elevou"
+    return (f"O Copom {verbo} a meta da Selic" + ("" if u["delta"] == 0 else f' em {nf(abs(u["delta"]), 2)} ponto percentual') +
+            f', para {pct(u["depois"], 2)} ao ano')
+
+
+def atas_mostradas(B: Base) -> list:
+    """A ata mais recente (com ou sem resumo) e as anteriores que têm resumo, até 4 no total."""
+    cand = [u for u in B.decisoes() if u["ata"] <= B.hoje]
+    if not cand:
+        return []
+    return ([cand[0]] + [u for u in cand[1:] if str(u["num"]) in B.resumos])[:4]
+
+
+def cards_atas(B: Base) -> str:
+    mostrar = atas_mostradas(B)
+    if not mostrar:
+        return ""
+    out = [card(cab("Atas do Copom, resumidas") +
+                '<p class="small">A ata é publicada na terça-feira seguinte à decisão e explica o raciocínio do comitê. Abaixo, um resumo curto de cada uma, com o link para o documento original no Banco Central.</p>')]
+    for u in mostrar:
+        n = u["num"]
+        r = B.resumos.get(str(n))
+        pdf = B.ata_pdf(n)
+        frase = decisao_frase(u) + (f', por {r["votacao"]}' if r and r.get("votacao") else "")
+        corpo = (f'<h3 id="ata-{n}">{n}ª reunião do Copom · {periodo_reuniao(u["ini"], u["fim"])} de {u["fim"].year}</h3>'
+                 f'<p><strong>{frase}.</strong> <span class="small">Ata publicada em {data_br(u["ata"])}.</span></p>')
+        nota = ""
+        if r:
+            corpo += '<ul class="plain">' + "".join(f'<li><strong>{esc(x["t"])}.</strong> {esc(x["x"])}</li>' for x in r["pontos"]) + "</ul>"
+            nota = (f'<span class="src">Resumo do Economia em Números, escrito a partir da ata oficial; não a substitui. '
+                    f'Publicado em {data_br(dt.date.fromisoformat(r["publicado_em"]))}.</span>')
+        else:
+            corpo += "<p>O resumo desta ata ainda está em preparação.</p>"
+        link = (f'<a href="{pdf}" rel="noopener">Ler a ata completa (PDF, Banco Central) →</a>' if pdf
+                else f'<a href="{ATAS_LISTA}" rel="noopener">Ver as atas no site do Banco Central →</a>')
+        out.append(card(corpo + f'<p class="small">{link}</p>' + nota))
+    return "".join(out)
 
 
 def pg_juros(B: Base) -> str:
@@ -453,14 +575,20 @@ def pg_juros(B: Base) -> str:
                 svg_degraus(B.mud, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2016") + "</div>")
     fut = [r for r in B.reunioes if r["fim"] >= B.hoje][:8]
     cal = card(cab("Próximas reuniões do Copom") +
-               tabela(["Reunião", "Datas", "Ata"], [[f"{i + 1}ª a seguir", periodo_reuniao(r["ini"], r["fim"]) + f" de {r['fim'].year}", data_br(r["ata"])] for i, r in enumerate(fut)], ["l", "l", "r"]) +
+               tabela(["Reunião", "Datas", "Ata"], [[f"{r['num']}ª", periodo_reuniao(r["ini"], r["fim"]) + f" de {r['fim'].year}", data_br(r["ata"])] for r in fut], ["l", "l", "r"]) +
                '<span class="src">Calendário oficial do Banco Central. A decisão sai no fim da segunda sessão; a ata, na terça-feira seguinte, às 8h.</span>')
     linhas = []
+    mostradas = {u["num"] for u in atas_mostradas(B)}
     for u in dec[:10]:
-        k = "flat" if u["delta"] == 0 else "down" if u["delta"] < 0 else "up"
         sel = chg(u["delta"], 2, "") if u["delta"] else '<span class="chg flat">● mantida</span>'
-        linhas.append([f'{periodo_reuniao(u["ini"], u["fim"])} de {u["fim"].year}', sel, pct(u["depois"], 2)])
-    decs = card(cab("Decisões recentes") + tabela(["Reunião", "Decisão (p.p.)", "Selic"], linhas, ["l", "r", "r"]) +
+        links = []
+        if u["ata"] <= B.hoje:
+            if u["num"] in mostradas:
+                links.append(f'<a href="#ata-{u["num"]}">resumo</a>')
+            if B.ata_pdf(u["num"]):
+                links.append(f'<a href="{B.ata_pdf(u["num"])}" rel="noopener">PDF</a>')
+        linhas.append([f'{periodo_reuniao(u["ini"], u["fim"])} de {u["fim"].year}', sel, pct(u["depois"], 2), " · ".join(links) or "–"])
+    decs = card(cab("Decisões recentes") + tabela(["Reunião", "Decisão (p.p.)", "Selic", "Ata"], linhas, ["l", "r", "r", "r"]) +
                 '<span class="src">Calculado a partir da meta da Selic registrada pelo Banco Central.</span>')
     focus = blocos_focus(B)
     texto = card("<h2>O que é a Selic</h2>"
@@ -468,10 +596,119 @@ def pg_juros(B: Base) -> str:
                  "Essa meta serve de referência para os juros de financiamentos e de aplicações de renda fixa: quando ela sobe, o crédito tende a ficar mais caro e a inflação perde força; quando cai, ocorre o contrário.</p>"
                  "<p>Em cada reunião, o comitê pode elevar, reduzir ou manter a meta. O comunicado com a decisão sai no fim do segundo dia, e a ata, com a análise do comitê, "
                  "é publicada na terça-feira seguinte. Os números desta página vêm do Banco Central do Brasil.</p>")
-    corpo = f'{hero}{graf}<div class="cols">{cal}{decs}</div>{focus}{texto}'
+    corpo = f'{hero}{graf}<div class="cols">{cal}{decs}</div>{cards_atas(B)}{focus}{texto}'
     return pagina(B, "/juros/", "Selic e Copom: meta atual, calendário e decisões das reuniões",
                   f"Meta da Selic em {pct(B.selic, 2)} ao ano. Histórico de decisões do Copom, calendário das próximas reuniões e expectativas do Boletim Focus.",
                   corpo, "/juros/", [(None, "Juros e Copom")])
+
+
+def card_emprego_inicio(B: Base) -> str:
+    if not B.tem_emprego:
+        return ""
+    m = B.des["movel"][-1]
+    txt = f'A taxa de desocupação no Brasil é de <strong>{pct(m[2], 1)}</strong> no trimestre {rot_movel(m[0])}.'
+    cg = B.caged_serie()
+    if cg:
+        mes, v = cg[-1]
+        txt += f' O Novo Caged registrou saldo de <strong>{saldo_txt(v)}</strong> vagas formais em {mes_nome(mes)}.'
+    return card('<span class="eyebrow">Mercado de trabalho</span><h2>Desemprego e vagas formais</h2>'
+                f'<p>{txt}</p><p><a href="/emprego/">Ver a taxa em cada estado e o saldo de vagas →</a></p>')
+
+
+def pg_emprego(B: Base) -> str:
+    mov = B.des["movel"]
+    ult, ant = mov[-1], mov[-2]
+    ano = next((x for x in mov if x[0] == f"{int(ult[0][:4]) - 1}{ult[0][4:]}"), None)
+    ufs = B.uf_lista()
+    cg = B.caged_serie()
+    lede = f'A taxa de desocupação no Brasil foi de <strong>{pct(ult[2], 1)}</strong> no trimestre {rot_movel(ult[0])}'
+    if ano:
+        rel = "abaixo do" if ult[2] < ano[2] else "acima do" if ult[2] > ano[2] else "igual ao"
+        lede += f", {rel} mesmo período de um ano antes ({pct(ano[2], 1)})."
+    else:
+        lede += "."
+    if cg:
+        mes, v = cg[-1]
+        lede += f' O Novo Caged {"criou" if v > 0 else "fechou"} <strong>{nf(abs(v), 0)}</strong> vagas formais líquidas em {mes_nome(mes)}.'
+    hero = card('<span class="eyebrow">Mercado de trabalho</span><h1>Desemprego e vagas formais no Brasil</h1>' f'<p class="lede">{lede}</p>')
+    tiles = [tile("Desocupação (trim. móvel)", nf(ult[2], 1), "%", chg(ult[2] - ant[2], 1, " p.p.", " vs. trim. anterior"), "a")]
+    if ano:
+        tiles.append(tile("Um ano antes", nf(ano[2], 1), "%", "", "k"))
+    if cg:
+        tiles.append(tile(f"Vagas formais em {MES_CURTO[int(cg[-1][0][5:]) - 1]}", saldo_txt(cg[-1][1]), "", "", "b"))
+        ult12 = sum(v for _, v in cg[-12:]) if len(cg) >= 12 else None
+        if ult12 is not None:
+            tiles.append(tile("Vagas em 12 meses", saldo_txt(ult12), "", "", "g"))
+    elif ufs:
+        tiles.append(tile("Menor taxa", nf(ufs[-1]["taxa"], 1), f'% · {ufs[-1]["sigla"]}', "", "b"))
+        tiles.append(tile("Maior taxa", nf(ufs[0]["taxa"], 1), f'% · {ufs[0]["sigla"]}', "", "g"))
+    ult36 = mov[-36:]
+    g1 = card(cab("Taxa de desocupação", '<span class="src">Fonte: IBGE (PNAD Contínua)</span>') + '<div class="chart">' +
+              svg_linhas([{"vals": [x[2] for x in ult36], "cor": "a"}], [mes_curtinho(f"{x[0][:4]}-{x[0][4:]}") for x in ult36],
+                         "Gráfico da taxa de desocupação no Brasil, em trimestres móveis, nos últimos 36 meses") + "</div>"
+              '<p class="small">Pessoas de 14 anos ou mais sem trabalho que procuraram emprego, em % da força de trabalho. Cada ponto é um trimestre móvel, identificado pelo mês final.</p>')
+    g2 = ""
+    if cg:
+        c24 = cg[-24:]
+        g2 = card(cab("Saldo mensal de vagas formais", '<span class="src">Fonte: Novo Caged (MTE), via Banco Central</span>') + '<div class="chart">' +
+                  svg_barras([v / 1000 for _, v in c24], [mes_curtinho(m) for m, _ in c24], "Gráfico de barras do saldo mensal de vagas formais do Novo Caged nos últimos 24 meses, em milhares") + "</div>"
+                  '<p class="small">Em milhares de vagas. Admissões menos desligamentos de empregos com carteira assinada. Dezembro costuma ter saldo negativo.</p>')
+    graficos = f'<div class="cols">{g1}{g2}</div>' if g2 else g1
+    tab = ""
+    if ufs:
+        rows = []
+        for u in ufs:
+            rows.append([f'<a href="/emprego/{u["slug"]}/">{esc(u["nome"])} ({u["sigla"]})</a>', pct(u["taxa"], 1),
+                         f'{sinal(u["dif_tri"], 1)} p.p.' if u["dif_tri"] is not None else "–",
+                         f'{sinal(u["dif_ano"], 1)} p.p.' if u["dif_ano"] is not None else "–"])
+        tab = card(cab(f'Por estado · {rot_tri(ufs[0]["ult"], True)}', '<span class="src">Fonte: IBGE (PNAD Contínua)</span>') +
+                   tabela(["Estado", "Taxa", "Trim. ant.", "Ano ant."], rows, ["l", "r", "r", "r"]) +
+                   '<span class="src">Dos maiores para os menores valores. As duas últimas colunas mostram a diferença para o trimestre anterior e para o mesmo trimestre do ano anterior, em pontos percentuais; variações pequenas podem estar dentro da margem de erro da pesquisa.</span>')
+    texto = card("<h2>Como ler os números de emprego</h2>"
+                 "<p>A <strong>taxa de desocupação</strong> vem da PNAD Contínua, pesquisa por amostra de domicílios do IBGE. Ela considera todos os tipos de trabalho, inclusive informal, "
+                 "e mede a parcela da força de trabalho que está sem emprego e procurando uma vaga.</p>"
+                 "<p>O <strong>saldo do Novo Caged</strong>, do Ministério do Trabalho e Emprego, conta só os empregos com carteira assinada: admissões menos desligamentos no mês. "
+                 "As duas medidas respondem a perguntas diferentes e podem se mover em direções distintas.</p>")
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{graficos}{tab}{texto}'
+    return pagina(B, "/emprego/", f"Desemprego no Brasil: taxa de {pct(ult[2], 1)} ({rot_movel(ult[0])}) e vagas formais",
+                  f"Taxa de desocupação de {pct(ult[2], 1)} no trimestre {rot_movel(ult[0])}, por estado, e saldo mensal de vagas formais do Novo Caged. Dados do IBGE e do Ministério do Trabalho.",
+                  corpo, "/emprego/", [(None, "Emprego")])
+
+
+def pg_uf(B: Base, u: dict) -> str:
+    ufs = B.uf_lista()
+    pos = next(i for i, x in enumerate(ufs) if x["cod"] == u["cod"]) + 1
+    br = {c: v for c, _, v in B.des["trimestral"]["1"]["serie"]}
+    ult = u["ult"]
+    comuns = [c for c in sorted(u["serie"]) if c in br][-13:]
+    rel = ""
+    if ult in br:
+        dif = u["taxa"] - br[ult]
+        rel = f' Isso é {nf(abs(dif), 1)} p.p. {"acima" if dif > 0 else "abaixo"} da média do Brasil ({pct(br[ult], 1)}).' if dif else f" Igual à média do Brasil ({pct(br[ult], 1)})."
+    rank = f" Foi a {ordinal_f(pos)} maior taxa entre as {len(ufs)} unidades da federação."
+    hero = card(f'<span class="eyebrow">Desocupação · estado</span><h1>Desemprego {EM[u["sigla"]]}: taxa de {pct(u["taxa"], 1)} no {rot_tri(ult, True)}</h1>'
+                f'<p class="lede">A taxa de desocupação {EM[u["sigla"]]} ({u["sigla"]}) foi de <strong>{pct(u["taxa"], 1)}</strong> no {rot_tri(ult, True)}.{rel}{rank}</p>')
+    tiles = [tile("Taxa de desocupação", nf(u["taxa"], 1), "%", chg(u["dif_tri"], 1, " p.p.", " vs. trim. anterior") if u["dif_tri"] is not None else "", "a")]
+    if u["dif_ano"] is not None:
+        tiles.append(tile("Vs. ano anterior", sinal(u["dif_ano"], 1), "p.p.", "", "k"))
+    if ult in br:
+        tiles.append(tile("Brasil", nf(br[ult], 1), "%", "", "g"))
+    tiles.append(tile("Posição", ordinal_f(pos), f"de {len(ufs)}", "", "b"))
+    series = [{"vals": [u["serie"][c] for c in comuns], "cor": "b"}, {"vals": [br[c] for c in comuns], "cor": "m", "tracejada": True}]
+    graf = card(cab(f"Taxa de desocupação: {esc(u['nome'])} e Brasil", '<span class="src">Fonte: IBGE (PNAD Contínua)</span>') +
+                '<div class="chart">' + svg_linhas(series, [rot_tri(c) for c in comuns], f"Gráfico da taxa de desocupação em {u['nome']} e no Brasil") + "</div>"
+                f'<div class="leg"><span><i style="background:var(--eco2)"></i>{esc(u["nome"])}</span><span><i style="background:var(--muted)"></i>Brasil</span></div>')
+    rows = [[rot_tri(c, True), pct(u["serie"][c], 1), pct(br[c], 1), f'{sinal(u["serie"][c] - br[c], 1)} p.p.'] for c in comuns[::-1]]
+    tab = card(cab("Trimestre a trimestre") + tabela(["Trimestre", esc(u["nome"]), "Brasil", "Diferença"], rows, ["l", "r", "r", "r"]))
+    outras = card(cab("Outros estados") + lista_links([(f'/emprego/{x["slug"]}/', f'{esc(x["nome"])} ({x["sigla"]})', pct(x["taxa"], 1)) for x in ufs if x["cod"] != u["cod"]]) +
+                  '<p class="small"><a href="/emprego/">← Emprego no Brasil e nos estados</a></p>')
+    texto = card("<h2>O que a taxa de desocupação mede</h2>"
+                 "<p>A taxa de desocupação é a parcela da força de trabalho (pessoas de 14 anos ou mais que trabalham ou procuram trabalho) que está sem ocupação e procurando uma vaga. "
+                 f"Os dados vêm da PNAD Contínua, pesquisa por amostra do IBGE, e as diferenças pequenas entre trimestres {EM[u['sigla']]} podem estar dentro da margem de erro.</p>")
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{graf}<div class="cols">{tab}{outras}</div>{texto}'
+    return pagina(B, f"/emprego/{u['slug']}/", f"Desemprego {EM[u['sigla']]} ({u['sigla']}): taxa de {pct(u['taxa'], 1)} no {rot_tri(ult, True)}",
+                  f"Taxa de desocupação {EM[u['sigla']]} ({u['sigla']}): {pct(u['taxa'], 1)} no {rot_tri(ult, True)}, comparada ao Brasil. Série trimestral da PNAD Contínua do IBGE.",
+                  corpo, "/emprego/", [("/emprego/", "Emprego"), (None, u["nome"])])
 
 
 def _mensal_tabela(B: Base, linhas_meses, rot_area=None, area=None) -> str:
@@ -596,7 +833,10 @@ def pg_sobre(B: Base) -> str:
                  '<ul class="plain"><li><strong>Meta da Selic, decisões e calendário do Copom:</strong> Banco Central do Brasil (série 432 do SGS e calendário oficial).</li>'
                  "<li><strong>IPCA do Brasil:</strong> IBGE, pelas séries 433 e 13522 do Banco Central.</li>"
                  "<li><strong>IPCA por região:</strong> IBGE, Sistema IBGE de Recuperação Automática (SIDRA), tabela 7060.</li>"
-                 "<li><strong>Expectativas de mercado:</strong> Boletim Focus, do Banco Central.</li></ul>"
+                 "<li><strong>Expectativas de mercado:</strong> Boletim Focus, do Banco Central.</li>"
+                 "<li><strong>Atas do Copom:</strong> documentos oficiais do Banco Central; os resumos são nossos.</li>"
+                 "<li><strong>Taxa de desocupação:</strong> IBGE, PNAD Contínua (SIDRA, tabelas 4099 e 6381).</li>"
+                 "<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego, pela série 28763 do SGS do Banco Central.</li></ul>"
                  "<h2>Atualização</h2>"
                  "<p>Um robô confere as fontes todos os dias e republica o site quando há dado novo. A data da última atualização aparece no alto de cada página.</p>"
                  "<h2>Importante</h2>"
@@ -623,15 +863,21 @@ def escrever(saida: Path, caminho: str, conteudo: str):
     destino.write_text(conteudo, encoding="utf-8")
 
 
-def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None) -> list:
+def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None,
+          resumos_path: Path = RAIZ / "data" / "copom_resumos.json") -> list:
     dados = json.loads(dados_path.read_text(encoding="utf-8"))
     cal = json.loads(calendario_path.read_text(encoding="utf-8"))
+    resumos = json.loads(resumos_path.read_text(encoding="utf-8")) if resumos_path.exists() else {}
     hoje = hoje or dt.datetime.fromisoformat(dados["gerado_em"]).date()
-    B = Base(dados, cal, hoje)
+    B = Base(dados, cal, hoje, resumos)
     if saida.exists():
         shutil.rmtree(saida)
     saida.mkdir(parents=True)
     paginas = [("/", pg_inicio(B)), ("/juros/", pg_juros(B)), ("/inflacao/", pg_inflacao(B)), ("/calculadora/", pg_calc(B)), ("/sobre/", pg_sobre(B))]
+    if B.tem_emprego:
+        paginas.append(("/emprego/", pg_emprego(B)))
+        for u in B.uf_lista():
+            paginas.append((f"/emprego/{u['slug']}/", pg_uf(B, u)))
     for a in B.ranking():
         paginas.append((f"/inflacao/{a['slug']}/", pg_area(B, a)))
     for caminho, conteudo in paginas:
@@ -645,7 +891,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
     (saida / "CNAME").write_text(DOMINIO + "\n", encoding="utf-8")
     (saida / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n", encoding="utf-8")
-    prio = {"/": "1.0", "/juros/": "0.9", "/inflacao/": "0.9", "/calculadora/": "0.8", "/sobre/": "0.3"}
+    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/inflacao/": "0.9", "/calculadora/": "0.8", "/sobre/": "0.3"}
     urls = "".join(f"<url><loc>{BASE}{c}</loc><lastmod>{v}</lastmod><priority>{prio.get(c, '0.6')}</priority></url>" for c, _ in paginas)
     (saida / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>\n", encoding="utf-8")
     return [c for c, _ in paginas]

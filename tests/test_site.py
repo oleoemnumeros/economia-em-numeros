@@ -36,6 +36,9 @@ class TestSite(unittest.TestCase):
             self.assertTrue((self.saida / rel).exists(), rel)
         for slug in AREAS:
             self.assertTrue((self.saida / "inflacao" / slug / "index.html").exists(), slug)
+        self.assertTrue((self.saida / "emprego" / "index.html").exists())
+        for slug, _, _ in g.UFS.values():
+            self.assertTrue((self.saida / "emprego" / slug / "index.html").exists(), slug)
         self.assertEqual(self.ler("CNAME").strip(), "economiaemnumeros.com.br")
 
     def test_sem_lixo_no_html(self):
@@ -49,7 +52,7 @@ class TestSite(unittest.TestCase):
 
     def test_canonical_e_sitemap(self):
         s = self.ler("sitemap.xml")
-        self.assertEqual(s.count("<url>"), 5 + 16)
+        self.assertEqual(s.count("<url>"), 5 + 16 + 1 + 27)
         self.assertNotIn("404", s)
         self.assertIn('<link rel="canonical" href="https://economiaemnumeros.com.br/inflacao/salvador/">', self.ler("inflacao/salvador/index.html"))
         self.assertIn('content="noindex"', self.ler("404.html"))
@@ -96,6 +99,85 @@ class TestSite(unittest.TestCase):
         t = self.ler("index.html")
         for nome in ["Óleo em Números", "Comex em Números", "Voo em Números", "você está aqui"]:
             self.assertIn(nome, t)
+
+    def test_numeracao_das_reunioes_e_ata_281(self):
+        B = g.Base(json.loads(self.dados.read_text(encoding="utf-8")), json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")), dt.date(2026, 11, 13))
+        por_fim = {r["fim"]: r["num"] for r in B.reunioes}
+        self.assertEqual(por_fim[dt.date(2024, 1, 31)], 260)
+        self.assertEqual(por_fim[dt.date(2026, 9, 16)], 281)
+        self.assertEqual(por_fim[dt.date(2026, 11, 4)], 282)
+        self.assertEqual([r["num"] for r in B.reunioes], list(range(260, 260 + len(B.reunioes))))
+
+    def test_juros_mostra_atas_e_links(self):
+        t = self.ler("juros/index.html")
+        self.assertIn("Atas do Copom, resumidas", t)
+        self.assertIn('id="ata-281"', t)
+        self.assertIn("Copom282-not20261104282.pdf", t)   # ata ainda sem resumo: só o link
+        self.assertIn("ainda está em preparação", t)
+        self.assertIn("Copom281-not20260916281.pdf", t)  # PDF oficial que vem do arquivo de resumos
+        self.assertIn("não a substitui", t)
+        self.assertIn("282ª", t)
+
+    def test_emprego_pagina_brasil_e_uf(self):
+        t = self.ler("emprego/index.html")
+        self.assertGreaterEqual(t.count("<svg"), 3)  # logo + gráfico da taxa + gráfico de vagas
+        self.assertIn("Desemprego e vagas formais no Brasil", t)
+        self.assertIn("abr-mai-jun de 2026", t)
+        self.assertIn("Novo Caged", t)
+        for slug, _, _ in g.UFS.values():
+            self.assertIn(f'href="/emprego/{slug}/"', t)
+        u = self.ler("emprego/bahia/index.html")
+        self.assertIn("Desemprego na Bahia", u)
+        self.assertIn("Desemprego no Rio de Janeiro", self.ler("emprego/rio-de-janeiro/index.html"))
+        self.assertEqual(set(g.EM), {sigla for _, _, sigla in g.UFS.values()})
+        for _, nome, sigla in g.UFS.values():
+            self.assertTrue(g.EM[sigla].endswith(nome), sigla)
+        self.assertIn("2º trimestre de 2026", u)
+        self.assertIn('href="/emprego/"', u)
+
+    def test_nav_inclui_emprego(self):
+        self.assertIn('<a href="/emprego/">Emprego</a>', self.ler("index.html"))
+        self.assertIn("Desemprego e vagas formais", self.ler("index.html"))
+
+    def test_rotulos(self):
+        self.assertEqual(g.rot_tri("202602"), "2º tri/26")
+        self.assertEqual(g.rot_tri("202602", True), "2º trimestre de 2026")
+        self.assertEqual(g.rot_movel("202606"), "abr-mai-jun de 2026")
+        self.assertEqual(g.rot_movel("202602"), "dez-jan-fev de 2026")
+        self.assertEqual(g.saldo_txt(121305), "+121.305")
+        self.assertEqual(g.saldo_txt(-4200), "−4.200")
+
+
+class TestSemDadosNovos(unittest.TestCase):
+    """O site continua válido se o robô ainda não trouxe emprego/atas (ou se falhou)."""
+
+    def test_sem_emprego_nem_atas(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            dados = json.loads(gravar(d / "x.json").read_text(encoding="utf-8"))
+            for k in ("desocupacao", "caged", "atas"):
+                dados.pop(k)
+            (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
+            cam = g.gerar(d / "dados.json", d / "docs", resumos_path=d / "nao_existe.json")
+            self.assertEqual(len(cam), 21)
+            self.assertFalse((d / "docs" / "emprego").exists())
+            for rel in ("index.html", "juros/index.html"):
+                t = (d / "docs" / rel).read_text(encoding="utf-8")
+                self.assertNotIn("/emprego/", t)
+            j = (d / "docs" / "juros" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("ainda está em preparação", j)          # a ata mais recente aparece mesmo sem PDF conhecido
+            self.assertIn("bcb.gov.br/publicacoes/atascopom", j)   # e aponta para a lista oficial
+
+    def test_emprego_sem_caged(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            dados = json.loads(gravar(d / "x.json").read_text(encoding="utf-8"))
+            dados.pop("caged")
+            (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
+            g.gerar(d / "dados.json", d / "docs")
+            t = (d / "docs" / "emprego" / "index.html").read_text(encoding="utf-8")
+            self.assertNotIn("Novo Caged registrou", t)
+            self.assertIn("Menor taxa", t)
 
 
 if __name__ == "__main__":

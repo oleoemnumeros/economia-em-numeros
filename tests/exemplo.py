@@ -23,6 +23,40 @@ def meses(ini: str, fim: str):
     return out
 
 
+def trimestres(ini: str, fim: str):
+    y, q = int(ini[:4]), int(ini[4:])
+    out = []
+    while f"{y}{q:02d}" <= fim:
+        out.append(f"{y}{q:02d}")
+        q += 1
+        if q > 4:
+            y, q = y + 1, 1
+    return out
+
+
+UF_COD = ["11", "12", "13", "14", "15", "16", "17", "21", "22", "23", "24", "25", "26", "27", "28", "29", "31", "32",
+          "33", "35", "41", "42", "43", "50", "51", "52", "53"]
+
+
+def emprego_exemplo() -> dict:
+    tris = trimestres("202301", "202602")
+    trimestral = {"1": {"nome": "Brasil", "serie": [[t, f"{t[4:]}º tri {t[:4]}", round(7.0 - i * 0.1, 1)] for i, t in enumerate(tris)]}}
+    for k, cod in enumerate(UF_COD):
+        trimestral[cod] = {"nome": f"UF {cod}", "serie": [[t, f"{t[4:]}º tri {t[:4]}", round(4.0 + (k % 9) * 0.7 - i * 0.05, 1)] for i, t in enumerate(tris)]}
+    movel = []
+    y, m = 2023, 3
+    while (y, m) <= (2026, 6):
+        movel.append([f"{y}{m:02d}", f"mês {m}", round(6.5 - len(movel) * 0.05, 1)])
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    return {"trimestral": trimestral, "movel": movel}
+
+
+def caged_exemplo() -> dict:
+    return {"saldo": [[m, (-1) ** i * 90000 + i * 500] for i, m in enumerate(meses("2020-01", "2026-09"))]}
+
+
 def dados_exemplo() -> dict:
     ms = meses("2000-01", "2026-09")
     mensal = [[m, round(0.2 + ((i * 7) % 13) / 20, 2)] for i, m in enumerate(ms)]
@@ -40,6 +74,9 @@ def dados_exemplo() -> dict:
         "selic": {"meta": meta, "ultima_data_serie": "2026-11-12"},
         "ipca": {"mensal": mensal, "acum12": acum},
         "areas": areas,
+        "desocupacao": emprego_exemplo(),
+        "caged": caged_exemplo(),
+        "atas": {"282": {"pdf": "https://www.bcb.gov.br/content/copom/atascopom/Copom282-not20261104282.pdf"}},
         "focus": {"data": "2026-11-10", "itens": [
             {"indicador": "Selic", "ano": 2026, "mediana": 13.5, "semana_anterior": 13.5},
             {"indicador": "Selic", "ano": 2027, "mediana": 12.5, "semana_anterior": 12.75},
