@@ -247,21 +247,30 @@ class TestAtividadeECambio(unittest.TestCase):
                 "D4C": f"{classe} (Código)", "D4N": classe}
 
     def _sidra(self, prefixo, classe, categorias, com_variacoes=True, n=62, valor=lambda cod, i: None):
-        """Resposta no formato real do SIDRA: variáveis 'PIMPF - ...'/'PMC - ...', uma coluna de classificação e '..' onde não há dado."""
+        """Resposta no formato real do SIDRA: variáveis 'PIMPF - ...'/'PMC - ...', uma coluna de classificação e '..' onde não há dado.
+        As variações oficiais são coerentes com os índices (como no IBGE); a 'acumulada no ano' vale 9,9 de propósito."""
         pers = [f"{2021 + (i + 7) // 12}{(i + 7) % 12 + 1:02d}" for i in range(n)]
-        vars_ = [("12606", "Número-índice (2022=100)", "Número-índice", lambda i: 100 + 0.1 * i),
-                 ("12607", "Número-índice com ajuste sazonal (2022=100)", "Número-índice", lambda i: 101 + 0.1 * i)]
+        idx = lambda i: 100 + 0.1 * i + ((i % 12) - 6) * 0.3
+        sa = lambda i: 101 + 0.1 * i + (i % 3) * 0.2
+        mm = lambda i: round((sa(i) / sa(i - 1) - 1) * 100, 5) if i >= 1 else None
+        yoy = lambda i: round((idx(i) / idx(i - 12) - 1) * 100, 5) if i >= 12 else None
+        a12 = lambda i: round((sum(idx(i - k) for k in range(12)) / sum(idx(i - k) for k in range(12, 24)) - 1) * 100, 5) if i >= 23 else None
+        vars_ = [("12606", "Número-índice (2022=100)", "Número-índice", idx),
+                 ("12607", "Número-índice com ajuste sazonal (2022=100)", "Número-índice", sa)]
         if com_variacoes:
-            vars_ += [("11601", "Variação mês/mês imediatamente anterior, com ajuste sazonal", "%", lambda i: 0.1),
-                      ("11602", "Variação mês/mesmo mês do ano anterior", "%", lambda i: 1.2),
-                      ("11603", "Variação acumulada no ano", "%", lambda i: 9.9),
-                      ("11604", "Variação acumulada em 12 meses", "%", lambda i: 1.1)]
+            vars_ += [("11601", "Variação mês/mês imediatamente anterior, com ajuste sazonal", "%", mm),
+                      ("11602", "Variação mês/mesmo mês do ano anterior", "%", yoy),
+                      ("11603", "Variação acumulada no ano (em relação ao mesmo período do ano anterior)", "%", lambda i: 9.9),
+                      ("11604", "Variação acumulada em 12 meses", "%", a12)]
         linhas = [self._cab(classe)]
         for cat in categorias:
             for i, per in enumerate(pers):
                 for cod, nome, un, f in vars_:
                     v = valor(cod, i)
-                    linhas.append({"NC": "1", "MN": un, "V": f"{f(i):.2f}" if v is None else v, "D1C": "1", "D1N": "Brasil", "D2C": cod, "D2N": f"{prefixo} - {nome}",
+                    if v is None:
+                        x = f(i)
+                        v = ".." if x is None else f"{x:.5f}"
+                    linhas.append({"NC": "1", "MN": un, "V": v, "D1C": "1", "D1N": "Brasil", "D2C": cod, "D2N": f"{prefixo} - {nome}",
                                    "D3C": per, "D3N": per, "D4C": "9", "D4N": cat})
         return linhas
 
@@ -291,9 +300,11 @@ class TestAtividadeECambio(unittest.TestCase):
         self.assertEqual(set(out), {"sa", "idx", "mm", "yoy", "a12"})
         self.assertEqual(len(out["sa"]), 62)
         self.assertEqual(out["sa"][0][0], "2021-08")
-        self.assertEqual(out["mm"][-1][1], 0.1)   # variação oficial, não calculada
-        self.assertEqual(out["yoy"][-1][1], 1.2)
-        self.assertEqual(out["a12"][-1][1], 1.1)
+        idx = lambda i: 100 + 0.1 * i + ((i % 12) - 6) * 0.3
+        self.assertAlmostEqual(out["yoy"][-1][1], (idx(61) / idx(49) - 1) * 100, places=3)   # mês/mesmo mês, não o acumulado no ano (9,9)
+        self.assertNotEqual(out["yoy"][-1][1], 9.9)
+        self.assertLess(abs(out["a12"][-1][1]), 5)
+        self.assertEqual(len(out["yoy"]), 50)
         self.assertRegex(out["sa"][-1][0], r"^\d{4}-\d{2}$")
         self.assertEqual(len(g.urls), 1)
         self.assertIn("/t/8888/n1/all/v/all/p/last%2062/c544/all", g.urls[0])   # sem classificação o SIDRA devolve só '..'
@@ -304,8 +315,10 @@ class TestAtividadeECambio(unittest.TestCase):
     def test_calcula_variacoes_quando_o_ibge_nao_devolve(self):
         with mock.patch.object(r, "get", self._get_ibge(**{"8888": self._pim(com_variacoes=False)})), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
             out = r.producao_industrial()
-        self.assertAlmostEqual(out["mm"][-1][1], round((101 + 0.1 * 61) / (101 + 0.1 * 60) * 100 - 100, 1), places=1)
-        self.assertAlmostEqual(out["yoy"][-1][1], round((100 + 0.1 * 61) / (100 + 0.1 * 49) * 100 - 100, 1), places=1)
+        sa = lambda i: 101 + 0.1 * i + (i % 3) * 0.2
+        idx = lambda i: 100 + 0.1 * i + ((i % 12) - 6) * 0.3
+        self.assertAlmostEqual(out["mm"][-1][1], (sa(61) / sa(60) - 1) * 100, places=1)
+        self.assertAlmostEqual(out["yoy"][-1][1], (idx(61) / idx(49) - 1) * 100, places=1)
         self.assertGreater(len(out["a12"]), 30)
         self.assertTrue(any("calculadas aqui: ['mm', 'yoy', 'a12']" in a for a in dbg["avisos"]))
 
@@ -349,6 +362,16 @@ class TestAtividadeECambio(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 r.producao_industrial()
 
+    def test_recusa_variacao_oficial_que_nao_confere_com_o_indice(self):
+        """Foi o erro do primeiro dia: 'acumulada no ano' lida como 'mês/mesmo mês' (0,4 em vez de -2,5)."""
+        linhas = self._pim()
+        for x in linhas[1:]:
+            if x["D2C"] == "11602":
+                x["V"] = "9.90000"            # se o IBGE mudar o nome e a coluna errada entrar, o conferidor barra
+        with mock.patch.object(r, "get", self._get_ibge(**{"8888": linhas})), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaisesRegex(RuntimeError, "não confere"):
+                r.producao_industrial()
+
     def test_desloca_periodo_e_tipo_de_medida(self):
         self.assertEqual(r._desloca("202601", -1), "202512")
         self.assertEqual(r._desloca("202612", 1), "202701")
@@ -356,6 +379,8 @@ class TestAtividadeECambio(unittest.TestCase):
         self.assertEqual(r.medida_ibge("PIMPF - Número-índice com ajuste sazonal (2022=100) | 1 Indústria geral", "Número-índice"), "sa")
         self.assertEqual(r.medida_ibge("PIMPF - Número-índice (2022=100)", "Número-índice"), "idx")
         self.assertEqual(r.medida_ibge("PIMPF - Variação acumulada no ano", "%"), None)
+        self.assertEqual(r.medida_ibge("PIMPF - Variação acumulada no ano (em relação ao mesmo período do ano anterior)", "%"), None)
+        self.assertEqual(r.medida_ibge("PMC - Variação da média móvel trimestral, com ajuste sazonal", "%"), None)
         self.assertEqual(r.medida_ibge("PIMPF - Variação mês/mesmo mês do ano anterior", "%"), "yoy")
         self.assertEqual(r.medida_ibge("PMC - Variação mês/mês imediatamente anterior, com ajuste sazonal", "%"), "mm")
         self.assertEqual(r.medida_ibge("PMC - Variação acumulada em 12 meses", "%"), "a12")

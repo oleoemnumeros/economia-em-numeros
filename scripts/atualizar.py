@@ -429,18 +429,19 @@ def sidra_tabela(tabela, ultimos, classes):
 def medida_ibge(texto, unid):
     """Reconhece o tipo de número de uma linha do SIDRA pelos nomes das dimensões e pela unidade:
     sa/idx = número-índice com/sem ajuste sazonal; mm = variação sobre o mês anterior (com ajuste); yoy = contra o mesmo mês do ano anterior;
-    a12 = acumulada em 12 meses. Receita nominal e acumulado no ano não interessam (None)."""
+    a12 = acumulada em 12 meses. Receita nominal e qualquer outro acumulado (no ano) não interessam (None).
+    Atenção: 'acumulada no ano' vem escrita 'em relação ao mesmo período do ano anterior', por isso 'acumulad' é testado antes de 'ano anterior'."""
     t = texto.lower()
     if "receita" in t:
         return None
     if "%" in unid or "variação" in t:
+        if "acumulad" in t:
+            return "a12" if "12 meses" in t else None
         if "12 meses" in t:
             return "a12"
-        if "ano anterior" in t or "mesmo mês" in t or "igual" in t:
+        if "mesmo mês" in t or "ano anterior" in t or "igual" in t:
             return "yoy"
-        if "no ano" in t:
-            return None
-        if "sazonal" in t:
+        if "sazonal" in t and "trimest" not in t:
             return "mm"
         return None
     if "índice" in t or "indice" in t:
@@ -454,31 +455,46 @@ def _desloca(per, n):
     return f"{m // 12:04d}{m % 12 + 1:02d}"
 
 
-def _completa(med):
-    """Variações que o IBGE não devolveu são calculadas dos números-índice (e registradas no debug)."""
-    derivadas = []
+def _calcula(med):
+    """Variações calculadas dos números-índice: mm (do índice com ajuste), yoy e a12 (do índice sem ajuste)."""
     sa, idx = med.get("sa", {}), med.get("idx", {})
-    if "mm" not in med and sa:
-        med["mm"] = {p: round((v / sa[_desloca(p, -1)] - 1) * 100, 1) for p, v in sa.items() if _desloca(p, -1) in sa}
-        derivadas.append("mm")
-    if "yoy" not in med and idx:
-        med["yoy"] = {p: round((v / idx[_desloca(p, -12)] - 1) * 100, 1) for p, v in idx.items() if _desloca(p, -12) in idx}
-        derivadas.append("yoy")
-    if "a12" not in med and idx:
-        med["a12"] = {}
+    out = {}
+    if sa:
+        out["mm"] = {p: round((v / sa[_desloca(p, -1)] - 1) * 100, 1) for p, v in sa.items() if _desloca(p, -1) in sa}
+    if idx:
+        out["yoy"] = {p: round((v / idx[_desloca(p, -12)] - 1) * 100, 1) for p, v in idx.items() if _desloca(p, -12) in idx}
+        a12 = {}
         for p in idx:
-            atual = [_desloca(p, -k) for k in range(12)]
-            antes = [_desloca(p, -k) for k in range(12, 24)]
+            atual, antes = [_desloca(p, -k) for k in range(12)], [_desloca(p, -k) for k in range(12, 24)]
             if all(q in idx for q in atual + antes):
-                med["a12"][p] = round((sum(idx[q] for q in atual) / sum(idx[q] for q in antes) - 1) * 100, 1)
-        derivadas.append("a12")
+                a12[p] = round((sum(idx[q] for q in atual) / sum(idx[q] for q in antes) - 1) * 100, 1)
+        out["a12"] = a12
+    return out
+
+
+def _completa(med, calc):
+    """Variações que o IBGE não devolveu entram calculadas (e ficam registradas no debug)."""
+    derivadas = []
+    for k, v in calc.items():
+        if k not in med:
+            med[k] = v
+            derivadas.append(k)
     return derivadas
+
+
+def _confere(nome, med, calc, oficiais, tol=0.3):
+    """Compara a variação oficial dos últimos 6 meses com a calculada do índice: pega coluna trocada (ex.: acumulado no ano no lugar de mês/mesmo mês)."""
+    for k in oficiais:
+        comuns = sorted(set(med[k]) & set(calc.get(k, {})))[-6:]
+        ruins = [(p, med[k][p], calc[k][p]) for p in comuns if abs(med[k][p] - calc[k][p]) > tol]
+        if ruins:
+            raise RuntimeError(f"{nome}: a variação '{k}' do IBGE não confere com a calculada do índice (período, oficial, calculada): {ruins[:3]}")
 
 
 def indicador_ibge(tabela, ultimos, classes, filtro, nome):
     """Série mensal do IBGE. `filtro(dims)` escolhe as linhas da atividade/tipo de índice que interessa.
     Devolve {sa, idx, mm, yoy, a12: [[AAAA-MM, valor], ...]}."""
-    med, soltas, vistas = {}, set(), set()
+    med, soltas, vistas, nomes = {}, set(), set(), {}
     for ln in sidra_tabela(tabela, ultimos, classes):
         texto = " | ".join(ln["dims"])
         vistas.add(texto)
@@ -489,11 +505,15 @@ def indicador_ibge(tabela, ultimos, classes, filtro, nome):
             soltas.add(f"{texto} [{ln['unid']}]")
             continue
         med.setdefault(m, {})[ln["per"]] = ln["v"]
+        nomes.setdefault(m, set()).add(texto)
+    debug["avisos"].append(f"{nome}: medida -> variável usada {({m: sorted(v) for m, v in nomes.items()})}")
     if soltas:
         debug["avisos"].append(f"{nome}: linhas ignoradas {sorted(soltas)[:12]}")
     if "sa" not in med:
         raise RuntimeError(f"{nome}: sem número-índice com ajuste sazonal (medidas achadas: {sorted(med)}; textos vistos: {sorted(vistas)[:10]})")
-    derivadas = _completa(med)
+    calc = _calcula(med)
+    _confere(nome, med, calc, [k for k in ("mm", "yoy", "a12") if k in med])
+    derivadas = _completa(med, calc)
     sa = med["sa"]
     if len(sa) < 30 or not all(50 < v < 160 for v in sa.values()):
         raise RuntimeError(f"{nome}: índice com ajuste sazonal fora do esperado ({len(sa)} meses; últimos {sorted(sa.items())[-3:]})")
