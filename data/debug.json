@@ -1,5 +1,5 @@
 {
- "inicio": "2026-11-13T17:54:37",
+ "inicio": "2026-11-13T17:57:37",
  "avisos": [
   "Desocupação: último trimestre ['202602', '2º trimestre 2026', 5.4]; último trimestre móvel ['202609', 'jul-ago-set 2026', 5.2]",
   "Caged SGS 28763 (estoque): últimas leituras [('2026-07-01', 48077210.0), ('2026-08-01', 48238272.0), ('2026-09-01', 48359577.0)]",
@@ -18,27 +18,33 @@
   "Crédito endividamento (SGS 29037, endividamento das famílias com o sistema financeiro, % da renda de 12 meses (com ajuste sazonal)): últimas leituras [['2026-06', 49.66], ['2026-07', 49.93], ['2026-08', 50.11]]",
   "Crédito comprometimento (SGS 29034, comprometimento da renda das famílias com o serviço da dívida, % da renda mensal (com ajuste sazonal)): últimas leituras [['2026-06', 28.68], ['2026-07', 28.83], ['2026-08', 28.99]]",
   "SIDRA 8888: 10044 linhas, 10044 com número, em https://apisidra.ibge.gov.br/values/t/8888/n1/all/v/all/p/last%2062/c544/all; amostra [{'NC': '1', 'NN': 'Brasil', 'MC': '30', 'MN': 'Número-índice', 'V': '108.81356', 'D1C': '1', 'D1N': 'Brasil', 'D2C': '12606', 'D2N': 'PIMPF - Número-índice (2022=100)', 'D3C': '202108', 'D3N': 'agosto 2021', 'D4C': '129314', 'D4N': '1 Indústria geral'}]",
-  "Indústria: último mês 2026-09; sa 102.13833, mm ['2026-09', -0.8], yoy ['2026-09', 0.4], a12 ['2026-09', 0.2]; calculadas aqui: nenhuma",
+  "Indústria: medida -> variável usada {'idx': ['PIMPF - Número-índice (2022=100) | 1 Indústria geral'], 'sa': ['PIMPF - Número-índice com ajuste sazonal (2022=100) | 1 Indústria geral'], 'mm': ['PIMPF - Variação mês/mês imediatamente anterior, com ajuste sazonal (M/M-1) | 1 Indústria geral'], 'yoy': ['PIMPF - Variação mês/mesmo mês do ano anterior (M/M-12) | 1 Indústria geral'], 'a12': ['PIMPF - Variação acumulada em 12 meses (em relação ao período anterior de 12 meses) | 1 Indústria geral']}",
+  "Indústria: linhas ignoradas ['PIMPF - Variação acumulada no ano (em relação ao mesmo período do ano anterior) | 1 Indústria geral [%]']",
+  "Indústria: último mês 2026-09; sa 102.13833, mm ['2026-09', -0.8], yoy ['2026-09', -2.5], a12 ['2026-09', 0.2]; calculadas aqui: nenhuma",
   "SIDRA 8880: 744 linhas, 744 com número, em https://apisidra.ibge.gov.br/values/t/8880/n1/all/v/all/p/last%2062/c11046/all; amostra [{'NC': '1', 'NN': 'Brasil', 'MC': '30', 'MN': 'Número-índice', 'V': '87.60009', 'D1C': '1', 'D1N': 'Brasil', 'D2C': '7169', 'D2N': 'PMC - Número-índice (2022=100)', 'D3C': '202108', 'D3N': 'agosto 2021', 'D4C': '56733', 'D4N': 'Índice de receita nominal de vendas no comércio varejista'}]",
+  "Varejo: medida -> variável usada {'idx': ['PMC - Número-índice (2022=100) | Índice de volume de vendas no comércio varejista'], 'sa': ['PMC - Número-índice com ajuste sazonal (2022=100) | Índice de volume de vendas no comércio varejista'], 'mm': ['PMC - Variação mês/mês imediatamente anterior, com ajuste sazonal (M/M-1) | Índice de volume de vendas no comércio varejista'], 'yoy': ['PMC - Variação mês/mesmo mês do ano anterior (M/M-12) | Índice de volume de vendas no comércio varejista'], 'a12': ['PMC - Variação acumulada em 12 meses (em relação ao período anterior de 12 meses) | Índice de volume de vendas no comércio varejista']}",
+  "Varejo: linhas ignoradas ['PMC - Variação acumulada no ano (em relação ao mesmo período do ano anterior) | Índice de volume de vendas no comércio varejista [%]']",
   "Varejo: último mês 2026-09; sa 108.97999, mm ['2026-09', 0.2], yoy ['2026-09', 1.7], a12 ['2026-09', 1.7]; calculadas aqui: nenhuma",
   "SIDRA 8881: 744 linhas, 744 com número, em https://apisidra.ibge.gov.br/values/t/8881/n1/all/v/all/p/last%2062/c11046/all; amostra [{'NC': '1', 'NN': 'Brasil', 'MC': '30', 'MN': 'Número-índice', 'V': '91.44763', 'D1C': '1', 'D1N': 'Brasil', 'D2C': '7169', 'D2N': 'PMC - Número-índice (2022=100)', 'D3C': '202108', 'D3N': 'agosto 2021', 'D4C': '56735', 'D4N': 'Índice de receita nominal de vendas no comércio varejista ampliado'}]",
-  "Varejo ampliado: último mês 2026-09; sa 107.00045, mm ['2026-09', 0.2], yoy ['2026-09', 1.5], a12 ['2026-09', 1.3]; calculadas aqui: nenhuma"
+  "Varejo ampliado: medida -> variável usada {'idx': ['PMC - Número-índice (2022=100) | Índice de volume de vendas no comércio varejista ampliado'], 'sa': ['PMC - Número-índice com ajuste sazonal (2022=100) | Índice de volume de vendas no comércio varejista ampliado'], 'mm': ['PMC - Variação mês/mês imediatamente anterior, com ajuste sazonal (M/M-1) | Índice de volume de vendas no comércio varejista ampliado'], 'yoy': ['PMC - Variação mês/mesmo mês do ano anterior (M/M-12) | Índice de volume de vendas no comércio varejista ampliado'], 'a12': ['PMC - Variação acumulada em 12 meses (em relação ao período anterior de 12 meses) | Índice de volume de vendas no comércio varejista ampliado']}",
+  "Varejo ampliado: linhas ignoradas ['PMC - Variação acumulada no ano (em relação ao mesmo período do ano anterior) | Índice de volume de vendas no comércio varejista ampliado [%]']",
+  "Varejo ampliado: último mês 2026-09; sa 107.00045, mm ['2026-09', 0.2], yoy ['2026-09', 0.3], a12 ['2026-09', 1.3]; calculadas aqui: nenhuma"
  ],
  "erros": [],
  "tempos": {
-  "selic": 27.8,
-  "ipca": 4.7,
+  "selic": 2.4,
+  "ipca": 4.2,
   "areas": 1.4,
-  "focus": 10.1,
+  "focus": 9.4,
   "atas": 0.0,
   "desocupacao": 0.8,
-  "caged": 1.1,
-  "cambio": 4.6,
-  "ibc": 1.2,
+  "caged": 0.9,
+  "cambio": 1.9,
+  "ibc": 0.9,
   "pib": 0.3,
-  "fiscal": 7.6,
-  "credito": 9.8,
-  "industria": 1.4,
-  "varejo": 1.5
+  "fiscal": 5.4,
+  "credito": 6.6,
+  "industria": 2.5,
+  "varejo": 1.7
  }
 }
