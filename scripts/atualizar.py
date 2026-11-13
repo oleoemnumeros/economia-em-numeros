@@ -15,6 +15,7 @@ import datetime as dt
 import json
 import sys
 import time
+from urllib.parse import quote
 from pathlib import Path
 
 
@@ -53,6 +54,11 @@ def get(url, params=None, tentativas=4):
             ultimo = repr(e)
         time.sleep(3 * (i + 1))
     raise RuntimeError(f"{url} falhou: {ultimo}")
+
+
+def consulta(url: str, params: dict) -> str:
+    """Monta a URL com espaços como %20. O Olinda (Banco Central) não entende o '+' que o requests usa em `params`."""
+    return url + "?" + "&".join(f"{k}={quote(str(v), safe=chr(39))}" for k, v in params.items())
 
 
 def janelas(inicio: dt.date, fim: dt.date, anos: int = 9):
@@ -139,15 +145,14 @@ def focus():
     desde = (HOJE - dt.timedelta(days=24)).isoformat()
     linhas, falhas = [], []
     for ind in ("Selic", "IPCA", "PIB Total", "Câmbio"):
-        # O serviço Olinda já recusou filtros com data; tentamos do mais simples para o mais completo.
+        # Tentamos do filtro mais simples para o mais completo.
         tentativas = [
             {"$top": "600", "$format": "json", "$orderby": "Data desc", "$filter": f"Indicador eq '{ind}'"},
-            {"$top": "3000", "$format": "json", "$filter": f"Indicador eq '{ind}'"},
             {"$top": "600", "$format": "json", "$orderby": "Data desc", "$filter": f"Indicador eq '{ind}' and Data ge '{desde}'"},
         ]
         for params in tentativas:
             try:
-                linhas += get(url, params, tentativas=2).json().get("value", [])
+                linhas += get(consulta(url, params), tentativas=2).json().get("value", [])
                 break
             except Exception as e:  # noqa: BLE001
                 falhas.append(f"{ind} {params.get('$filter')}: {str(e)[:160]}")
