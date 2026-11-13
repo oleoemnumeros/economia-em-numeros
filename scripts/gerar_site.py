@@ -91,6 +91,13 @@ def periodo_curto(ini: dt.date, fim: dt.date) -> str:
     return f"{ini.day} e {fim.day} {MES_CURTO[fim.month - 1]}"
 
 
+def periodo_tabela(ini: dt.date, fim: dt.date) -> str:
+    """Versão compacta para tabelas estreitas: '3 e 4 nov 2026' ou '31 jul e 1 ago 2026'."""
+    if ini.month == fim.month:
+        return f"{ini.day} e {fim.day} {MES_CURTO[fim.month - 1]} {fim.year}"
+    return f"{ini.day} {MES_CURTO[ini.month - 1]} e {fim.day} {MES_CURTO[fim.month - 1]} {fim.year}"
+
+
 def ordinal_f(n: int) -> str:
     return f"{n}ª"
 
@@ -279,7 +286,7 @@ def lista_links(itens) -> str:
 
 
 # ------------------------------------------------------------------ gráficos SVG (estáticos)
-W, H, PL, PR, PT, PB = 640, 240, 52, 16, 14, 34
+W, H, PL, PR, PT, PB = 640, 240, 58, 16, 14, 34
 
 
 def _eixo(vals, zero=False, margem=0.12):
@@ -587,7 +594,7 @@ def pg_juros(B: Base) -> str:
                 links.append(f'<a href="#ata-{u["num"]}">resumo</a>')
             if B.ata_pdf(u["num"]):
                 links.append(f'<a href="{B.ata_pdf(u["num"])}" rel="noopener">PDF</a>')
-        linhas.append([f'{periodo_reuniao(u["ini"], u["fim"])} de {u["fim"].year}', sel, pct(u["depois"], 2), " · ".join(links) or "–"])
+        linhas.append([periodo_tabela(u["ini"], u["fim"]), sel, pct(u["depois"], 2), " · ".join(links) or "–"])
     decs = card(cab("Decisões recentes") + tabela(["Reunião", "Decisão (p.p.)", "Selic", "Ata"], linhas, ["l", "r", "r", "r"]) +
                 '<span class="src">Calculado a partir da meta da Selic registrada pelo Banco Central.</span>')
     focus = blocos_focus(B)
