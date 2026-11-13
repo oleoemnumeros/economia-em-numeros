@@ -740,7 +740,7 @@ def pg_inicio(B: Base) -> str:
                 f"a <strong>Selic está em {pct(B.selic, 2)} ao ano</strong> e a inflação em 12 meses é de <strong>{pct(B.ipca_12[ref], 2)}</strong> ({mes_nome(ref)}). "
                 "Sem cadastro e sem opinião: só o número, a fonte e a data.</p>")
     sel19 = [(d, v) for d, v in B.mud if d >= dt.date(2019, 1, 1)] or B.mud
-    selic = grafico(B, "selic-meta", "Meta da Selic desde 2019", F_SELIC,
+    selic = grafico(B, "selic-meta", "Taxa Selic (meta do Copom) desde 2019", F_SELIC,
                     svg_degraus(sel19, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2019", unidade="% ao ano"),
                     ["Em vigor desde", "Meta da Selic (% ao ano)"], [(d.isoformat(), v) for d, v in sel19], "Juros e Copom",
                     nota='<p class="small">Meta da taxa Selic definida pelo Copom, em % ao ano. Cada degrau é uma decisão do comitê.</p>',
@@ -808,7 +808,7 @@ def pg_juros(B: Base) -> str:
     hero = card('<span class="eyebrow">Política monetária</span><h1>Selic e reuniões do Copom</h1>'
                 f'<p class="lede">A meta da Selic está em <strong>{pct(B.selic, 2)} ao ano</strong> desde {data_br(B.selic_desde)}. '
                 "Veja o histórico de decisões, o calendário das próximas reuniões e o que o mercado espera para os juros.</p>")
-    graf = grafico(B, "selic-meta", "Meta da Selic desde 2016", F_SELIC, svg_degraus(B.mud, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2016", unidade="% ao ano"),
+    graf = grafico(B, "selic-meta", "Taxa Selic (meta do Copom) desde 2016", F_SELIC, svg_degraus(B.mud, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2016", unidade="% ao ano"),
                    ["Em vigor desde", "Meta da Selic (% ao ano)"], [(d.isoformat(), v) for d, v in B.mud], "Juros e Copom",
                    ultimo=f"{pct(B.selic, 2)} ao ano, em vigor desde {data_br(B.selic_desde)}")
     fut = [r for r in B.reunioes if r["fim"] >= B.hoje][:8]
