@@ -1,5 +1,10 @@
 {
- "inicio": "2026-11-13T13:26:43",
- "avisos": [],
- "erros": []
+ "inicio": "2026-11-13T16:04:45",
+ "avisos": [
+  "Desocupação: último trimestre ['202602', '2º trimestre 2026', 5.4]; último trimestre móvel ['202609', 'jul-ago-set 2026', 5.2]",
+  "Caged SGS 28763: últimas leituras [('2026-07-01', 48077210.0), ('2026-08-01', 48238272.0), ('2026-09-01', 48359577.0)]"
+ ],
+ "erros": [
+  "caged: SGS 28763 não parece um saldo mensal de vagas (valores fora do esperado); conferir a série"
+ ]
 }
