@@ -404,7 +404,7 @@ class TestSetorExterno(unittest.TestCase):
                 return [(d, ca_pib(k)) for d, k in meses if k >= 11]
             if cod == 22885:
                 return [(d, idp(k)) for d, k in meses]
-            if cod == 13982:
+            if cod == 13621:
                 return [(d, reservas(j)) for d, j in dias]
             raise AssertionError(cod)
         return sgs
@@ -439,7 +439,7 @@ class TestSetorExterno(unittest.TestCase):
             with self.assertRaises(RuntimeError):  # reservas em US$ bilhões
                 r.setor_externo()
         velhas = self._sgs()
-        with mock.patch.object(r, "sgs", lambda cod, ini: velhas(cod, ini)[:-60] if cod == 13982 else velhas(cod, ini)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+        with mock.patch.object(r, "sgs", lambda cod, ini: velhas(cod, ini)[:-60] if cod == 13621 else velhas(cod, ini)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
             with self.assertRaises(RuntimeError):
                 r.setor_externo()
 

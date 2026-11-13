@@ -54,7 +54,7 @@ F_PMC = "IBGE, Pesquisa Mensal de Comércio (SIDRA, tabela 8880)"
 F_PMC_AMP = "IBGE, Pesquisa Mensal de Comércio, varejo ampliado (SIDRA, tabela 8881)"
 F_EXT_CA = "Banco Central do Brasil, balanço de pagamentos (SGS 22701, 24419 e 23079)"
 F_EXT_IDP = "Banco Central do Brasil, investimento direto no país (SGS 22885)"
-F_EXT_RES = "Banco Central do Brasil, reservas internacionais, conceito liquidez (SGS 13982)"
+F_EXT_RES = "Banco Central do Brasil, reservas internacionais (SGS 13621)"
 F_EXT_BAL = "Secex/MDIC (Comex Stat), via Comex em Números"
 F_BF = "MDS, Matriz de Informação Social (MI Social); população: IBGE (SIDRA, tabela 6579)"
 CRED_CHAVES = ("inad_pf", "inad_livre_pf", "juros_pf", "juros_livre_pf", "endividamento", "comprometimento")
@@ -1730,10 +1730,10 @@ def pg_setor_externo(B: Base) -> str:
     rs = res["serie"]
     graf.append(grafico(B, "reservas-internacionais", "Reservas internacionais (US$ bilhões)", F_EXT_RES,
                         svg_linhas([{"vals": [v for _, v in rs[-96:]], "cor": "a"}], [mes_curtinho(m) for m, _ in rs[-96:]],
-                                   "Gráfico das reservas internacionais do Brasil, conceito liquidez, em US$ bilhões, no fim de cada mês, nos últimos oito anos", unidade="US$ bilhões"),
+                                   "Gráfico das reservas internacionais do Brasil, em US$ bilhões, no fim de cada mês, nos últimos oito anos", unidade="US$ bilhões"),
                         ["Mês", "Reservas (US$ bi)"], rs[-96:], "Setor externo", casas=1,
-                        nota='<p class="small">Conceito liquidez, valor do último dia útil de cada mês (o mês corrente mostra o dado mais recente).</p>',
-                        ultimo=f"US$ {nf(res['v'], 1)} bilhões ({data_br(res['data'])})", csv_cab=["Mês", "Reservas internacionais, conceito liquidez (US$ bilhões, fim do mês)"],
+                        nota='<p class="small">Valor do último dia útil de cada mês (o mês corrente mostra o dado mais recente). É o número que o Banco Central divulga na nota mensal de estatísticas do setor externo.</p>',
+                        ultimo=f"US$ {nf(res['v'], 1)} bilhões ({data_br(res['data'])})", csv_cab=["Mês", "Reservas internacionais (US$ bilhões, fim do mês)"],
                         csv_linhas=rs))
     p60 = pib["serie"][-60:]
     graf.append(grafico(B, "conta-corrente-pib", "Conta corrente em 12 meses (% do PIB)", F_EXT_CA,
@@ -2124,7 +2124,7 @@ def pg_sobre(B: Base) -> str:
                  "<li><strong>Vendas no varejo:</strong> IBGE, Pesquisa Mensal de Comércio (SIDRA, tabelas 8880 e 8881, esta para o varejo ampliado).</li>"
                  "<li><strong>Crédito e inadimplência das famílias:</strong> Banco Central, estatísticas de crédito e endividamento das famílias (séries 20716, 20740, 21084, 21112, 29034 e 29037 do SGS).</li>"
                  "<li><strong>Dólar:</strong> cotação de venda do Banco Central, série 1 do SGS (Sistema PTAX).</li>"
-                 "<li><strong>Contas externas:</strong> Banco Central, balanço de pagamentos (séries 22701, 24419, 23079 e 22885 do SGS) e reservas internacionais, conceito liquidez (série 13982); balança comercial da Secex/MDIC, pelo Comex em Números.</li>"
+                 "<li><strong>Contas externas:</strong> Banco Central, balanço de pagamentos (séries 22701, 24419, 23079 e 22885 do SGS) e reservas internacionais (série 13621); balança comercial da Secex/MDIC, pelo Comex em Números.</li>"
                  "<li><strong>Bolsa Família por município:</strong> Ministério do Desenvolvimento e Assistência Social (MDS), Matriz de Informação Social (MI Social); população estimada pelo IBGE (SIDRA, tabela 6579).</li>"
                  "<li><strong>Contas públicas:</strong> Banco Central, estatísticas fiscais em % do PIB (séries 13762, 4513, 5793 e 5727 do SGS).</li>"
                  "<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego; o saldo do mês é a variação do estoque de empregos formais (série 28763 do SGS, Banco Central).</li></ul>"

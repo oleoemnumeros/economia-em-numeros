@@ -9,7 +9,7 @@ Baixa as séries públicas e grava data/dados.json:
   - Atas do Copom: confere no site do Banco Central se o PDF de cada ata já existe
   - Desocupação (PNAD Contínua, SIDRA 4099 por UF e 6381 trimestre móvel) e saldo de vagas formais (Novo Caged, SGS 28763)
   - Contas públicas (Banco Central): dívida bruta (SGS 13762), dívida líquida (4513), resultado primário (5793) e nominal (5727), em % do PIB
-  - Setor externo: conta corrente (SGS 22701, 24419, 23079), investimento direto no país (22885), reservas internacionais (13982) e balança comercial (Secex/MDIC, pelo Comex em Números)
+  - Setor externo: conta corrente (SGS 22701, 24419, 23079), investimento direto no país (22885), reservas internacionais (13621) e balança comercial (Secex/MDIC, pelo Comex em Números)
   - Bolsa Família por município (MDS, API MI Social + população do IBGE), gravado à parte em data/bolsa_familia.json
 
 Roda no GitHub Actions (a rede do ambiente de desenvolvimento não alcança essas APIs).
@@ -403,7 +403,7 @@ EXTERNO = (  # chave, código SGS, faixa plausível, descrição
     ("ca_pib", 23079, (-8, 4), "saldo da conta corrente acumulado em 12 meses, % do PIB"),
     ("idp_mensal", 22885, (-20000, 40000), "investimento direto no país (IDP), fluxo líquido mensal, US$ milhões"),
 )
-RESERVAS_SGS = 13982  # reservas internacionais, conceito liquidez, diária, US$ milhões
+RESERVAS_SGS = 13621  # reservas internacionais, diária, US$ milhões; bate com o número da nota mensal do BC (US$ 357,103 bi em out/2025). A 13982 soma as linhas com recompra e dá ~US$ 11 a 15 bi a mais
 BALANCA_URL = "https://raw.githubusercontent.com/oleoemnumeros/comex-em-numeros/main/data/dados.json"
 
 
@@ -451,15 +451,6 @@ def setor_externo():
     out["reservas"] = [[m, v] for m, v in sorted(fim_mes.items())]
     out["reservas_ultima"] = [ult_dia.isoformat(), ult_v]
     debug["avisos"].append(f"Reservas (SGS {RESERVAS_SGS}): {len(diaria)} dias; última leitura {out['reservas_ultima']}; fim de mês {out['reservas'][-3:]}")
-    # Conferência provisória: o número que a imprensa cita (BC: US$ 357,103 bi em out/2025 e US$ 364,4 bi em jan/2026) é menor que o da série 13982 por causa das linhas com recompra
-    for cod in (13621, 3545, 3546, 3547):
-        try:
-            outras = {}
-            for d, v in sgs(cod, dt.date(2025, 9, 1)):
-                outras[d.strftime("%Y-%m")] = v
-            debug["avisos"].append(f"Reservas, conferência SGS {cod}: " + ", ".join(f"{m}={outras[m]:.0f}" for m in ("2025-09", "2025-10", "2026-01", max(outras)) if m in outras))
-        except Exception as e:  # noqa: BLE001 - só diagnóstico
-            debug["avisos"].append(f"Reservas, conferência SGS {cod}: falhou ({str(e)[:120]})")
     return out
 
 
