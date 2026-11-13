@@ -1,12 +1,16 @@
 {
- "inicio": "2026-11-13T16:31:39",
+ "inicio": "2026-11-13T16:51:44",
  "avisos": [
   "Desocupação: último trimestre ['202602', '2º trimestre 2026', 5.4]; último trimestre móvel ['202609', 'jul-ago-set 2026', 5.2]",
   "Caged SGS 28763 (estoque): últimas leituras [('2026-07-01', 48077210.0), ('2026-08-01', 48238272.0), ('2026-09-01', 48359577.0)]",
   "Caged: saldo calculado, últimos meses [['2026-07', 56007], ['2026-08', 161062], ['2026-09', 121305]]",
   "Câmbio SGS 1: últimas leituras [('2026-11-11', 5.5606), ('2026-11-12', 5.6143), ('2026-11-13', 5.6518)]",
   "IBC-Br: últimas leituras com ajuste [['2026-06', 110.37352], ['2026-07', 110.03188], ['2026-08', 110.40624]]; sem ajuste [['2026-07', 114.48992], ['2026-08', 111.71919]]",
-  "PIB: últimos trimestres [{'t': '202601', 'yoy': 1.8, 'a4': 1.8, 'qoq': 1.1}, {'t': '202602', 'yoy': 2.0, 'a4': 1.9, 'qoq': 0.5}]"
+  "PIB: últimos trimestres [{'t': '202601', 'yoy': 1.8, 'a4': 1.8, 'qoq': 1.1}, {'t': '202602', 'yoy': 2.0, 'a4': 1.9, 'qoq': 0.5}]",
+  "Fiscal dbgg (SGS 13762, dívida bruta do governo geral, % do PIB): últimas leituras [['2026-07', 82.55], ['2026-08', 82.87], ['2026-09', 82.93]]",
+  "Fiscal dlsp (SGS 4513, dívida líquida do setor público, % do PIB): últimas leituras [['2026-07', 69.11], ['2026-08', 69.27], ['2026-09', 69.98]]",
+  "Fiscal primario (SGS 5793, NFSP, resultado primário, fluxo em 12 meses, % do PIB): últimas leituras [['2026-07', 0.67], ['2026-08', 0.62], ['2026-09', 0.52]]",
+  "Fiscal nominal (SGS 5727, NFSP, resultado nominal, fluxo em 12 meses, % do PIB): últimas leituras [['2026-07', 9.35], ['2026-08', 9.48], ['2026-09', 9.51]]"
  ],
  "erros": []
 }
