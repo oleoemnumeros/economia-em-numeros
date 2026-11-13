@@ -50,6 +50,7 @@ F_CRED_ENDIV = "Banco Central do Brasil (SGS 29037)"
 F_CRED_COMP = "Banco Central do Brasil (SGS 29034)"
 F_PIM = "IBGE, Pesquisa Industrial Mensal - Produção Física (SIDRA, tabela 8888)"
 F_PMC = "IBGE, Pesquisa Mensal de Comércio (SIDRA, tabela 8880)"
+F_PMC_AMP = "IBGE, Pesquisa Mensal de Comércio, varejo ampliado (SIDRA, tabela 8881)"
 CRED_CHAVES = ("inad_pf", "inad_livre_pf", "juros_pf", "juros_livre_pf", "endividamento", "comprometimento")
 NUM_PRIMEIRA_REUNIAO = 260  # 30–31/01/2024; mesma regra do robô (conferida com as atas 266, 268, 274 e 276 a 281)
 ATAS_LISTA = "https://www.bcb.gov.br/publicacoes/atascopom/cronologicos"
@@ -260,7 +261,7 @@ class Base:
         v = self.varejo or {}
         cand = [("ind", "Produção industrial", "A produção industrial", "Indústria", F_PIM, self.industria),
                 ("var", "Vendas no varejo", "O volume de vendas do varejo", "Varejo", F_PMC, v.get("restrito")),
-                ("amp", "Varejo ampliado", "O volume de vendas do varejo ampliado", "Varejo ampliado", F_PMC, v.get("ampliado"))]
+                ("amp", "Varejo ampliado", "O volume de vendas do varejo ampliado", "Varejo ampliado", F_PMC_AMP, v.get("ampliado"))]
         return {k: {"nome": nome, "sujeito": suj, "curto": curto, "fonte": fonte, "med": med} for k, nome, suj, curto, fonte, med in cand if ok(med)}
 
     @property
@@ -1275,7 +1276,7 @@ def pg_ind_var(B: Base) -> str:
         if len(cm) < 3:
             return
         todos = sorted(set().union(*[set(d) for d in ds.values()]))
-        fonte = F_PIM if ks == ["ind"] else F_PMC if "ind" not in ks else f"{F_PIM}; {F_PMC}"
+        fonte = "; ".join(f for k, f in (("ind", F_PIM), ("var", F_PMC), ("amp", F_PMC_AMP)) if k in ks)
         graf.append(grafico(B, slug, titulo, fonte,
                             svg_linhas([{"vals": [ds[k][m] for m in cm], "cor": cor[k], "tracejada": k == "amp"} for k in ks], [mes_curtinho(m) for m in cm], aria, zero=zero, unidade=unid),
                             ["Mês"] + [S[k]["curto"] for k in ks], [(m, *[ds[k][m] for k in ks]) for m in cm], "Indústria e varejo", casas=casas,
@@ -1609,7 +1610,7 @@ def pg_sobre(B: Base) -> str:
                  "<li><strong>PIB:</strong> IBGE, Contas Nacionais Trimestrais (SIDRA, tabela 5932).</li>"
                  "<li><strong>IBC-Br:</strong> Banco Central (séries 24363 e 24364 do SGS).</li>"
                  "<li><strong>Produção industrial:</strong> IBGE, Pesquisa Industrial Mensal - Produção Física (SIDRA, tabela 8888).</li>"
-                 "<li><strong>Vendas no varejo:</strong> IBGE, Pesquisa Mensal de Comércio (SIDRA, tabela 8880).</li>"
+                 "<li><strong>Vendas no varejo:</strong> IBGE, Pesquisa Mensal de Comércio (SIDRA, tabelas 8880 e 8881, esta para o varejo ampliado).</li>"
                  "<li><strong>Crédito e inadimplência das famílias:</strong> Banco Central, estatísticas de crédito e endividamento das famílias (séries 20716, 20740, 21084, 21112, 29034 e 29037 do SGS).</li>"
                  "<li><strong>Dólar:</strong> cotação de venda do Banco Central, série 1 do SGS (Sistema PTAX).</li>"
                  "<li><strong>Contas públicas:</strong> Banco Central, estatísticas fiscais em % do PIB (séries 13762, 4513, 5793 e 5727 do SGS).</li>"
