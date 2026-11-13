@@ -368,13 +368,179 @@ def fiscal():
     return out
 
 
+CREDITO = (  # chave, código SGS, faixa plausível, descrição
+    ("inad_pf", 21084, (0, 20), "inadimplência (atraso acima de 90 dias) da carteira das pessoas físicas, % da carteira"),
+    ("inad_livre_pf", 21112, (0, 30), "inadimplência do crédito livre às pessoas físicas, % da carteira"),
+    ("juros_pf", 20716, (10, 100), "taxa média de juros do crédito às pessoas físicas, % ao ano"),
+    ("juros_livre_pf", 20740, (20, 150), "taxa média de juros do crédito livre às pessoas físicas, % ao ano"),
+    ("endividamento", 29037, (20, 90), "endividamento das famílias com o sistema financeiro, % da renda de 12 meses (com ajuste sazonal)"),
+    ("comprometimento", 29034, (10, 50), "comprometimento da renda das famílias com o serviço da dívida, % da renda mensal (com ajuste sazonal)"),
+)
+
+
+def credito():
+    """Crédito às famílias (Banco Central): juros, inadimplência, endividamento e comprometimento de renda, séries mensais do SGS.
+    As relações abaixo (crédito livre > total; dívida > serviço da dívida) pegam código trocado, que a faixa de valores sozinha não pega."""
+    out = {}
+    for chave, cod, (lo, hi), desc in CREDITO:
+        serie = sgs(cod, dt.date(2016, 1, 1))
+        if len(serie) < 36 or not all(lo <= v <= hi for _, v in serie):
+            raise RuntimeError(f"SGS {cod} ({desc}) fora do esperado ({len(serie)} meses, faixa {lo} a {hi}); últimas leituras: {[(d.isoformat(), v) for d, v in serie[-3:]]}")
+        out[chave] = [[d.strftime("%Y-%m"), v] for d, v in serie]
+        debug["avisos"].append(f"Crédito {chave} (SGS {cod}, {desc}): últimas leituras {out[chave][-3:]}")
+    for maior, menor in (("inad_livre_pf", "inad_pf"), ("juros_livre_pf", "juros_pf"), ("endividamento", "comprometimento")):
+        if out[maior][-1][1] <= out[menor][-1][1]:
+            raise RuntimeError(f"Crédito: {maior} ({out[maior][-1]}) deveria ser maior que {menor} ({out[menor][-1]}); conferir os códigos do SGS")
+    return out
+
+
+def _limpo(nome):
+    """Nome de categoria do SIDRA sem número na frente ('1 Indústria geral' -> 'indústria geral')."""
+    return str(nome).lower().strip().lstrip("0123456789. ").strip()
+
+
+def sidra_tabela(tabela, ultimos, quero):
+    """Tabela mensal do SIDRA (IBGE) para o Brasil, com todas as variáveis, nos últimos `ultimos` meses.
+    `quero(nome)` diz quais categorias interessam: a classificação que tiver alguma categoria aceita é restringida a elas
+    (as demais vêm inteiras). Os ids vêm dos metadados da própria tabela, para não depender de códigos decorados.
+    Devolve linhas {dims: nomes (variável e categorias), unid, per: 'AAAAMM', v}."""
+    classes = ""
+    try:
+        meta = get(f"https://servicodados.ibge.gov.br/api/v3/agregados/{tabela}/metadados").json()
+        for c in meta.get("classificacoes", []):
+            ids = [str(k["id"]) for k in c.get("categorias", []) if quero(k.get("nome", ""))]
+            classes += f"/c{c['id']}/" + (",".join(ids) if ids else "all")
+        debug["avisos"].append(f"SIDRA {tabela}: variáveis {[(v['id'], v['nome']) for v in meta.get('variaveis', [])]}; "
+                               f"classificações {[(c['id'], c['nome'], len(c.get('categorias', []))) for c in meta.get('classificacoes', [])]}; consulta{classes}")
+    except Exception as e:  # noqa: BLE001
+        debug["avisos"].append(f"SIDRA {tabela}: metadados indisponíveis ({e!r}); usando as categorias padrão")
+    linhas = get(f"https://apisidra.ibge.gov.br/values/t/{tabela}/n1/all/v/all/p/last%20{ultimos}{classes}").json()
+    cab, dados = linhas[0], linhas[1:]
+    chaves = [k for k in cab if k.startswith("D") and k.endswith("C")]
+    k_per = next((k for k in chaves if str(cab[k]).lower().startswith("mês")), None)
+    k_ter = next((k for k in chaves if any(t in str(cab[k]) for t in ("Brasil", "Territ"))), None)
+    if not k_per or not k_ter:
+        raise RuntimeError(f"SIDRA {tabela}: colunas de mês/território não encontradas; cabeçalho: {cab}")
+    out = []
+    for x in dados:
+        try:
+            v = float(x.get("V"))
+        except (TypeError, ValueError):
+            continue
+        out.append({"dims": [str(x.get(k[:-1] + "N", x.get(k, ""))) for k in chaves if k not in (k_per, k_ter)],
+                    "unid": str(x.get("MN", "")), "per": str(x[k_per]), "v": v})
+    if not out:
+        raise RuntimeError(f"SIDRA {tabela}: nenhuma linha numérica; cabeçalho: {cab}")
+    return out
+
+
+def medida_ibge(texto, unid):
+    """Reconhece o tipo de número de uma linha do SIDRA pelos nomes das dimensões e pela unidade:
+    sa/idx = número-índice com/sem ajuste sazonal; mm = variação sobre o mês anterior (com ajuste); yoy = contra o mesmo mês do ano anterior;
+    a12 = acumulada em 12 meses. Receita nominal e acumulado no ano não interessam (None)."""
+    t = texto.lower()
+    if "receita" in t:
+        return None
+    if "%" in unid or "variação" in t:
+        if "12 meses" in t:
+            return "a12"
+        if "ano anterior" in t or "mesmo mês" in t or "igual" in t:
+            return "yoy"
+        if "no ano" in t:
+            return None
+        if "sazonal" in t:
+            return "mm"
+        return None
+    if "índice" in t or "indice" in t:
+        return "sa" if "sazonal" in t else "idx"
+    return None
+
+
+def _desloca(per, n):
+    """Soma n meses a um período 'AAAAMM'."""
+    m = int(per[:4]) * 12 + int(per[4:6]) - 1 + n
+    return f"{m // 12:04d}{m % 12 + 1:02d}"
+
+
+def _completa(med):
+    """Variações que o IBGE não devolveu são calculadas dos números-índice (e registradas no debug)."""
+    derivadas = []
+    sa, idx = med.get("sa", {}), med.get("idx", {})
+    if "mm" not in med and sa:
+        med["mm"] = {p: round((v / sa[_desloca(p, -1)] - 1) * 100, 1) for p, v in sa.items() if _desloca(p, -1) in sa}
+        derivadas.append("mm")
+    if "yoy" not in med and idx:
+        med["yoy"] = {p: round((v / idx[_desloca(p, -12)] - 1) * 100, 1) for p, v in idx.items() if _desloca(p, -12) in idx}
+        derivadas.append("yoy")
+    if "a12" not in med and idx:
+        med["a12"] = {}
+        for p in idx:
+            atual = [_desloca(p, -k) for k in range(12)]
+            antes = [_desloca(p, -k) for k in range(12, 24)]
+            if all(q in idx for q in atual + antes):
+                med["a12"][p] = round((sum(idx[q] for q in atual) / sum(idx[q] for q in antes) - 1) * 100, 1)
+        derivadas.append("a12")
+    return derivadas
+
+
+def indicador_ibge(tabela, ultimos, atividades, nome):
+    """Série mensal do IBGE por atividade. `atividades`: {chave: nome da categoria (minúsculo, sem número)}.
+    Devolve {chave: {sa, idx, mm, yoy, a12: [[AAAA-MM, valor], ...]}}; uma atividade que não vier não derruba as outras."""
+    alvos = set(atividades.values())
+    linhas = sidra_tabela(tabela, ultimos, lambda n: _limpo(n) in alvos)
+    saida, soltas = {}, set()
+    for chave, alvo in atividades.items():
+        med = {}
+        for ln in linhas:
+            if not any(_limpo(d) == alvo for d in ln["dims"]):
+                continue
+            texto = " | ".join(d for d in ln["dims"] if _limpo(d) != alvo)
+            m = medida_ibge(texto, ln["unid"])
+            if m is None:
+                soltas.add(f"{texto} [{ln['unid']}]")
+                continue
+            med.setdefault(m, {})[ln["per"]] = ln["v"]
+        if "sa" not in med:
+            debug["avisos"].append(f"{nome}/{chave}: sem número-índice com ajuste sazonal (medidas achadas: {sorted(med)})")
+            continue
+        derivadas = _completa(med)
+        sa = med["sa"]
+        if len(sa) < 30 or not all(50 < v < 160 for v in sa.values()):
+            raise RuntimeError(f"{nome}/{chave}: índice com ajuste sazonal fora do esperado ({len(sa)} meses; últimos {sorted(sa.items())[-3:]})")
+        if any(abs(v) > 15 for v in med["mm"].values()) or any(abs(v) > 40 for v in med["yoy"].values()):
+            raise RuntimeError(f"{nome}/{chave}: variação fora do esperado (mm {sorted(med['mm'].items())[-3:]}, yoy {sorted(med['yoy'].items())[-3:]})")
+        saida[chave] = {m: [[f"{p[:4]}-{p[4:6]}", v] for p, v in sorted(d.items())] for m, d in med.items() if m in ("sa", "idx", "mm", "yoy", "a12")}
+        debug["avisos"].append(f"{nome}/{chave}: último mês {saida[chave]['sa'][-1][0]}; sa {saida[chave]['sa'][-1][1]}, "
+                               f"mm {saida[chave]['mm'][-1]}, yoy {saida[chave]['yoy'][-1]}, a12 {saida[chave].get('a12', [None])[-1]}; calculadas aqui: {derivadas or 'nenhuma'}")
+    if soltas:
+        debug["avisos"].append(f"{nome}: linhas ignoradas {sorted(soltas)[:12]}")
+    return saida
+
+
+def producao_industrial():
+    """Produção industrial (IBGE, PIM-PF, tabela 8888, base 2022=100): indústria geral."""
+    out = indicador_ibge(8888, 62, {"geral": "indústria geral"}, "Indústria")
+    if "geral" not in out:
+        raise RuntimeError("PIM-PF: categoria 'Indústria geral' não encontrada; ver debug['avisos']")
+    return out["geral"]
+
+
+def varejo():
+    """Volume de vendas do comércio varejista (IBGE, PMC, tabela 8880, base 2022=100): restrito e ampliado."""
+    out = indicador_ibge(8880, 62, {"restrito": "comércio varejista", "ampliado": "comércio varejista ampliado"}, "Varejo")
+    if "restrito" not in out:
+        raise RuntimeError("PMC: categoria 'Comércio varejista' não encontrada; ver debug['avisos']")
+    return out
+
+
 def main():
     antigo = json.loads(DADOS.read_text(encoding="utf-8")) if DADOS.exists() else {}
     novo = dict(antigo)
     essenciais_ok = True
     for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("focus", focus, False),
                              ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False),
-                             ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False), ("fiscal", fiscal, False)]:
+                             ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False), ("fiscal", fiscal, False),
+                             ("credito", credito, False), ("industria", producao_industrial, False), ("varejo", varejo, False)]:
         try:
             novo[nome] = fn()
             print(f"ok: {nome}")

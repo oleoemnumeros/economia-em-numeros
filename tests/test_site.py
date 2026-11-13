@@ -59,7 +59,7 @@ class TestSite(unittest.TestCase):
 
     def test_canonical_e_sitemap(self):
         s = self.ler("sitemap.xml")
-        self.assertEqual(s.count("<url>"), 5 + 16 + 1 + 27 + 2 + 1 + 1)
+        self.assertEqual(s.count("<url>"), 5 + 16 + 1 + 27 + 2 + 1 + 1 + 2)
         self.assertNotIn("404", s)
         self.assertIn('<link rel="canonical" href="https://economiaemnumeros.com.br/inflacao/salvador/">', self.ler("inflacao/salvador/index.html"))
         self.assertIn('content="noindex"', self.ler("404.html"))
@@ -216,11 +216,11 @@ class TestSemDadosNovos(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             dados = json.loads(gravar(d / "x.json").read_text(encoding="utf-8"))
-            for k in ("desocupacao", "caged", "atas", "cambio", "ibc", "pib", "fiscal"):
+            for k in ("desocupacao", "caged", "atas", "cambio", "ibc", "pib", "fiscal", "credito", "industria", "varejo"):
                 dados.pop(k)
             (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
             cam = g.gerar(d / "dados.json", d / "docs", resumos_path=d / "nao_existe.json")
-            self.assertEqual(len(cam), 22)  # sem Emprego/Atividade/Câmbio/Contas públicas: 5 básicas + 16 áreas + /dados/
+            self.assertEqual(len(cam), 22)  # sem Emprego/Atividade/Indústria/Crédito/Câmbio/Contas públicas: 5 básicas + 16 áreas + /dados/
             self.assertFalse((d / "docs" / "emprego").exists())
             for rel in ("index.html", "juros/index.html"):
                 t = (d / "docs" / rel).read_text(encoding="utf-8")
@@ -278,6 +278,162 @@ class TestSoUmaFonteNova(unittest.TestCase):
         self.assertNotIn("/cambio/", (docs / "index.html").read_text(encoding="utf-8"))
 
 
+class TestCreditoEIndustriaVarejo(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        tmp = Path(cls.tmp.name)
+        cls.saida = tmp / "docs"
+        cls.caminhos = g.gerar(gravar(tmp / "dados.json"), cls.saida)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def ler(self, rel):
+        return (self.saida / rel).read_text(encoding="utf-8")
+
+    def csv(self, slug):
+        return (self.saida / "dados" / f"{slug}.csv").read_bytes().decode("utf-8-sig")
+
+    def test_paginas_menu_e_sitemap(self):
+        self.assertIn("/credito/", self.caminhos)
+        self.assertIn("/industria-e-varejo/", self.caminhos)
+        for rel in ("index.html", "credito/index.html", "juros/index.html"):
+            t = self.ler(rel)
+            self.assertIn('<a href="/credito/"', t, rel)
+            self.assertIn('<a href="/industria-e-varejo/"', t, rel)
+        s = self.ler("sitemap.xml")
+        self.assertIn("https://economiaemnumeros.com.br/credito/", s)
+        self.assertIn("https://economiaemnumeros.com.br/industria-e-varejo/", s)
+        self.assertIn('<link rel="canonical" href="https://economiaemnumeros.com.br/credito/">', self.ler("credito/index.html"))
+
+    def test_credito_numeros_na_pagina(self):
+        t = sem_dados(self.ler("credito/index.html"))
+        self.assertEqual(t.count("<h1"), 1)
+        self.assertIn("<strong>62,4% ao ano</strong> em setembro de 2026", t)      # juros do crédito livre PF
+        self.assertIn("<strong>6,0%</strong>", t)                                   # inadimplência PF
+        self.assertIn("<strong>50,1% da renda de 12 meses</strong>", t)              # endividamento (agosto)
+        self.assertIn("(dados de agosto de 2026)", t)                                # defasagem avisada
+        self.assertIn("▲ 7,4 p.p. em 12 meses", t)
+        self.assertIn("+7,4 p.p.", t)                                                # tabela de últimas leituras
+        for rot in ("Crédito livre (PF)", "Meta da Selic", "% da carteira", "% da renda mensal"):
+            self.assertIn(rot, t)
+        self.assertIn("Boletim Focus", t)                                            # expectativas de Selic e IPCA
+
+    def test_credito_csv(self):
+        c = self.csv("juros-credito-familias").split("\r\n")
+        self.assertEqual(c[0], "Mês;Juros do crédito livre às pessoas físicas (% ao ano);Juros do crédito às pessoas físicas, total (% ao ano);Meta da Selic no fim do mês (% ao ano)")
+        self.assertEqual(c[1].split(";")[0], "2016-01")                              # histórico inteiro, não só os 60 meses do gráfico
+        self.assertEqual(c[1].split(";")[3], "14,25")                                # Selic de jan/2016 (meta 14,25)
+        self.assertTrue(c[-2].startswith("2026-09;62,4;48;"), c[-2])
+        e = self.csv("endividamento-familias").split("\r\n")
+        self.assertTrue(e[-2].startswith("2026-08;50,1"), e[-2])                      # sem set/2026: sai com mais defasagem
+
+    def test_industria_varejo_numeros_na_pagina(self):
+        t = sem_dados(self.ler("industria-e-varejo/index.html"))
+        self.assertEqual(t.count("<h1"), 1)
+        self.assertIn("A produção industrial <strong>recuou 0,8%</strong> em setembro de 2026", t)
+        self.assertIn("ficou 1,2% abaixo do nível de setembro de 2025", t)
+        self.assertIn("O volume de vendas do varejo <strong>cresceu 0,4%</strong> em agosto de 2026", t)  # varejo sai um mês depois
+        self.assertIn("ficou 1,9% acima do nível de agosto de 2025", t)
+        self.assertIn("<title>Produção industrial −0,8% em setembro e vendas no varejo +0,4% em agosto</title>", t)
+        self.assertIn("−0,8%", t)
+        self.assertIn("+1,9%", t)
+        self.assertIn("Varejo ampliado", t)
+        self.assertEqual(t.count("<tr><td"), 3)                                      # tabela de últimas leituras: indústria, varejo e ampliado
+        self.assertIn("Último dado: indústria −1,2% (set/2026); varejo 1,9% (ago/2026)", t)
+
+    def test_industria_varejo_csv_e_fontes(self):
+        c = self.csv("industria-varejo-indice").split("\r\n")
+        self.assertEqual(c[0].split(";")[0], "Mês")
+        self.assertEqual(len(c[0].split(";")), 4)
+        self.assertEqual(c[1].split(";")[0], "2021-08")                              # 62 meses
+        self.assertEqual(len(c) - 2, 62)
+        ultimo = c[-2].split(";")
+        self.assertEqual(ultimo[0], "2026-09")
+        self.assertEqual(ultimo[2], "")                                              # varejo ainda não saiu em set/2026: célula vazia, não zero
+        self.assertIn("tabela 8888", self.ler("industria-e-varejo/index.html"))
+        self.assertIn("tabela 8880", self.ler("industria-e-varejo/index.html"))
+
+    def test_dados_lista_novos_grupos_em_ordem(self):
+        t = self.ler("dados/index.html")
+        for slug in ("juros-credito-familias", "inadimplencia-familias", "endividamento-familias", "comprometimento-renda",
+                     "industria-varejo-indice", "industria-varejo-12m", "industria-varejo-acumulado", "producao-industrial-mensal", "varejo-mensal"):
+            self.assertIn(f'/dados/{slug}.csv', t)
+        self.assertLess(t.index("<h2>Atividade</h2>"), t.index("<h2>Indústria e varejo</h2>"))
+        self.assertLess(t.index("<h2>Indústria e varejo</h2>"), t.index("<h2>Crédito</h2>"))
+        self.assertLess(t.index("<h2>Crédito</h2>"), t.index("<h2>Câmbio</h2>"))
+
+    def test_home_e_atividade_levam_as_novas_paginas(self):
+        h = self.ler("index.html")
+        self.assertIn("Os dados mensais que saem antes do PIB", h)
+        self.assertIn("Juros e inadimplência das famílias", h)
+        self.assertIn('href="/industria-e-varejo/"', self.ler("atividade/index.html"))
+        s = self.ler("sobre/index.html")
+        self.assertIn("tabela 8888", s)
+        self.assertIn("29034", s)
+
+
+class TestSoUmaFonteIbgeCredito(unittest.TestCase):
+    def gerar_com(self, mexe):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        d = Path(d.name)
+        dados = json.loads(gravar(d / "x.json").read_text(encoding="utf-8"))
+        mexe(dados)
+        (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
+        g.gerar(d / "dados.json", d / "docs")
+        return d / "docs"
+
+    def test_so_industria(self):
+        docs = self.gerar_com(lambda d: d.pop("varejo"))
+        t = (docs / "industria-e-varejo" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("A produção industrial", t)
+        self.assertNotIn("O volume de vendas do varejo", t)       # a frase de abertura só fala da indústria
+        self.assertIn("<h1>Produção industrial do Brasil", t)
+        self.assertNotIn("Varejo ampliado", t)
+        self.assertIn("<title>Produção industrial −0,8% em setembro</title>", t)
+        self.assertFalse((docs / "dados" / "varejo-mensal.csv").exists())
+        self.assertTrue((docs / "dados" / "industria-varejo-indice.csv").exists())
+
+    def test_so_varejo_sem_ampliado(self):
+        def mexe(d):
+            d.pop("industria")
+            d["varejo"].pop("ampliado")
+        docs = self.gerar_com(mexe)
+        t = (docs / "industria-e-varejo" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("O volume de vendas do varejo", t)
+        self.assertNotIn("A produção industrial <strong>", t)
+        self.assertIn("<h1>Vendas no varejo do Brasil", t)
+        self.assertNotIn("Varejo ampliado", t)
+        self.assertFalse((docs / "dados" / "producao-industrial-mensal.csv").exists())
+
+    def test_sem_a12_nao_quebra(self):
+        def mexe(d):
+            d["industria"].pop("a12")
+            for v in d["varejo"].values():
+                v.pop("a12")
+        docs = self.gerar_com(mexe)
+        t = (docs / "industria-e-varejo" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("Acumulado em 12 meses</h2>", t)
+        self.assertIn("–", t)  # a célula de 12 meses da tabela fica com traço
+
+    def test_sem_ibge_ou_sem_credito_nao_ha_pagina(self):
+        docs = self.gerar_com(lambda d: (d.pop("industria"), d.pop("varejo")))
+        self.assertFalse((docs / "industria-e-varejo").exists())
+        for rel in ("index.html", "atividade/index.html", "credito/index.html"):
+            self.assertNotIn("/industria-e-varejo/", (docs / rel).read_text(encoding="utf-8"), rel)
+        docs = self.gerar_com(lambda d: d.pop("credito"))
+        self.assertFalse((docs / "credito").exists())
+        self.assertNotIn("/credito/", (docs / "index.html").read_text(encoding="utf-8"))
+        self.assertTrue((docs / "industria-e-varejo" / "index.html").exists())
+
+    def test_credito_incompleto_nao_gera_pagina(self):
+        docs = self.gerar_com(lambda d: d["credito"].pop("endividamento"))
+        self.assertFalse((docs / "credito").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -315,7 +471,7 @@ class TestGraficosECsv(unittest.TestCase):
             self.assertEqual(n_graf, t.count("data-abre="), caminho)        # nenhum gráfico sem clique
             self.assertEqual(t.count('class="gfoot"'), n_graf, caminho)       # nem sem rodapé com fonte e data
             self.assertEqual(t.count("Baixar CSV"), n_graf, caminho)
-        self.assertEqual(total, 1 + 1 + 2 + 27 + 2 + 2 + 2 + 16 + 2)   # início, juros, emprego, 27 UFs, câmbio, atividade, inflação, 16 áreas, contas públicas
+        self.assertEqual(total, 1 + 1 + 2 + 27 + 2 + 2 + 2 + 16 + 2 + 5 + 4)   # início, juros, emprego, 27 UFs, câmbio, atividade, inflação, 16 áreas, contas públicas, indústria e varejo, crédito
 
     def test_rodape_com_fonte_e_data(self):
         t = self.htmls["/juros/"]
@@ -488,7 +644,7 @@ class TestEixos(unittest.TestCase):
                     rot = re.search(r'<text class="yl"[^>]*>(.*?)</text>', bloco)
                     self.assertIsNotNone(rot, c)
                     self.assertGreater(len(rot.group(1)), 2, c)
-            self.assertEqual(total, 55)
+            self.assertEqual(total, 64)
             t = (d / "docs" / "cambio" / "index.html").read_text(encoding="utf-8")
             self.assertIn(">R$ por US$<", t)
             t = (d / "docs" / "contas-publicas" / "index.html").read_text(encoding="utf-8")

@@ -95,6 +95,41 @@ def fiscal_exemplo() -> dict:
     return {"dbgg": dbgg, "dlsp": dlsp, "primario": primario, "nominal": nominal}
 
 
+def credito_exemplo() -> dict:
+    """Juros e inadimplência até set/2026; endividamento e comprometimento (que saem com mais defasagem) até ago/2026."""
+    a, b = meses("2016-01", "2026-09"), meses("2016-01", "2026-08")
+    inad_pf = [[m, round(3.6 + ((k * 3) % 9) / 10, 2)] for k, m in enumerate(a)]
+    inad_livre = [[m, round(5.2 + ((k * 3) % 9) / 10, 2)] for k, m in enumerate(a)]
+    juros_pf = [[m, round(40 + ((k * 5) % 17) / 2, 2)] for k, m in enumerate(a)]
+    juros_livre = [[m, round(52 + ((k * 5) % 17) / 2, 2)] for k, m in enumerate(a)]
+    endiv = [[m, round(42 + k * 0.06 + (k % 4) * 0.1, 2)] for k, m in enumerate(b)]
+    comp = [[m, round(22 + k * 0.05 + (k % 4) * 0.1, 2)] for k, m in enumerate(b)]
+    juros_livre[-1][1], juros_livre[-13][1] = 62.4, 55.0     # +7,4 p.p. em 12 meses
+    juros_pf[-1][1], inad_pf[-1][1], inad_livre[-1][1] = 48.0, 6.0, 8.1
+    endiv[-1][1], comp[-1][1], endiv[-13][1] = 50.1, 29.0, 48.6
+    return {"inad_pf": inad_pf, "inad_livre_pf": inad_livre, "juros_pf": juros_pf, "juros_livre_pf": juros_livre, "endividamento": endiv, "comprometimento": comp}
+
+
+def _ibge_exemplo(ate: str, mm_ult: float, yoy_ult: float, a12_ult: float, base: float = 100.0) -> dict:
+    ms = meses("2021-08", ate)
+    sa = [[m, round(base + k * 0.05 + (k % 3) * 0.4, 1)] for k, m in enumerate(ms)]
+    idx = [[m, round(base - 1 + k * 0.05 + ((k % 12) - 6) * 0.6, 1)] for k, m in enumerate(ms)]
+    mm = [[m, round(((k * 7) % 11 - 5) / 5, 1)] for k, m in enumerate(ms)]
+    yoy = [[m, round(((k * 5) % 13 - 6) / 4, 1)] for k, m in enumerate(ms)]
+    a12 = [[m, round(((k * 3) % 9 - 4) / 4, 1)] for k, m in enumerate(ms)]
+    mm[-1][1], yoy[-1][1], a12[-1][1] = mm_ult, yoy_ult, a12_ult
+    return {"sa": sa, "idx": idx, "mm": mm, "yoy": yoy, "a12": a12}
+
+
+def industria_exemplo() -> dict:
+    return _ibge_exemplo("2026-09", -0.8, -1.2, 0.6)
+
+
+def varejo_exemplo() -> dict:
+    """Varejo sai um mês depois da indústria: vai até ago/2026."""
+    return {"restrito": _ibge_exemplo("2026-08", 0.4, 1.9, 1.5, 104.0), "ampliado": _ibge_exemplo("2026-08", 0.2, 1.1, 0.9, 102.0)}
+
+
 def dados_exemplo() -> dict:
     ms = meses("2000-01", "2026-09")
     mensal = [[m, round(0.2 + ((i * 7) % 13) / 20, 2)] for i, m in enumerate(ms)]
@@ -118,6 +153,9 @@ def dados_exemplo() -> dict:
         "ibc": ibc_exemplo(),
         "pib": pib_exemplo(),
         "fiscal": fiscal_exemplo(),
+        "credito": credito_exemplo(),
+        "industria": industria_exemplo(),
+        "varejo": varejo_exemplo(),
         "atas": {"282": {"pdf": "https://www.bcb.gov.br/content/copom/atascopom/Copom282-not20261104282.pdf"}},
         "focus": {"data": "2026-11-10", "itens": [
             {"indicador": "Selic", "ano": 2026, "mediana": 13.5, "semana_anterior": 13.5},
