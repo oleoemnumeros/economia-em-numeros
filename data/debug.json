@@ -1,5 +1,5 @@
 {
- "inicio": "2026-11-13T18:00:18",
+ "inicio": "2026-11-13T18:27:51",
  "avisos": [
   "Desocupação: último trimestre ['202602', '2º trimestre 2026', 5.4]; último trimestre móvel ['202609', 'jul-ago-set 2026', 5.2]",
   "Caged SGS 28763 (estoque): últimas leituras [('2026-07-01', 48077210.0), ('2026-08-01', 48238272.0), ('2026-09-01', 48359577.0)]",
@@ -7,10 +7,10 @@
   "Câmbio SGS 1: últimas leituras [('2026-11-11', 5.5606), ('2026-11-12', 5.6143), ('2026-11-13', 5.6518)]",
   "IBC-Br: últimas leituras com ajuste [['2026-06', 110.37352], ['2026-07', 110.03188], ['2026-08', 110.40624]]; sem ajuste [['2026-07', 114.48992], ['2026-08', 111.71919]]",
   "PIB: últimos trimestres [{'t': '202601', 'yoy': 1.8, 'a4': 1.8, 'qoq': 1.1}, {'t': '202602', 'yoy': 2.0, 'a4': 1.9, 'qoq': 0.5}]",
-  "Fiscal dbgg (SGS 13762, dívida bruta do governo geral, % do PIB): últimas leituras [['2026-07', 82.55], ['2026-08', 82.87], ['2026-09', 82.93]]",
-  "Fiscal dlsp (SGS 4513, dívida líquida do setor público, % do PIB): últimas leituras [['2026-07', 69.11], ['2026-08', 69.27], ['2026-09', 69.98]]",
+  "Fiscal dbgg (SGS 13762, dívida bruta do governo geral, % do PIB): últimas leituras [['2026-07', 82.55], ['2026-08', 82.93], ['2026-09', 82.95]]",
+  "Fiscal dlsp (SGS 4513, dívida líquida do setor público, % do PIB): últimas leituras [['2026-07', 69.11], ['2026-08', 69.32], ['2026-09', 70.0]]",
   "Fiscal primario (SGS 5793, NFSP, resultado primário, fluxo em 12 meses, % do PIB): últimas leituras [['2026-07', 0.67], ['2026-08', 0.62], ['2026-09', 0.52]]",
-  "Fiscal nominal (SGS 5727, NFSP, resultado nominal, fluxo em 12 meses, % do PIB): últimas leituras [['2026-07', 9.35], ['2026-08', 9.48], ['2026-09', 9.51]]",
+  "Fiscal nominal (SGS 5727, NFSP, resultado nominal, fluxo em 12 meses, % do PIB): últimas leituras [['2026-07', 9.35], ['2026-08', 9.48], ['2026-09', 9.52]]",
   "Crédito inad_pf (SGS 21084, inadimplência (atraso acima de 90 dias) da carteira das pessoas físicas, % da carteira): últimas leituras [['2026-07', 5.8], ['2026-08', 6.04], ['2026-09', 5.99]]",
   "Crédito inad_livre_pf (SGS 21112, inadimplência do crédito livre às pessoas físicas, % da carteira): últimas leituras [['2026-07', 7.78], ['2026-08', 8.03], ['2026-09', 8.09]]",
   "Crédito juros_pf (SGS 20716, taxa média de juros do crédito às pessoas físicas, % ao ano): últimas leituras [['2026-07', 37.46], ['2026-08', 38.17], ['2026-09', 38.53]]",
@@ -28,23 +28,39 @@
   "SIDRA 8881: 744 linhas, 744 com número, em https://apisidra.ibge.gov.br/values/t/8881/n1/all/v/all/p/last%2062/c11046/all; amostra [{'NC': '1', 'NN': 'Brasil', 'MC': '30', 'MN': 'Número-índice', 'V': '91.44763', 'D1C': '1', 'D1N': 'Brasil', 'D2C': '7169', 'D2N': 'PMC - Número-índice (2022=100)', 'D3C': '202108', 'D3N': 'agosto 2021', 'D4C': '56735', 'D4N': 'Índice de receita nominal de vendas no comércio varejista ampliado'}]",
   "Varejo ampliado: medida -> variável usada {'idx': ['PMC - Número-índice (2022=100) | Índice de volume de vendas no comércio varejista ampliado'], 'sa': ['PMC - Número-índice com ajuste sazonal (2022=100) | Índice de volume de vendas no comércio varejista ampliado'], 'mm': ['PMC - Variação mês/mês imediatamente anterior, com ajuste sazonal (M/M-1) | Índice de volume de vendas no comércio varejista ampliado'], 'yoy': ['PMC - Variação mês/mesmo mês do ano anterior (M/M-12) | Índice de volume de vendas no comércio varejista ampliado'], 'a12': ['PMC - Variação acumulada em 12 meses (em relação ao período anterior de 12 meses) | Índice de volume de vendas no comércio varejista ampliado']}",
   "Varejo ampliado: linhas ignoradas ['PMC - Variação acumulada no ano (em relação ao mesmo período do ano anterior) | Índice de volume de vendas no comércio varejista ampliado [%]']",
-  "Varejo ampliado: último mês 2026-09; sa 107.00045, mm ['2026-09', 0.2], yoy ['2026-09', 0.3], a12 ['2026-09', 1.3]; calculadas aqui: nenhuma"
+  "Varejo ampliado: último mês 2026-09; sa 107.00045, mm ['2026-09', 0.2], yoy ['2026-09', 0.3], a12 ['2026-09', 1.3]; calculadas aqui: nenhuma",
+  "Setor externo ca_mensal (SGS 22701, saldo mensal da conta corrente, US$ milhões): últimas leituras [['2026-07', -9520.4], ['2026-08', -5541.4], ['2026-09', -5099.7]]",
+  "Setor externo ca_12m (SGS 24419, saldo da conta corrente acumulado em 12 meses, US$ milhões): últimas leituras [['2026-07', -61932.9], ['2026-08', -63698.6], ['2026-09', -59986.1]]",
+  "Setor externo ca_pib (SGS 23079, saldo da conta corrente acumulado em 12 meses, % do PIB): últimas leituras [['2026-07', -2.45], ['2026-08', -2.5], ['2026-09', -2.33]]",
+  "Setor externo idp_mensal (SGS 22885, investimento direto no país (IDP), fluxo líquido mensal, US$ milhões): últimas leituras [['2026-07', 6968.3], ['2026-08', 7396.1], ['2026-09', 11294.5]]",
+  "Setor externo: conta corrente em 12 meses -59986 US$ milhões (2026-09); soma mensal -59986; IDP em 12 meses 88270",
+  "Reservas (SGS 13982): 2976 dias; última leitura ['2026-11-12', 367435.0]; fim de mês [['2026-09', 366821.0], ['2026-10', 369019.0], ['2026-11', 367435.0]]",
+  "Balança (MDIC): 142 meses; último 2026-10: exportação 37807.2, importação 28489.7",
+  "Balança: saldo do balanço de pagamentos (SGS 22707) menos saldo MDIC, soma de 11 meses: -8367 US$ milhões",
+  "População: 5571 municípios, soma 214211951, ano 2026",
+  "Bolsa Família 2026-11: falhou (Expecting value: line 1 column 1 (char 0))",
+  "Bolsa Família 2026-10: falhou (Expecting value: line 1 column 1 (char 0))"
  ],
- "erros": [],
+ "erros": [
+  "bolsa_familia: Bolsa Família: duas falhas seguidas, última em 2026-10: Expecting value: line 1 column 1 (char 0)"
+ ],
  "tempos": {
-  "selic": 1.9,
-  "ipca": 3.6,
-  "areas": 0.9,
-  "focus": 7.4,
+  "selic": 10.5,
+  "ipca": 9.2,
+  "areas": 3.5,
+  "focus": 9.5,
   "atas": 0.0,
-  "desocupacao": 1.2,
-  "caged": 0.2,
-  "cambio": 0.9,
+  "desocupacao": 1.4,
+  "caged": 0.9,
+  "cambio": 5.9,
   "ibc": 1.6,
   "pib": 0.2,
-  "fiscal": 8.5,
-  "credito": 7.8,
-  "industria": 1.1,
-  "varejo": 1.3
+  "fiscal": 7.0,
+  "credito": 10.1,
+  "industria": 1.7,
+  "varejo": 2.9,
+  "externo": 13.3,
+  "balanca": 1.8,
+  "bolsa_familia": 5.7
  }
 }
