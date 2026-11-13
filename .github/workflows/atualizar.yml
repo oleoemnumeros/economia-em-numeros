@@ -1,0 +1,81 @@
+name: Atualizar dados e publicar o site
+
+on:
+  # Selic e Focus mudam toda semana, o IPCA sai por volta do dia 10: o robô confere todo dia.
+  schedule:
+    - cron: "23 11 * * *"
+  # Botão "Run workflow" na aba Actions
+  workflow_dispatch:
+  # Roda quando o código do robô, do site ou o calendário do Copom muda
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - "site/**"
+      - "data/copom_calendario.json"
+      - ".github/workflows/atualizar.yml"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: atualizar
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # O site é publicado direto pelo Actions; as páginas (docs/) não ficam no repositório.
+    environment:
+      name: github-pages
+      url: ${{ steps.publicar.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install requests==2.32.3
+
+      - name: Rodar os testes
+        run: python -m unittest discover -s tests -v
+
+      - name: Baixar dados do Banco Central e do IBGE
+        id: robo
+        continue-on-error: true
+        run: python scripts/atualizar.py
+
+      - name: Gerar site
+        run: python scripts/gerar_site.py
+
+      - name: Salvar dados no repositório
+        run: |
+          git config user.name "Economia em Números (robô)"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/dados.json data/debug.json
+          if git diff --cached --quiet; then
+            echo "Sem mudanças."
+          else
+            git commit -m "Dados atualizados: $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+      - name: Empacotar site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Publicar no GitHub Pages
+        id: publicar
+        uses: actions/deploy-pages@v4
+
+      - name: Falhar se o robô falhou
+        if: steps.robo.outcome == 'failure'
+        run: |
+          echo "O robô falhou em alguma fonte. Veja data/debug.json."
+          exit 1
