@@ -9,6 +9,8 @@ Baixa as séries públicas e grava data/dados.json:
   - Atas do Copom: confere no site do Banco Central se o PDF de cada ata já existe
   - Desocupação (PNAD Contínua, SIDRA 4099 por UF e 6381 trimestre móvel) e saldo de vagas formais (Novo Caged, SGS 28763)
   - Contas públicas (Banco Central): dívida bruta (SGS 13762), dívida líquida (4513), resultado primário (5793) e nominal (5727), em % do PIB
+  - Setor externo: conta corrente (SGS 22701, 24419, 23079), investimento direto no país (22885), reservas internacionais (13982) e balança comercial (Secex/MDIC, pelo Comex em Números)
+  - Bolsa Família por município (MDS, API MI Social + população do IBGE), gravado à parte em data/bolsa_familia.json
 
 Roda no GitHub Actions (a rede do ambiente de desenvolvimento não alcança essas APIs).
 Se uma fonte opcional falhar, o robô mantém o dado anterior daquela fonte e segue.
@@ -395,6 +397,245 @@ def credito():
     return out
 
 
+EXTERNO = (  # chave, código SGS, faixa plausível, descrição
+    ("ca_mensal", 22701, (-40000, 25000), "saldo mensal da conta corrente, US$ milhões"),
+    ("ca_12m", 24419, (-150000, 100000), "saldo da conta corrente acumulado em 12 meses, US$ milhões"),
+    ("ca_pib", 23079, (-8, 4), "saldo da conta corrente acumulado em 12 meses, % do PIB"),
+    ("idp_mensal", 22885, (-20000, 40000), "investimento direto no país (IDP), fluxo líquido mensal, US$ milhões"),
+)
+RESERVAS_SGS = 13982  # reservas internacionais, conceito liquidez, diária, US$ milhões
+BALANCA_URL = "https://raw.githubusercontent.com/oleoemnumeros/comex-em-numeros/main/data/dados.json"
+
+
+def setor_externo():
+    """Setor externo (Banco Central): conta corrente (mensal, 12 meses e % do PIB), investimento direto no país e reservas internacionais.
+    A soma de 12 meses da série mensal tem de bater com a série acumulada, e o sinal do % do PIB com o do saldo: pega código trocado."""
+    out = {}
+    for chave, cod, (lo, hi), desc in EXTERNO:
+        serie = sgs(cod, dt.date(2015, 1, 1))
+        if len(serie) < 60 or not all(lo <= v <= hi for _, v in serie):
+            raise RuntimeError(f"SGS {cod} ({desc}) fora do esperado ({len(serie)} meses, faixa {lo} a {hi}); últimas leituras: {[(d.isoformat(), v) for d, v in serie[-3:]]}")
+        out[chave] = [[d.strftime("%Y-%m"), v] for d, v in serie]
+        debug["avisos"].append(f"Setor externo {chave} (SGS {cod}, {desc}): últimas leituras {out[chave][-3:]}")
+    mensal = dict(out["ca_mensal"])
+    m12, v12 = out["ca_12m"][-1]
+    meses = []
+    a, mm = int(m12[:4]), int(m12[5:])
+    for _ in range(12):
+        meses.append(f"{a}-{mm:02d}")
+        mm -= 1
+        if mm == 0:
+            a, mm = a - 1, 12
+    if not all(m in mensal for m in meses):
+        raise RuntimeError(f"Conta corrente: faltam meses na série mensal para somar 12 meses até {m12}")
+    soma = sum(mensal[m] for m in meses)
+    if abs(soma - v12) > max(2000.0, 0.04 * abs(v12)):
+        raise RuntimeError(f"Conta corrente: a soma dos 12 meses da série mensal ({soma:.0f}) não bate com a série acumulada ({v12:.0f}) em {m12}; conferir SGS 22701 e 24419")
+    pib = dict(out["ca_pib"])
+    if m12 in pib and abs(v12) > 3000 and (pib[m12] > 0) != (v12 > 0):
+        raise RuntimeError(f"Conta corrente: o sinal do % do PIB ({pib[m12]}) não bate com o do saldo em 12 meses ({v12}) em {m12}")
+    idp12 = sum(v for _, v in out["idp_mensal"][-12:])
+    if not 15000 <= idp12 <= 200000:
+        raise RuntimeError(f"IDP: soma dos últimos 12 meses ({idp12:.0f} US$ milhões) fora do esperado; conferir SGS 22885")
+    debug["avisos"].append(f"Setor externo: conta corrente em 12 meses {v12:.0f} US$ milhões ({m12}); soma mensal {soma:.0f}; IDP em 12 meses {idp12:.0f}")
+
+    diaria = sgs(RESERVAS_SGS, dt.date(2015, 1, 1))
+    if len(diaria) < 500 or not all(150000 <= v <= 600000 for _, v in diaria):
+        raise RuntimeError(f"Reservas (SGS {RESERVAS_SGS}) fora do esperado ({len(diaria)} dias, faixa 150 a 600 bilhões); últimas leituras: {[(d.isoformat(), v) for d, v in diaria[-3:]]}")
+    ult_dia, ult_v = diaria[-1]
+    if (HOJE - ult_dia).days > 30:
+        raise RuntimeError(f"Reservas: último dado é de {ult_dia}, mais de 30 dias atrás")
+    fim_mes = {}
+    for d, v in diaria:
+        fim_mes[d.strftime("%Y-%m")] = v
+    out["reservas"] = [[m, v] for m, v in sorted(fim_mes.items())]
+    out["reservas_ultima"] = [ult_dia.isoformat(), ult_v]
+    debug["avisos"].append(f"Reservas (SGS {RESERVAS_SGS}): {len(diaria)} dias; última leitura {out['reservas_ultima']}; fim de mês {out['reservas'][-3:]}")
+    return out
+
+
+def balanca():
+    """Balança comercial mensal (Secex/MDIC, Comex Stat), lida do arquivo de dados do Comex em Números (mesma família, já validado lá).
+    Valores em US$ milhões (FOB). Se o BCB 22707 (balanço de pagamentos) responder, só registra a diferença no diagnóstico."""
+    d = get(BALANCA_URL, tentativas=3, timeout=120).json()
+    mensal = d.get("mensal") or {}
+    exp = {x["mes"]: round(float(x["fob"]) / 1e6, 1) for x in mensal.get("export") or []}
+    imp = {x["mes"]: round(float(x["fob"]) / 1e6, 1) for x in mensal.get("import") or []}
+    meses = sorted(set(exp) & set(imp))
+    if len(meses) < 60:
+        raise RuntimeError(f"Balança: só {len(meses)} meses em comum entre exportação e importação")
+    if not all(5000 <= exp[m] <= 80000 and 5000 <= imp[m] <= 70000 for m in meses):
+        raise RuntimeError(f"Balança: valores fora de US$ 5 a 80 bilhões por mês; últimos: {[(m, exp[m], imp[m]) for m in meses[-3:]]}")
+    ult = dt.date(int(meses[-1][:4]), int(meses[-1][5:]), 1)
+    if (HOJE - ult).days > 150:
+        raise RuntimeError(f"Balança: último mês ({meses[-1]}) tem mais de 5 meses")
+    out = {"mes": meses[-1], "export": [[m, exp[m]] for m in meses], "import": [[m, imp[m]] for m in meses]}
+    debug["avisos"].append(f"Balança (MDIC): {len(meses)} meses; último {meses[-1]}: exportação {exp[meses[-1]]}, importação {imp[meses[-1]]}")
+    try:
+        bp = dict((d.strftime("%Y-%m"), v) for d, v in sgs(22707, dt.date(2025, 1, 1)))
+        comuns = [m for m in meses[-12:] if m in bp]
+        if comuns:
+            dif = sum(bp[m] - (exp[m] - imp[m]) for m in comuns)
+            debug["avisos"].append(f"Balança: saldo do balanço de pagamentos (SGS 22707) menos saldo MDIC, soma de {len(comuns)} meses: {dif:.0f} US$ milhões")
+    except Exception as e:  # noqa: BLE001 - só diagnóstico
+        debug["avisos"].append(f"Balança: conferência com o SGS 22707 não feita ({e})")
+    return out
+
+
+
+# ---------------------------------------------------------------- Bolsa Família por município
+BF_ARQ = RAIZ / "data" / "bolsa_familia.json"
+BF_URL = "https://aplicacoes.mds.gov.br/sagi/servicos/misocial"  # API MI Social (MDS/SAGI), sem chave
+BF_CAMPOS = ("ibge:codigo_ibge,anomes:anomes_s,f:qtd_familias_beneficiarias_bolsa_familia_i,"
+             "p:qtd_pessoas_beneficiarias_bolsa_familia_i,v:valor_repassado_bolsa_familia_f")
+BF_INICIO = "2023-03"  # mês em que o novo Bolsa Família substituiu o Auxílio Brasil
+BF_MAX_MESES = 48
+BF_LINHAS = 10000      # linhas por página da consulta (o Brasil tem ~5,6 mil municípios)
+BF_ORCAMENTO_S = 600   # tempo máximo da coleta do Bolsa Família; o que faltar entra na próxima execução
+
+
+def bf_meses_candidatos(hoje=None):
+    """Meses AAAA-MM de BF_INICIO até o mês atual (no máximo BF_MAX_MESES, os mais recentes)."""
+    hoje = hoje or HOJE
+    a, m = int(BF_INICIO[:4]), int(BF_INICIO[5:])
+    out = []
+    while (a, m) <= (hoje.year, hoje.month):
+        out.append(f"{a}-{m:02d}")
+        m += 1
+        if m == 13:
+            a, m = a + 1, 1
+    return out[-BF_MAX_MESES:]
+
+
+def bf_baixa_mes(ym):
+    """Todas as linhas município x mês do Bolsa Família no mês `ym` (AAAA-MM): {ibge de 6 dígitos: [famílias, pessoas, R$ repassados]}."""
+    out, inicio, total = {}, 0, None
+    while True:
+        r = get(BF_URL, {"q": "*", "fq": [f"anomes_s:{ym.replace('-', '')}", "tipo_s:mes_mu"], "wt": "json", "omitHeader": "true",
+                         "fl": BF_CAMPOS, "rows": str(BF_LINHAS), "start": str(inicio), "sort": "codigo_ibge asc"}, tentativas=3, timeout=120)
+        resp = (r.json() or {}).get("response") or {}
+        docs = resp.get("docs") or []
+        total = resp.get("numFound", len(docs)) if total is None else total
+        for d in docs:
+            cod = str(d.get("ibge", "")).strip()
+            if len(cod) == 7 and cod.isdigit():
+                cod = cod[:6]
+            if len(cod) != 6 or not cod.isdigit():
+                continue
+            try:
+                f, p, v = (float(d[k]) if d.get(k) not in (None, "") else 0.0 for k in ("f", "p", "v"))
+            except (TypeError, ValueError):
+                continue
+            out[cod] = [int(round(f)), int(round(p)), round(v, 2)]
+        inicio += len(docs)
+        if not docs or inicio >= total:
+            break
+    if len(out) < len(docs) and not out:
+        debug["avisos"].append(f"Bolsa Família {ym}: nenhuma linha utilizável; amostra {docs[:2]}")
+    return out
+
+
+def bf_confere_mes(ym, mes, anterior):
+    """Recusa um mês que não parece a folha do Bolsa Família (município faltando, mês ainda não publicado, unidade errada)."""
+    tf = sum(x[0] for x in mes.values())
+    tp = sum(x[1] for x in mes.values())
+    tv = sum(x[2] for x in mes.values())
+    if len(mes) < 5000:
+        return f"só {len(mes)} municípios (esperado mais de 5.000)"
+    if not 5e6 <= tf <= 3e7:
+        return f"{tf:.0f} famílias no total, fora de 5 a 30 milhões"
+    if not tf <= tp <= 6 * tf:
+        return f"{tp:.0f} pessoas para {tf:.0f} famílias, relação absurda"
+    if not 100 <= tv / tf <= 2500:
+        return f"benefício médio de R$ {tv / tf:.0f}, fora de R$ 100 a R$ 2.500"
+    if anterior and tf < 0.6 * anterior:
+        return f"{tf:.0f} famílias, menos de 60% do mês anterior ({anterior:.0f}); publicação provavelmente incompleta"
+    return None
+
+
+def bf_populacao():
+    """População residente estimada por município (IBGE, SIDRA 6579): {ibge de 6 dígitos: [nome, sigla da UF]}, {ibge: população}, ano."""
+    linhas = get("https://apisidra.ibge.gov.br/values/t/6579/n6/all/v/9324/p/last%201", tentativas=3, timeout=120).json()
+    cab, dados = linhas[0], linhas[1:]
+    nomes, pop, anos = {}, {}, set()
+    for x in dados:
+        try:
+            v = int(float(x.get("V")))
+        except (TypeError, ValueError):
+            continue
+        cod = str(x.get("D1C", ""))[:6]
+        nome, _, uf = str(x.get("D1N", "")).rpartition(" - ")
+        if len(cod) != 6 or not cod.isdigit() or not nome or len(uf) != 2:
+            continue
+        nomes[cod], pop[cod] = [nome.strip(), uf], v
+        anos.add(str(x.get("D3C", "")))
+    if len(pop) < 5400 or not 190e6 <= sum(pop.values()) <= 260e6:
+        raise RuntimeError(f"População (SIDRA 6579): {len(pop)} municípios, soma {sum(pop.values())}; cabeçalho {cab}")
+    ano = max(anos) if anos else ""
+    debug["avisos"].append(f"População: {len(pop)} municípios, soma {sum(pop.values())}, ano {ano}")
+    return nomes, pop, ano
+
+
+def bolsa_familia():
+    """Bolsa Família por município e mês (famílias, pessoas, R$ repassados). Guarda tudo em data/bolsa_familia.json:
+    baixa os meses que faltam (do mais novo ao mais antigo, dentro de um orçamento de tempo) e refaz o último mês guardado,
+    que pode ser revisado. O arquivo é determinístico (sem data de geração) para não gerar commit à toa."""
+    antigo = json.loads(BF_ARQ.read_text(encoding="utf-8")) if BF_ARQ.exists() else {}
+    meses = dict(antigo.get("meses") or {})
+    nomes, pop, ano = antigo.get("nomes"), antigo.get("pop"), antigo.get("pop_ano", "")
+    if not nomes or not pop:
+        nomes, pop, ano = bf_populacao()
+    t0 = time.time()
+    candidatos = bf_meses_candidatos()
+    faltam = [m for m in reversed(candidatos) if m not in meses]
+    refazer = [max(meses)] if meses else []
+    seguidas = 0
+    novos = 0
+    for ym in refazer + faltam:
+        if time.time() - t0 > BF_ORCAMENTO_S:
+            debug["avisos"].append(f"Bolsa Família: orçamento de {BF_ORCAMENTO_S}s esgotado; faltam {[m for m in faltam if m not in meses][:6]}... para a próxima execução")
+            break
+        try:
+            mes = bf_baixa_mes(ym)
+        except Exception as e:  # noqa: BLE001
+            seguidas += 1
+            debug["avisos"].append(f"Bolsa Família {ym}: falhou ({e})")
+            if seguidas >= 2:
+                raise RuntimeError(f"Bolsa Família: duas falhas seguidas, última em {ym}: {e}") from e
+            continue
+        seguidas = 0
+        if not mes or sum(x[0] for x in mes.values()) == 0:
+            debug["avisos"].append(f"Bolsa Família {ym}: sem dados (mês ainda não publicado), {len(mes)} linhas")
+            continue
+        vizinho = [m for m in sorted(meses) if m < ym]
+        anterior = sum(x[0] for x in meses[vizinho[-1]].values()) if vizinho else None
+        motivo = bf_confere_mes(ym, mes, anterior)
+        if motivo:
+            # com histórico guardado, um mês recusado costuma ser a folha do mês corrente ainda incompleta: só avisa
+            (debug["avisos"] if meses else debug["erros"]).append(f"Bolsa Família {ym}: recusado, {motivo}")
+            continue
+        meses[ym] = {c: x for c, x in sorted(mes.items()) if c in nomes}
+        novos += 1
+        tf, tp, tv = (sum(x[i] for x in meses[ym].values()) for i in range(3))
+        debug["avisos"].append(f"Bolsa Família {ym}: {len(mes)} municípios, {tf:,} famílias, {tp:,} pessoas, R$ {tv:,.0f}; amostra {list(meses[ym].items())[:2]}")
+    if not meses:
+        raise RuntimeError("Bolsa Família: nenhum mês foi baixado")
+    meses = {m: meses[m] for m in sorted(meses)[-BF_MAX_MESES:]}
+    anterior_ok = None
+    for ym in sorted(meses):  # a verificação mês a mês só vê o vizinho já guardado; aqui o conjunto final é conferido em ordem
+        tf = sum(x[0] for x in meses[ym].values())
+        if anterior_ok and tf < 0.6 * anterior_ok:
+            (debug["avisos"] if antigo.get("meses") else debug["erros"]).append(
+                f"Bolsa Família {ym}: recusado, {tf:.0f} famílias, menos de 60% do mês anterior ({anterior_ok:.0f}); publicação provavelmente incompleta")
+            del meses[ym]
+            continue
+        anterior_ok = tf
+    BF_ARQ.write_text(json.dumps({"fonte": "MDS/SAGI (MI Social); população: IBGE (SIDRA 6579)", "pop_ano": ano, "nomes": nomes, "pop": pop, "meses": meses},
+                                 ensure_ascii=False, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+    debug["avisos"].append(f"Bolsa Família: {len(meses)} meses guardados ({min(meses)} a {max(meses)}), {novos} baixados agora")
+    return {"meses": len(meses), "ultimo": max(meses)}
+
+
 def _limpo(nome):
     """Nome de categoria do SIDRA sem número na frente ('1 Indústria geral' -> 'indústria geral')."""
     return str(nome).lower().strip().lstrip("0123456789. ").strip()
@@ -550,7 +791,8 @@ def main():
     for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("focus", focus, False),
                              ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False),
                              ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False), ("fiscal", fiscal, False),
-                             ("credito", credito, False), ("industria", producao_industrial, False), ("varejo", varejo, False)]:
+                             ("credito", credito, False), ("industria", producao_industrial, False), ("varejo", varejo, False),
+                             ("externo", setor_externo, False), ("balanca", balanca, False)]:
         if not essencial and time.time() - t0 > ORCAMENTO_S:
             debug["erros"].append(f"{nome}: pulada, o robô já passou de {ORCAMENTO_S // 60} minutos (mantém o dado anterior)")
             print(f"PULADA {nome}: orçamento de tempo esgotado", file=sys.stderr, flush=True)
@@ -566,6 +808,14 @@ def main():
                 essenciais_ok = False
         debug.setdefault("tempos", {})[nome] = round(time.time() - t1, 1)
         DEBUG.write_text(json.dumps(debug, ensure_ascii=False, indent=1), encoding="utf-8")  # já grava aqui: se algo travar, o diagnóstico fica
+    t1 = time.time()
+    try:  # Bolsa Família fica em arquivo próprio (data/bolsa_familia.json); falha aqui não mexe no resto
+        bolsa_familia()
+        print(f"ok: bolsa_familia ({time.time() - t1:.0f}s)", flush=True)
+    except Exception as e:  # noqa: BLE001
+        debug["erros"].append(f"bolsa_familia: {e}")
+        print(f"FALHA em bolsa_familia ({time.time() - t1:.0f}s): {e}", file=sys.stderr, flush=True)
+    debug.setdefault("tempos", {})["bolsa_familia"] = round(time.time() - t1, 1)
     DEBUG.write_text(json.dumps(debug, ensure_ascii=False, indent=1), encoding="utf-8")
     if not essenciais_ok:
         print("Fonte essencial indisponível e sem dado anterior: nada foi gravado.", file=sys.stderr)

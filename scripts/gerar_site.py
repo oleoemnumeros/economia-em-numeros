@@ -13,6 +13,7 @@ import json
 import math
 import re
 import shutil
+import unicodedata
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -51,6 +52,11 @@ F_CRED_COMP = "Banco Central do Brasil (SGS 29034)"
 F_PIM = "IBGE, Pesquisa Industrial Mensal - Produção Física (SIDRA, tabela 8888)"
 F_PMC = "IBGE, Pesquisa Mensal de Comércio (SIDRA, tabela 8880)"
 F_PMC_AMP = "IBGE, Pesquisa Mensal de Comércio, varejo ampliado (SIDRA, tabela 8881)"
+F_EXT_CA = "Banco Central do Brasil, balanço de pagamentos (SGS 22701, 24419 e 23079)"
+F_EXT_IDP = "Banco Central do Brasil, investimento direto no país (SGS 22885)"
+F_EXT_RES = "Banco Central do Brasil, reservas internacionais, conceito liquidez (SGS 13982)"
+F_EXT_BAL = "Secex/MDIC (Comex Stat), via Comex em Números"
+F_BF = "MDS, Matriz de Informação Social (MI Social); população: IBGE (SIDRA, tabela 6579)"
 CRED_CHAVES = ("inad_pf", "inad_livre_pf", "juros_pf", "juros_livre_pf", "endividamento", "comprometimento")
 NUM_PRIMEIRA_REUNIAO = 260  # 30–31/01/2024; mesma regra do robô (conferida com as atas 266, 268, 274 e 276 a 281)
 ATAS_LISTA = "https://www.bcb.gov.br/publicacoes/atascopom/cronologicos"
@@ -183,7 +189,7 @@ def saldo_txt(v: float) -> str:
 
 # ------------------------------------------------------------------ dados
 class Base:
-    def __init__(self, dados: dict, calendario: dict, hoje: dt.date, resumos: dict | None = None):
+    def __init__(self, dados: dict, calendario: dict, hoje: dt.date, resumos: dict | None = None, bf: dict | None = None):
         self.d = dados
         self.hoje = hoje
         self.mud = [(dt.date.fromisoformat(a), float(v)) for a, v in dados["selic"]["meta"]]
@@ -214,6 +220,9 @@ class Base:
         self.credito = dados.get("credito") or None
         self.industria = dados.get("industria") or None
         self.varejo = dados.get("varejo") or None
+        self.externo = dados.get("externo") or None
+        self.balanca = dados.get("balanca") or None
+        self.bf = bf_prepara(bf) if bf else None
         self.csvs = {}  # slug -> dados de cada gráfico (viram os arquivos /dados/<slug>.csv)
 
     # Atas, emprego ----------------------------------------------------------
@@ -302,6 +311,79 @@ class Base:
     def tem_atividade(self) -> bool:
         return self.tem_pib or self.tem_ibc
 
+    @property
+    def tem_externo(self) -> bool:
+        e = self.externo
+        return bool(e and e.get("reservas_ultima") and all(len(e.get(k) or []) >= 14 for k in ("ca_mensal", "ca_12m", "ca_pib", "reservas")))
+
+    @property
+    def tem_balanca(self) -> bool:
+        b = self.balanca
+        return bool(b and len(b.get("export") or []) >= 14 and len(b.get("import") or []) >= 14)
+
+    @property
+    def tem_bf(self) -> bool:
+        return bool(self.bf)
+
+    def ext_stats(self) -> dict:
+        """Última leitura do setor externo: reservas (US$ bi), conta corrente em 12 meses (US$ bi e % do PIB), investimento direto em 12 meses e balança comercial."""
+        e = self.externo
+
+        def serie(k):
+            return [(m, float(v)) for m, v in e[k]]
+
+        def ult(s, escala=1.0):
+            m, v = s[-1]
+            ant = dict(s).get(mes_antes(m, 12))
+            return {"mes": m, "v": v / escala, "dif12": (v - ant) / escala if ant is not None else None, "serie": [(a, b / escala) for a, b in s]}
+
+        def soma12(d, m):
+            ms = [mes_antes(m, k) for k in range(12)]
+            return sum(d[x] for x in ms) / 1000.0 if all(x in d for x in ms) else None
+
+        res_s = serie("reservas")
+        data_iso, res_v = e["reservas_ultima"]
+        m_res = data_iso[:7]
+        ant = dict(res_s).get(mes_antes(m_res, 12))
+        res = {"v": float(res_v) / 1000.0, "data": dt.date.fromisoformat(data_iso), "mes": m_res,
+               "dif12": (float(res_v) - ant) / 1000.0 if ant is not None else None, "serie": [(m, v / 1000.0) for m, v in res_s]}
+        ca12 = ult(serie("ca_12m"), 1000.0)
+        pib = ult(serie("ca_pib"))
+        idp = dict(serie("idp_mensal")) if e.get("idp_mensal") else {}
+        idp12 = None
+        if idp:
+            m = max(idp)
+            v = soma12(idp, m)
+            if v is not None:
+                a = soma12(idp, mes_antes(m, 12))
+                idp12 = {"mes": m, "v": v, "dif12": v - a if a is not None else None}
+        ca_idp = []
+        for m, v in ca12["serie"][-60:]:
+            i = soma12(idp, m) if idp else None
+            if i is not None:
+                ca_idp.append((m, v, i))
+        out = {"res": res, "ca12": ca12, "pib": pib, "idp12": idp12, "ca_idp": ca_idp, "ca_mensal": [(m, v / 1000.0) for m, v in serie("ca_mensal")], "bal": None}
+        if self.tem_balanca:
+            ex, im = dict(self.balanca["export"]), dict(self.balanca["import"])
+            ms = sorted(set(ex) & set(im))
+            ex, im = {m: float(ex[m]) for m in ms}, {m: float(im[m]) for m in ms}
+            s12 = []
+            for m in ms:
+                a, b = soma12(ex, m), soma12(im, m)
+                if a is not None and b is not None:
+                    s12.append((m, a, b, a - b))
+            if s12:
+                m = s12[-1][0]
+                d12 = {k: (x, y, z) for k, x, y, z in s12}
+                ant12 = d12.get(mes_antes(m, 12))
+                mensal = [(k, ex[k] / 1000.0, im[k] / 1000.0, (ex[k] - im[k]) / 1000.0) for k in ms]
+                dm = {k: sd for k, _, _, sd in mensal}
+                out["bal"] = {"mes": m, "sal12": s12[-1][3], "exp12": s12[-1][1], "imp12": s12[-1][2],
+                              "dif12": s12[-1][3] - ant12[2] if ant12 else None,
+                              "exp12_ant": ant12[0] if ant12 else None, "imp12_ant": ant12[1] if ant12 else None,
+                              "saldo": dm[m], "saldo_ant": dm.get(mes_antes(m, 12)), "serie12": s12, "mensal": mensal}
+        return out
+
     def nav(self) -> list:
         itens = [NAV[0]]
         if self.tem_emprego:
@@ -314,8 +396,12 @@ class Base:
             itens.append(("/credito/", "Crédito"))
         if self.tem_cambio:
             itens.append(("/cambio/", "Câmbio"))
+        if self.tem_externo:
+            itens.append(("/setor-externo/", "Setor externo"))
         if self.tem_fiscal:
             itens.append(("/contas-publicas/", "Contas públicas"))
+        if self.tem_bf:
+            itens.append(("/bolsa-familia/", "Bolsa Família"))
         return itens + NAV[1:]
 
     # Câmbio ---------------------------------------------------------------
@@ -597,11 +683,12 @@ def csv_texto(cabecalho, linhas) -> str:
     return "\ufeff" + "\r\n".join([";".join(cel(c) for c in cabecalho)] + [";".join(cel(c) for c in l) for l in linhas]) + "\r\n"
 
 
-def grafico(B, slug, titulo, fonte, svg, cabecalho, linhas, grupo, nota="", legenda="", ultimo="", casas=2, csv_linhas=None, csv_cab=None) -> str:
+def grafico(B, slug, titulo, fonte, svg, cabecalho, linhas, grupo, nota="", legenda="", ultimo="", casas=2, csv_linhas=None, csv_cab=None, csv_href=None, csv_rotulo="Baixar CSV") -> str:
     """Cartão de gráfico: título, gráfico (clicável: abre a tabela de dados), rodapé com fonte, último dado e data de atualização,
     link para o CSV e a tabela dos números. A primeira coluna é o período (texto); as demais, valores."""
-    B.csvs[slug] = {"titulo": html.unescape(re.sub(r"<[^>]+>", "", titulo)), "fonte": fonte, "ultimo": ultimo, "grupo": grupo,
-                    "cab": [html.unescape(c) for c in (csv_cab or cabecalho)], "linhas": csv_linhas if csv_linhas is not None else linhas}
+    if not csv_href:   # com csv_href o gráfico aponta para um arquivo que já existe (painel com vários municípios) e não cria um CSV próprio
+        B.csvs[slug] = {"titulo": html.unescape(re.sub(r"<[^>]+>", "", titulo)), "fonte": fonte, "ultimo": ultimo, "grupo": grupo,
+                        "cab": [html.unescape(c) for c in (csv_cab or cabecalho)], "linhas": csv_linhas if csv_linhas is not None else linhas}
 
     def fmt(v):
         if v is None:
@@ -617,12 +704,12 @@ def grafico(B, slug, titulo, fonte, svg, cabecalho, linhas, grupo, nota="", lege
                 f'<div class="chart" data-abre="d-{slug}" role="button" tabindex="0" title="Clique para ver os dados">{svg}</div>' +
                 legenda + nota +
                 f'<div class="gfoot"><span class="src">Fonte: {esc(fonte)}.{ult} Atualizado em {atual}.</span>'
-                f'<a class="csv" href="/dados/{slug}.csv" download>Baixar CSV</a></div>'
+                f'<a class="csv" href="{csv_href or f"/dados/{slug}.csv"}" download>{esc(csv_rotulo)}</a></div>'
                 f'<details class="dados" id="d-{slug}"><summary>Ver os dados do gráfico ({len(linhas)} linhas)</summary>{tab}</details>')
 
 
 def pg_dados(B: Base) -> str:
-    ordem = ["Juros e Copom", "Inflação", "Inflação por área", "Emprego", "Emprego por estado", "Atividade", "Indústria e varejo", "Crédito", "Câmbio", "Contas públicas"]
+    ordem = ["Juros e Copom", "Inflação", "Inflação por área", "Emprego", "Emprego por estado", "Atividade", "Indústria e varejo", "Crédito", "Câmbio", "Setor externo", "Contas públicas", "Bolsa Família"]
     grupos = {}
     for slug, c in B.csvs.items():
         grupos.setdefault(c["grupo"], []).append((slug, c))
@@ -643,8 +730,8 @@ def pg_dados(B: Base) -> str:
                  "<p>Os números são públicos e vêm das fontes oficiais indicadas em cada gráfico e em cada arquivo. Ao publicar, cite a fonte original e este portal, por exemplo:</p>"
                  f'<p><em>Fonte: Banco Central do Brasil, via Economia em Números (economiaemnumeros.com.br), dados atualizados em {atual}.</em></p>'
                  '<p class="small">Cada arquivo traz a série completa disponível no portal; o período mais curto mostrado no gráfico é só um recorte para leitura.</p>')
-    return pagina(B, "/dados/", "Dados em CSV: baixe as séries de juros, inflação, emprego, atividade, crédito, câmbio e contas públicas",
-                  "Arquivos CSV com os números de cada gráfico do Economia em Números: Selic, IPCA, desemprego, PIB, produção industrial, varejo, crédito, dólar e dívida pública, com fonte e data.",
+    return pagina(B, "/dados/", "Dados em CSV: baixe as séries de juros, inflação, emprego, atividade, crédito, câmbio, setor externo, contas públicas e Bolsa Família",
+                  "Arquivos CSV com os números de cada gráfico do Economia em Números: Selic, IPCA, desemprego, PIB, produção industrial, varejo, crédito, dólar, contas externas, dívida pública e Bolsa Família, com fonte e data.",
                   f"{hero}{''.join(blocos)}{citar}", "", [(None, "Dados em CSV")])
 
 
@@ -696,14 +783,14 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <a class="brand" href="/" aria-label="Economia em Números, início"><svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="6" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35"/><rect x="6" y="14" width="4" height="8" rx="1" fill="var(--eco)"/><rect x="12" y="9" width="4" height="13" rx="1" fill="var(--eco)"/><rect x="18" y="6" width="4" height="16" rx="1" fill="var(--eco2)"/></svg><b>Economia <span>em Números</span></b></a>
 <nav class="main" aria-label="Seções">{nav}</nav>
 </div></header>
-<div class="info-bar"><div><strong>Dados de {mes_nome(B.ref)}.</strong> Fontes: Banco Central e IBGE, atualizado automaticamente em {gerado}.</div></div>
+<div class="info-bar"><div><strong>Dados de {mes_nome(B.ref)}.</strong> Fontes: Banco Central, IBGE, MDIC e MDS, atualizado automaticamente em {gerado}.</div></div>
 <main>
 {bc}
 {corpo}
 </main>
 <footer><div>
 <span><strong>Economia em Números</strong> · versão beta</span>
-<span>Portal independente, sem ligação com o governo. Os números vêm de fontes públicas (Banco Central e IBGE) e não são recomendação de investimento nem aconselhamento financeiro.</span>
+<span>Portal independente, sem ligação com o governo. Os números vêm de fontes públicas (Banco Central, IBGE, MDIC e MDS) e não são recomendação de investimento nem aconselhamento financeiro.</span>
 <span>{rodape}</span>
 </div>{familia_html()}</footer>
 <script src="/assets/graficos.js?v={v}" defer></script>
@@ -806,7 +893,7 @@ def pg_inicio(B: Base) -> str:
     calc = card('<span class="eyebrow">Ferramenta</span><h2>Calculadora de correção pelo IPCA</h2>'
                 '<p class="small">Quanto R$ 1.000 de alguns anos atrás valem hoje? Corrija qualquer valor pela inflação oficial, mês a mês, desde 2000.</p>'
                 '<p><a href="/calculadora/">Abrir a calculadora →</a></p>')
-    mais = [x for x in (card_emprego_inicio(B), card_atividade_inicio(B), card_ibge_inicio(B), card_credito_inicio(B), card_cambio_inicio(B), card_fiscal_inicio(B)) if x]
+    mais = [x for x in (card_emprego_inicio(B), card_atividade_inicio(B), card_ibge_inicio(B), card_credito_inicio(B), card_cambio_inicio(B), card_externo_inicio(B), card_fiscal_inicio(B), card_bf_inicio(B)) if x]
     mais_html = "".join(f'<div class="cols">{"".join(mais[k:k + 2])}</div>' if len(mais[k:k + 2]) == 2 else mais[k] for k in range(0, len(mais), 2))
     corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{mais_html}{calc}'
     return pagina(B, "/", "Economia em Números: Selic, inflação (IPCA) e Copom em dados oficiais",
@@ -1597,6 +1684,430 @@ def pg_calc(B: Base) -> str:
                   hero + como + script, "/calculadora/", [(None, "Calculadora")])
 
 
+# ------------------------------------------------------------------ setor externo
+def deficit_txt(v: float, un="US$", sufixo=" bilhões") -> str:
+    """'déficit de US$ 12,3 bilhões' / 'superávit de ...' para um saldo em bilhões (sinal natural: negativo = déficit)."""
+    return f'{"déficit" if v < 0 else "superávit"} de {un} {nf(abs(v), 1)}{sufixo}'
+
+
+def card_externo_inicio(B: Base) -> str:
+    if not B.tem_externo:
+        return ""
+    e = B.ext_stats()
+    return card('<span class="eyebrow">Setor externo</span><h2>Dólar que entra e sai do país</h2>'
+                f'<p>As reservas internacionais somavam <strong>US$ {nf(e["res"]["v"], 0)} bilhões</strong> em {data_br(e["res"]["data"])}, '
+                f'e a conta corrente teve {deficit_txt(e["ca12"]["v"])} em 12 meses até {mes_nome(e["ca12"]["mes"])}.</p>'
+                '<p><a href="/setor-externo/">Ver conta corrente, reservas e balança comercial →</a></p>')
+
+
+def pg_setor_externo(B: Base) -> str:
+    e = B.ext_stats()
+    ca, pib, idp, res, bal = e["ca12"], e["pib"], e["idp12"], e["res"], e.get("bal")
+    lede = (f'O Brasil tinha <strong>US$ {nf(res["v"], 0)} bilhões em reservas internacionais</strong> em {data_br(res["data"])}. '
+            f'Em 12 meses até {mes_nome(ca["mes"])}, a conta corrente teve <strong>{deficit_txt(ca["v"])}</strong> ({pct(abs(pib["v"]), 1)} do PIB)')
+    if idp:
+        lede += f' e o investimento direto no país somou <strong>US$ {nf(idp["v"], 1)} bilhões</strong>'
+        if ca["v"] < 0 and idp["mes"] == ca["mes"]:
+            lede += f', o equivalente a {nf(idp["v"] / -ca["v"] * 100, 0)}% do déficit'
+    lede += "."
+    if bal:
+        lede += (f' Na balança comercial, o saldo em 12 meses até {mes_nome(bal["mes"])} foi de <strong>US$ {nf(bal["sal12"], 1)} bilhões</strong> '
+                 f'(exportações de US$ {nf(bal["exp12"], 0)} bilhões e importações de US$ {nf(bal["imp12"], 0)} bilhões).')
+    hero = card('<span class="eyebrow">Setor externo</span><h1>Contas externas do Brasil: reservas, conta corrente e balança comercial</h1>' f'<p class="lede">{lede}</p>')
+
+    tiles = [tile(f'Reservas · {mes_curtinho(res["mes"])}', nf(res["v"], 0), "US$ bi",
+                  chg(res["dif12"], 0, " US$ bi", " em 12 meses") if res["dif12"] is not None else "", "a"),
+             tile(f'Conta corrente 12m · {mes_curtinho(pib["mes"])}', nf(pib["v"], 1), "% do PIB",
+                  chg(pib["dif12"], 1, " p.p.", " em 12 meses") if pib["dif12"] is not None else "", "b")]
+    if bal:
+        tiles.append(tile(f'Balança comercial 12m · {mes_curtinho(bal["mes"])}', nf(bal["sal12"], 0), "US$ bi",
+                          chg(bal["dif12"], 0, " US$ bi", " em 12 meses") if bal["dif12"] is not None else "", "k"))
+    if idp:
+        tiles.append(tile(f'Investimento direto 12m · {mes_curtinho(idp["mes"])}', nf(idp["v"], 0), "US$ bi",
+                          chg(idp["dif12"], 0, " US$ bi", " em 12 meses") if idp["dif12"] is not None else "", "g"))
+
+    graf = []
+    rs = res["serie"]
+    graf.append(grafico(B, "reservas-internacionais", "Reservas internacionais (US$ bilhões)", F_EXT_RES,
+                        svg_linhas([{"vals": [v for _, v in rs[-96:]], "cor": "a"}], [mes_curtinho(m) for m, _ in rs[-96:]],
+                                   "Gráfico das reservas internacionais do Brasil, conceito liquidez, em US$ bilhões, no fim de cada mês, nos últimos oito anos", unidade="US$ bilhões"),
+                        ["Mês", "Reservas (US$ bi)"], rs[-96:], "Setor externo", casas=1,
+                        nota='<p class="small">Conceito liquidez, valor do último dia útil de cada mês (o mês corrente mostra o dado mais recente).</p>',
+                        ultimo=f"US$ {nf(res['v'], 1)} bilhões ({data_br(res['data'])})", csv_cab=["Mês", "Reservas internacionais, conceito liquidez (US$ bilhões, fim do mês)"],
+                        csv_linhas=rs))
+    p60 = pib["serie"][-60:]
+    graf.append(grafico(B, "conta-corrente-pib", "Conta corrente em 12 meses (% do PIB)", F_EXT_CA,
+                        svg_linhas([{"vals": [v for _, v in p60], "cor": "b"}], [mes_curtinho(m) for m, _ in p60],
+                                   "Gráfico do saldo da conta corrente acumulado em 12 meses, em % do PIB, nos últimos 60 meses", zero=True, unidade="% do PIB"),
+                        ["Mês", "Conta corrente em 12 meses (% do PIB)"], p60, "Setor externo", casas=1,
+                        nota='<p class="small">Valores negativos são déficit: o país gastou mais dólares com bens, serviços e rendas do que recebeu.</p>',
+                        ultimo=f"{pct(pib['v'], 1)} do PIB ({mes_curto(pib['mes'])})", csv_cab=["Mês", "Saldo da conta corrente em 12 meses (% do PIB)"], csv_linhas=pib["serie"]))
+    ic = e["ca_idp"]
+    if len(ic) >= 6:
+        graf.append(grafico(B, "conta-corrente-e-investimento-direto", "Conta corrente e investimento direto, em 12 meses (US$ bilhões)", f"{F_EXT_CA}; {F_EXT_IDP}",
+                            svg_linhas([{"vals": [c for _, c, _ in ic], "cor": "b"}, {"vals": [i for _, _, i in ic], "cor": "a"}], [mes_curtinho(m) for m, _, _ in ic],
+                                       "Gráfico do saldo da conta corrente e do investimento direto no país, acumulados em 12 meses, em US$ bilhões, nos últimos 60 meses", zero=True, unidade="US$ bilhões"),
+                            ["Mês", "Conta corrente", "Investimento direto"], ic, "Setor externo", casas=1,
+                            legenda=legenda_linhas(("b", "Saldo da conta corrente"), ("a", "Investimento direto no país")),
+                            nota='<p class="small">Quando a linha do investimento direto fica acima do déficit (em módulo), os dólares que entram como investimento produtivo cobrem o buraco da conta corrente.</p>',
+                            ultimo=f"conta corrente {nf(ic[-1][1], 1)}; investimento direto {nf(ic[-1][2], 1)} ({mes_curto(ic[-1][0])})",
+                            csv_cab=["Mês", "Saldo da conta corrente em 12 meses (US$ bilhões)", "Investimento direto no país em 12 meses (US$ bilhões)"], csv_linhas=ic))
+    cm = e["ca_mensal"][-36:]
+    graf.append(grafico(B, "conta-corrente-mensal", "Conta corrente no mês (US$ bilhões)", F_EXT_CA,
+                        svg_barras([v for _, v in cm], [mes_curtinho(m) for m, _ in cm], "Gráfico do saldo mensal da conta corrente, em US$ bilhões, nos últimos 36 meses", unidade="US$ bilhões"),
+                        ["Mês", "Saldo no mês (US$ bi)"], cm, "Setor externo", casas=1,
+                        nota='<p class="small">Saldo de cada mês. Barras abaixo de zero são déficit; o saldo mensal oscila bastante, por isso o acumulado em 12 meses é o número mais citado.</p>',
+                        ultimo=f"{nf(cm[-1][1], 1)} US$ bilhões ({mes_curto(cm[-1][0])})", csv_cab=["Mês", "Saldo da conta corrente no mês (US$ bilhões)"], csv_linhas=e["ca_mensal"]))
+    if bal:
+        b12 = bal["serie12"][-60:]
+        graf.append(grafico(B, "balanca-comercial-12-meses", "Exportações e importações em 12 meses (US$ bilhões)", F_EXT_BAL,
+                            svg_linhas([{"vals": [x for _, x, _, _ in b12], "cor": "a"}, {"vals": [i for _, _, i, _ in b12], "cor": "b"}], [mes_curtinho(m) for m, _, _, _ in b12],
+                                       "Gráfico das exportações e das importações de bens do Brasil acumuladas em 12 meses, em US$ bilhões, nos últimos 60 meses", unidade="US$ bilhões"),
+                            ["Mês", "Exportações", "Importações", "Saldo"], b12, "Setor externo", casas=1,
+                            legenda=legenda_linhas(("a", "Exportações"), ("b", "Importações")),
+                            nota='<p class="small">Valor FOB (sem frete e seguro), somado nos 12 meses até o mês indicado. A diferença entre as linhas é o saldo da balança comercial.</p>',
+                            ultimo=f"exportações {nf(bal['exp12'], 1)}; importações {nf(bal['imp12'], 1)}; saldo {nf(bal['sal12'], 1)} ({mes_curto(bal['mes'])})",
+                            csv_cab=["Mês", "Exportações em 12 meses (US$ bilhões)", "Importações em 12 meses (US$ bilhões)", "Saldo em 12 meses (US$ bilhões)"], csv_linhas=bal["serie12"]))
+        bm = bal["mensal"][-36:]
+        graf.append(grafico(B, "balanca-comercial-mensal", "Saldo da balança comercial no mês (US$ bilhões)", F_EXT_BAL,
+                            svg_barras([s for _, _, _, s in bm], [mes_curtinho(m) for m, _, _, _ in bm], "Gráfico do saldo mensal da balança comercial, em US$ bilhões, nos últimos 36 meses", unidade="US$ bilhões"),
+                            ["Mês", "Exportações", "Importações", "Saldo"], bm, "Setor externo", casas=1,
+                            nota='<p class="small">Exportações menos importações de bens no mês, valor FOB. Para ver por produto, país e estado, use o <a href="https://comexemnumeros.com.br/">Comex em Números</a>.</p>',
+                            ultimo=f"{nf(bm[-1][3], 1)} US$ bilhões ({mes_curto(bm[-1][0])})",
+                            csv_cab=["Mês", "Exportações (US$ bilhões)", "Importações (US$ bilhões)", "Saldo (US$ bilhões)"], csv_linhas=bal["mensal"]))
+
+    rows = [["Reservas internacionais (US$ bi)", mes_curto(res["mes"]), nf(res["v"], 1), sinal(res["dif12"], 1) if res["dif12"] is not None else "–"],
+            ["Conta corrente, 12 meses (US$ bi)", mes_curto(ca["mes"]), nf(ca["v"], 1), sinal(ca["dif12"], 1) if ca["dif12"] is not None else "–"],
+            ["Conta corrente, 12 meses (% do PIB)", mes_curto(pib["mes"]), nf(pib["v"], 1), f'{sinal(pib["dif12"], 1)} p.p.' if pib["dif12"] is not None else "–"]]
+    if idp:
+        rows.append(["Investimento direto no país, 12 meses (US$ bi)", mes_curto(idp["mes"]), nf(idp["v"], 1), sinal(idp["dif12"], 1) if idp["dif12"] is not None else "–"])
+    if bal:
+        rows += [["Balança comercial, saldo em 12 meses (US$ bi)", mes_curto(bal["mes"]), nf(bal["sal12"], 1), sinal(bal["dif12"], 1) if bal["dif12"] is not None else "–"],
+                 ["Exportações em 12 meses (US$ bi)", mes_curto(bal["mes"]), nf(bal["exp12"], 1), sinal(bal["exp12"] - bal["exp12_ant"], 1) if bal["exp12_ant"] is not None else "–"],
+                 ["Importações em 12 meses (US$ bi)", mes_curto(bal["mes"]), nf(bal["imp12"], 1), sinal(bal["imp12"] - bal["imp12_ant"], 1) if bal["imp12_ant"] is not None else "–"],
+                 ["Saldo da balança no mês (US$ bi)", mes_curto(bal["mes"]), nf(bal["saldo"], 1), sinal(bal["saldo"] - bal["saldo_ant"], 1) if bal["saldo_ant"] is not None else "–"]]
+    tab = card(cab("Últimas leituras", '<span class="src">Fonte: Banco Central e Secex/MDIC</span>') +
+               tabela(["Indicador", "Período", "Valor", "Vs. 12m"], rows, ["l", "l", "r", "r"]) +
+               '<span class="src">A última coluna é a diferença para o mesmo período um ano antes, na mesma unidade. Valores negativos de saldo são déficit.</span>')
+    texto = card("<h2>Como ler as contas externas</h2>"
+                 "<p>A <strong>conta corrente</strong> é o resultado de tudo o que o Brasil troca com o resto do mundo, fora o movimento de capitais: a balança comercial (bens), os serviços (viagens, fretes, aluguel de equipamentos), "
+                 "a renda primária (lucros e juros pagos e recebidos) e a renda secundária (remessas de trabalhadores, doações). Um <strong>déficit</strong> significa que o país gastou mais dólares do que recebeu. "
+                 "Por isso o número aparece em relação ao PIB: déficits em torno de 3% do PIB ao ano costumam ser considerados confortáveis quando há dólares de investimento para financiá-los.</p>"
+                 "<p>O <strong>investimento direto no país (IDP)</strong> é o dinheiro estrangeiro que vira capital de empresas aqui (fábricas, participações, empréstimos entre matriz e filial). "
+                 "É o financiamento considerado mais estável do déficit, em oposição aos fluxos de curto prazo na bolsa e na renda fixa.</p>"
+                 "<p>As <strong>reservas internacionais</strong> são os dólares e outros ativos externos que o Banco Central mantém para dar segurança ao câmbio e ao pagamento de compromissos. "
+                 "A <strong>balança comercial</strong> aqui é a do Ministério do Desenvolvimento, Indústria, Comércio e Serviços (MDIC), com valores FOB; ela sai logo no começo do mês seguinte e por isso aparece "
+                 "antes da conta corrente, que o Banco Central divulga cerca de quatro semanas depois do fim do mês. As duas medidas de comércio de bens diferem um pouco por metodologia.</p>"
+                 '<p>Para o preço do dólar, veja <a href="/cambio/">Câmbio</a>. Este portal mostra dados e não é recomendação de investimento.</p>')
+    foc = blocos_focus(B, {"Câmbio": FOCUS_PRINCIPAL["Câmbio"]}, "O que o mercado espera para o dólar (Boletim Focus)")
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{colunas(graf + [tab, foc])}{texto}'
+    return pagina(B, "/setor-externo/", f"Contas externas do Brasil: reservas de US$ {nf(res['v'], 0)} bi e conta corrente de {pct(pib['v'], 1)} do PIB",
+                  f"Reservas internacionais de US$ {nf(res['v'], 0)} bilhões, conta corrente com {deficit_txt(ca['v'])} em 12 meses até {mes_nome(ca['mes'])}"
+                  + (f" e balança comercial com saldo de US$ {nf(bal['sal12'], 0)} bilhões em 12 meses" if bal else "") + ". Dados do Banco Central e do MDIC.",
+                  corpo, "/setor-externo/", [(None, "Setor externo")])
+
+
+# ------------------------------------------------------------------ Bolsa Família por município
+def slugify(texto: str) -> str:
+    t = unicodedata.normalize("NFKD", str(texto)).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "-", t).strip("-")
+
+
+UF_ARTIGO = {"12": "o", "16": "o", "13": "o", "23": "o", "53": "o", "32": "o", "21": "o", "15": "o", "41": "o", "22": "o", "33": "o", "24": "o", "43": "o", "17": "o", "29": "a", "25": "a"}
+
+
+def uf_de(u2: str, nome: str) -> str:
+    """'do Acre', 'da Bahia', 'de São Paulo'."""
+    art = UF_ARTIGO.get(u2)
+    return f"d{art} {nome}" if art else f"de {nome}"
+
+
+def uf_em(u2: str, nome: str) -> str:
+    """'no Acre', 'na Bahia', 'em São Paulo'."""
+    art = UF_ARTIGO.get(u2)
+    return f"n{art} {nome}" if art else f"em {nome}"
+
+
+def _un(x: float, singular: str, plural: str) -> str:
+    """Em português, de 0 até menos de 2 o substantivo fica no singular (1,1 milhão; 0,3 milhão; 2,0 milhões)."""
+    return singular if round(x, 1) < 2 else plural
+
+
+def milh(x: float, d: int = 1) -> str:
+    """19,3 milhões / 1,2 milhão."""
+    return f"{nf(x, d)} {_un(x, 'milhão', 'milhões')}"
+
+
+def brl_abrev(v: float) -> str:
+    """R$ 13,0 bilhões / R$ 230,5 milhões / R$ 85 mil / R$ 640."""
+    if v >= 1e9:
+        return f"R$ {nf(v / 1e9, 1)} {_un(v / 1e9, 'bilhão', 'bilhões')}"
+    if v >= 1e6:
+        return f"R$ {nf(v / 1e6, 1)} {_un(v / 1e6, 'milhão', 'milhões')}"
+    if v >= 1e4:
+        return f"R$ {nf(v / 1e3, 0)} mil"
+    return f"R$ {nf(v, 0)}"
+
+
+def brl_partes(v: float):
+    """(valor, unidade) para um tile: ('R$ 13,0', 'bilhões')."""
+    if v >= 1e9:
+        return f"R$ {nf(v / 1e9, 1)}", _un(v / 1e9, "bilhão", "bilhões")
+    if v >= 1e6:
+        return f"R$ {nf(v / 1e6, 1)}", _un(v / 1e6, "milhão", "milhões")
+    if v >= 1e4:
+        return f"R$ {nf(v / 1e3, 0)}", "mil"
+    return f"R$ {nf(v, 0)}", ""
+
+
+def bf_prepara(bf: dict):
+    """Organiza o arquivo do robô (meses -> município -> [famílias, pessoas, R$]) em municípios, estados e Brasil. None se faltar dado."""
+    base = bf.get("meses") or {}
+    meses = sorted(base)
+    if len(meses) < 3:
+        return None
+    nomes, pop = bf.get("nomes") or {}, bf.get("pop") or {}
+    ult = meses[-1]
+    mun, usados = {}, {}
+    for cod, x in sorted(base[ult].items()):
+        if cod not in nomes or cod[:2] not in UFS or not x[0]:
+            continue
+        nome = nomes[cod][0]
+        s = slugify(nome) or cod
+        if (cod[:2], s) in usados:      # nomes repetidos no mesmo estado ganham o código no endereço
+            s = f"{s}-{cod}"
+        usados[(cod[:2], s)] = cod
+        mun[cod] = {"cod": cod, "nome": nome, "uf2": cod[:2], "sigla": UFS[cod[:2]][2], "uf_slug": UFS[cod[:2]][0], "slug": s, "pop": pop.get(cod) or 0,
+                    "serie": {m: tuple(base[m][cod]) for m in meses if base[m].get(cod)}}
+    if len(mun) < 100:
+        return None
+
+    def soma(itens):
+        return tuple(sum(x[i] for x in itens) for i in range(3))
+
+    def serie_de(codigos):
+        return {m: soma([mun[c]["serie"][m] for c in codigos if m in mun[c]["serie"]]) for m in meses}
+
+    ufs = {}
+    for cod in mun:
+        ufs.setdefault(cod[:2], []).append(cod)
+    uf = {}
+    for u2, cods in ufs.items():
+        slug, nome, sigla = UFS[u2]
+        uf[u2] = {"cod": u2, "slug": slug, "nome": nome, "sigla": sigla, "mun": cods, "pop": sum(mun[c]["pop"] for c in cods), "serie": serie_de(cods)}
+    br = {"pop": sum(m["pop"] for m in mun.values()), "serie": serie_de(list(mun)), "mun": list(mun)}
+
+    def stat(serie, pop):
+        f, p, v = serie[ult]
+        a = serie.get(mes_antes(ult, 12))
+        return {"f": f, "p": p, "v": v, "medio": v / f if f else 0.0, "cob": p / pop * 100 if pop else None,
+                "f12": a[0] if a else None, "medio12": a[2] / a[0] if a and a[0] else None, "cob12": a[1] / pop * 100 if a and pop else None,
+                "var12": (f / a[0] - 1) * 100 if a and a[0] else None}
+    for m in mun.values():
+        m["u"] = stat(m["serie"], m["pop"])
+    for u in uf.values():
+        u["u"] = stat(u["serie"], u["pop"])
+        ordem = sorted((c for c in u["mun"] if mun[c]["u"]["cob"] is not None), key=lambda c: -mun[c]["u"]["cob"])
+        for pos, c in enumerate(ordem, 1):
+            mun[c]["pos_cob"], mun[c]["n_cob"] = pos, len(ordem)
+    br["u"] = stat(br["serie"], br["pop"])
+    return {"meses": meses, "ult": ult, "mun": mun, "uf": uf, "br": br, "pop_ano": bf.get("pop_ano") or "", "fonte": F_BF}
+
+
+def bf_busca_html(B: Base, rotulo="Busque seu município") -> str:
+    return card(f'<span class="eyebrow">Busca</span><h2>{rotulo}</h2>'
+                '<label class="small" for="bf-busca">Digite o nome do município (sem precisar de acento)</label>'
+                '<div class="search"><input id="bf-busca" type="search" autocomplete="off" placeholder="Ex.: Salvador, Juazeiro, Santa Cruz" data-indice="/bolsa-familia/busca.json" aria-controls="bf-res"></div>'
+                '<ul id="bf-res" class="busca-res" aria-live="polite"></ul>'
+                f'<script src="/assets/busca.js?v={B.d["gerado_em"][:10]}" defer></script>')
+
+
+def card_bf_inicio(B: Base) -> str:
+    if not B.tem_bf:
+        return ""
+    b = B.bf["br"]["u"]
+    return card('<span class="eyebrow">Bolsa Família</span><h2>Quantas famílias recebem, em cada município</h2>'
+                f'<p>Em {mes_nome(B.bf["ult"])}, <strong>{milh(b["f"] / 1e6)} de famílias</strong> receberam o Bolsa Família, com repasse de {brl_abrev(b["v"])}. '
+                f'Dá para consultar os números de cada um dos {nf(len(B.bf["mun"]), 0)} municípios.</p>'
+                '<p><a href="/bolsa-familia/">Ver o Bolsa Família por estado e por município →</a></p>')
+
+
+def _bf_graf_serie(B, slug, titulo, fonte, serie, idx, escala, unidade, nome_serie, n, casas, nota, aria, csv_href=None, csv_rotulo=None, grupo="Bolsa Família", fmt_ultimo=None):
+    """Gráfico de uma coluna (idx: 0 famílias, 1 pessoas, 2 valor) do Bolsa Família, dividida por `escala`."""
+    ms = sorted(serie)[-n:]
+    vals = [serie[m][idx] / escala for m in ms]
+    ultimo = f"{fmt_ultimo(vals[-1]) if fmt_ultimo else nf(vals[-1], casas)} ({mes_curto(ms[-1])})"
+    return grafico(B, slug, titulo, B.bf["fonte"], svg_linhas([{"vals": vals, "cor": "a"}], [mes_curtinho(m) for m in ms], aria, unidade=unidade),
+                   ["Mês", nome_serie], list(zip(ms, vals)), grupo, casas=casas, nota=nota, ultimo=ultimo,
+                   csv_cab=["Mês", nome_serie], csv_linhas=[(m, serie[m][idx] / escala) for m in sorted(serie)], csv_href=csv_href, csv_rotulo=csv_rotulo)
+
+
+BF_TEXTO = ("<h2>Como ler os números do Bolsa Família</h2>"
+            "<p><strong>Famílias</strong> são as famílias que receberam o benefício no mês, e <strong>pessoas</strong>, todos os moradores dessas famílias. "
+            "O <strong>valor repassado</strong> é o total pago às famílias no mês e o <strong>benefício médio</strong> é esse valor dividido pelo número de famílias. "
+            "A <strong>proporção da população</strong> compara as pessoas beneficiadas com a população estimada do IBGE para o município, e por isso pode ser bem alta em municípios pequenos.</p>"
+            "<p>Os dados vêm da Matriz de Informação Social (MI Social) do Ministério do Desenvolvimento e Assistência Social (MDS) e acompanham a folha de pagamento de cada mês. "
+            "O mês mais recente pode ser revisado depois da publicação. O portal mostra números e não avalia o programa.</p>")
+
+
+def bf_comparacao(B: Base, m: dict) -> str:
+    """Quadro 'este município x o estado x o Brasil'."""
+    uf = B.bf["uf"][m["uf2"]]["u"]
+    br = B.bf["br"]["u"]
+    u = m["u"]
+
+    def c(v, d):
+        return nf(v, d) if v is not None else "–"
+    linhas = [["Proporção da população no programa (%)", c(u["cob"], 1), c(uf["cob"], 1), c(br["cob"], 1)],
+              ["Benefício médio por família (R$)", c(u["medio"], 0), c(uf["medio"], 0), c(br["medio"], 0)]]
+    return tabela(["Indicador", esc(m["nome"]), esc(m["sigla"]), "Brasil"], linhas, ["l", "r", "r", "r"])
+
+
+def pg_bf(B: Base) -> str:
+    x = B.bf
+    ult, br, u = x["ult"], x["br"], x["br"]["u"]
+    lede = (f'Em {mes_nome(ult)}, <strong>{milh(u["f"] / 1e6)} de famílias</strong> receberam o Bolsa Família, num total de {milh(u["p"] / 1e6)} de pessoas'
+            + (f' ({nf(u["cob"], 1)}% da população)' if u["cob"] else "") + f'. O repasse do mês foi de <strong>{brl_abrev(u["v"])}</strong>, com benefício médio de <strong>R$ {nf(u["medio"], 0)}</strong> por família.')
+    if u["f12"]:
+        lede += f' Há 12 meses eram {milh(u["f12"] / 1e6)} de famílias.'
+    hero = card('<span class="eyebrow">Bolsa Família</span><h1>Bolsa Família por estado e por município</h1>' f'<p class="lede">{lede}</p>')
+    tiles = [tile(f"Famílias · {mes_curtinho(ult)}", nf(u["f"] / 1e6, 1), _un(u["f"] / 1e6, "milhão", "milhões"), chg(u["var12"], 1, "%", " em 12 meses") if u["var12"] is not None else "", "a"),
+             tile("Valor repassado no mês", *brl_partes(u["v"]), "", "b"),
+             tile("Benefício médio", nf(u["medio"], 0), "R$ por família", chg(u["medio"] - u["medio12"], 0, " R$", " em 12 meses") if u["medio12"] is not None else "", "k"),
+             tile("Pessoas no programa", nf(u["cob"], 1) if u["cob"] else nf(u["p"] / 1e6, 1), "% da população" if u["cob"] else _un(u["p"] / 1e6, "milhão", "milhões"), "", "g")]
+    fam = grafico(B, "bolsa-familia-familias", "Famílias e pessoas no Bolsa Família (milhões)", x["fonte"],
+                  svg_linhas([{"vals": [br["serie"][m][1] / 1e6 for m in x["meses"]], "cor": "b"}, {"vals": [br["serie"][m][0] / 1e6 for m in x["meses"]], "cor": "a"}],
+                             [mes_curtinho(m) for m in x["meses"]], "Gráfico do número de famílias e de pessoas atendidas pelo Bolsa Família no Brasil, em milhões, mês a mês", unidade="milhões"),
+                  ["Mês", "Famílias (milhões)", "Pessoas (milhões)"], [(m, br["serie"][m][0] / 1e6, br["serie"][m][1] / 1e6) for m in x["meses"]], "Bolsa Família", casas=2,
+                  legenda=legenda_linhas(("a", "Famílias"), ("b", "Pessoas")),
+                  nota=f'<p class="small">Soma de todos os municípios, mês a mês, a partir de {mes_nome(x["meses"][0])}.</p>',
+                  ultimo=f"{nf(u['f'] / 1e6, 2)} milhões de famílias ({mes_curto(ult)})".replace("1,00 milhões", "1,00 milhão"),
+                  csv_cab=["Mês", "Famílias beneficiárias", "Pessoas beneficiárias", "Valor repassado (R$)"], csv_linhas=[(m, *br["serie"][m]) for m in x["meses"]])
+    val = grafico(B, "bolsa-familia-valor-repassado", "Valor repassado pelo Bolsa Família (R$ bilhões por mês)", x["fonte"],
+                  svg_linhas([{"vals": [br["serie"][m][2] / 1e9 for m in x["meses"]], "cor": "a"}], [mes_curtinho(m) for m in x["meses"]],
+                             "Gráfico do valor mensal repassado pelo Bolsa Família no Brasil, em R$ bilhões", unidade="R$ bilhões"),
+                  ["Mês", "Valor repassado (R$ bi)"], [(m, br["serie"][m][2] / 1e9) for m in x["meses"]], "Bolsa Família", casas=2,
+                  nota='<p class="small">Valores correntes (sem descontar a inflação).</p>', ultimo=f"R$ {nf(u['v'] / 1e9, 2)} bilhões ({mes_curto(ult)})",
+                  csv_cab=["Mês", "Valor repassado (R$)"], csv_linhas=[(m, br["serie"][m][2]) for m in x["meses"]])
+    med = grafico(B, "bolsa-familia-beneficio-medio", "Benefício médio por família (R$)", x["fonte"],
+                  svg_linhas([{"vals": [br["serie"][m][2] / br["serie"][m][0] for m in x["meses"]], "cor": "b"}], [mes_curtinho(m) for m in x["meses"]],
+                             "Gráfico do benefício médio por família do Bolsa Família, em reais, mês a mês", unidade="R$ por família"),
+                  ["Mês", "Benefício médio (R$)"], [(m, br["serie"][m][2] / br["serie"][m][0]) for m in x["meses"]], "Bolsa Família", casas=0,
+                  nota='<p class="small">Valor repassado dividido pelo número de famílias do mês, em valores correntes.</p>', ultimo=f"R$ {nf(u['medio'], 0)} ({mes_curto(ult)})",
+                  csv_cab=["Mês", "Benefício médio por família (R$)"], csv_linhas=[(m, br["serie"][m][2] / br["serie"][m][0]) for m in x["meses"]])
+
+    ufs = sorted(x["uf"].values(), key=lambda a: -a["u"]["f"])
+    linhas_uf = [[f'<a href="/bolsa-familia/{a["slug"]}/">{esc(a["nome"])}</a>', nf(a["u"]["f"], 0), nf(a["u"]["cob"], 1) if a["u"]["cob"] else "–", brl_abrev(a["u"]["v"]),
+                  nf(a["u"]["medio"], 0), (sinal(a["u"]["var12"], 1) + "%") if a["u"]["var12"] is not None else "–"] for a in ufs]
+    tab_uf = card(cab("Por estado", f'<span class="src">{mes_nome(ult)}</span>') +
+                  tabela(["Estado", "Famílias", "% da população", "Valor no mês", "Médio (R$)", "Famílias vs. 12m"], linhas_uf, ["l", "r", "r", "r", "r", "r"]) +
+                  f'<span class="src">Fonte: {esc(x["fonte"])}. Clique no estado para ver todos os municípios.</span>')
+    grandes = sorted(x["mun"].values(), key=lambda m: -m["u"]["f"])[:15]
+    top = card(cab("Maiores municípios", f'<span class="src">{mes_nome(ult)}</span>') +
+               tabela(["Município", "Famílias", "% da população"],
+                      [[f'<a href="/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/">{esc(m["nome"])} ({m["sigla"]})</a>', nf(m["u"]["f"], 0), nf(m["u"]["cob"], 1) if m["u"]["cob"] is not None else "–"] for m in grandes],
+                      ["l", "r", "r"]) +
+               '<span class="src">Os 15 municípios com mais famílias no programa. Fonte: MDS; população: IBGE.</span>')
+    prop = sorted((m for m in x["mun"].values() if m["u"]["cob"] is not None and m["pop"] >= 20000), key=lambda m: -m["u"]["cob"])[:15]
+    top2 = card(cab("Maior proporção da população", f'<span class="src">{mes_nome(ult)}</span>') +
+                tabela(["Município", "% da população", "Famílias"],
+                       [[f'<a href="/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/">{esc(m["nome"])} ({m["sigla"]})</a>', nf(m["u"]["cob"], 1), nf(m["u"]["f"], 0)] for m in prop], ["l", "r", "r"]) +
+                '<span class="src">Entre os municípios com 20 mil habitantes ou mais, os 15 com maior parcela da população atendida. Fonte: MDS; população estimada pelo IBGE.</span>')
+    texto = card(BF_TEXTO + f'<p class="small">População estimada pelo IBGE para {esc(x["pop_ano"])}. Todos os números por município e mês estão em <a href="/dados/bolsa-familia-municipios.csv" download>um arquivo CSV</a>.</p>')
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{bf_busca_html(B)}{colunas([fam, val, med, top])}{tab_uf}{colunas([top2, texto])}'
+    return pagina(B, "/bolsa-familia/", f"Bolsa Família por município: {milh(u['f'] / 1e6)} de famílias em {mes_nome(ult)}",
+                  f"{milh(u['f'] / 1e6)} de famílias receberam o Bolsa Família em {mes_nome(ult)}, com repasse de {brl_abrev(u['v'])}. Busque o seu município e veja famílias, valor repassado e benefício médio, com dados do MDS.",
+                  corpo, "/bolsa-familia/", [(None, "Bolsa Família")])
+
+
+def pg_bf_uf(B: Base, a: dict) -> str:
+    x = B.bf
+    ult, u = x["ult"], a["u"]
+    lede = (f'Em {mes_nome(ult)}, <strong>{nf(u["f"], 0)} famílias</strong> {uf_de(a["cod"], esc(a["nome"]))} receberam o Bolsa Família ({nf(u["p"], 0)} pessoas'
+            + (f', {nf(u["cob"], 1)}% da população' if u["cob"] else "") + f'). O repasse do mês foi de <strong>{brl_abrev(u["v"])}</strong>, com benefício médio de <strong>R$ {nf(u["medio"], 0)}</strong>.')
+    if u["f12"]:
+        lede += f' Há 12 meses eram {nf(u["f12"], 0)} famílias ({sinal(u["var12"], 1)}%).'
+    hero = card(f'<span class="eyebrow">Bolsa Família · {esc(a["sigla"])}</span><h1>Bolsa Família {uf_em(a["cod"], esc(a["nome"]))}: famílias por município</h1><p class="lede">{lede}</p>')
+    tiles = [tile(f"Famílias · {mes_curtinho(ult)}", nf(u["f"], 0), "", chg(u["var12"], 1, "%", " em 12 meses") if u["var12"] is not None else "", "a"),
+             tile("Valor repassado no mês", *brl_partes(u["v"]), "", "b"),
+             tile("Benefício médio", nf(u["medio"], 0), "R$ por família", chg(u["medio"] - u["medio12"], 0, " R$", " em 12 meses") if u["medio12"] is not None else "", "k"),
+             tile("Pessoas no programa", nf(u["cob"], 1) if u["cob"] else nf(u["p"], 0), "% da população" if u["cob"] else "", "", "g")]
+    csv_href = "/dados/bolsa-familia-municipios.csv"
+    g1 = _bf_graf_serie(B, f"bf-uf-{a['slug']}-familias", f"Famílias no Bolsa Família {uf_em(a['cod'], a['nome'])} (mil)", x["fonte"], a["serie"], 0, 1000.0, "mil famílias", "Famílias (mil)", 60, 1,
+                        '<p class="small">Soma dos municípios do estado, mês a mês.</p>', f"Gráfico do número de famílias no Bolsa Família {uf_em(a['cod'], a['nome'])}, em milhares, mês a mês",
+                        csv_href=csv_href, csv_rotulo="Baixar CSV de todos os municípios", grupo="Bolsa Família por estado")
+    g2 = _bf_graf_serie(B, f"bf-uf-{a['slug']}-valor", f"Valor repassado {uf_em(a['cod'], a['nome'])} (R$ milhões por mês)", x["fonte"], a["serie"], 2, 1e6, "R$ milhões", "Valor repassado (R$ milhões)", 60, 1,
+                        '<p class="small">Valores correntes (sem descontar a inflação).</p>', f"Gráfico do valor mensal repassado pelo Bolsa Família {uf_em(a['cod'], a['nome'])}, em R$ milhões",
+                        csv_href=csv_href, csv_rotulo="Baixar CSV de todos os municípios", grupo="Bolsa Família por estado")
+    muns = sorted((x["mun"][c] for c in a["mun"]), key=lambda m: -m["u"]["f"])
+    linhas = [[f'<a href="/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/">{esc(m["nome"])}</a>', nf(m["u"]["f"], 0), nf(m["u"]["cob"], 1) if m["u"]["cob"] is not None else "–", brl_abrev(m["u"]["v"]), nf(m["u"]["medio"], 0),
+               (sinal(m["u"]["var12"], 1) + "%") if m["u"]["var12"] is not None else "–"] for m in muns]
+    tab = card(cab(f"Os {len(muns)} municípios {uf_de(a['cod'], esc(a['nome']))}", f'<span class="src">{mes_nome(ult)}</span>') +
+               tabela(["Município", "Famílias", "% da população", "Valor no mês", "Médio (R$)", "Famílias vs. 12m"], linhas, ["l", "r", "r", "r", "r", "r"]) +
+               f'<span class="src">Em ordem de número de famílias. Fonte: {esc(x["fonte"])}.</span>')
+    texto = card(BF_TEXTO + '<p class="small"><a href="/bolsa-familia/">Voltar ao Bolsa Família no Brasil</a></p>')
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{bf_busca_html(B, "Busque um município")}{colunas([g1, g2])}{tab}{texto}'
+    return pagina(B, f"/bolsa-familia/{a['slug']}/", f"Bolsa Família {uf_em(a['cod'], a['nome'])}: {nf(u['f'], 0)} famílias em {mes_nome(ult)}",
+                  f"{nf(u['f'], 0)} famílias {uf_de(a['cod'], a['nome'])} receberam o Bolsa Família em {mes_nome(ult)}, com repasse de {brl_abrev(u['v'])}. Veja os números de cada município do estado, com dados do MDS.",
+                  corpo, "/bolsa-familia/", [("/bolsa-familia/", "Bolsa Família"), (None, a["nome"])])
+
+
+def pg_bf_mun(B: Base, m: dict) -> str:
+    x = B.bf
+    ult, u = x["ult"], m["u"]
+    uf = x["uf"][m["uf2"]]
+    nome = f'{m["nome"]} ({m["sigla"]})'
+    lede = f'Em {mes_nome(ult)}, <strong>{nf(u["f"], 0)} famílias</strong> de {esc(m["nome"])} ({m["sigla"]}) receberam o Bolsa Família'
+    if u["cob"] is not None:
+        lede += f', ou seja, {nf(u["p"], 0)} pessoas, <strong>{nf(u["cob"], 1)}% da população</strong> estimada pelo IBGE'
+    lede += f'. O repasse do mês foi de <strong>{brl_abrev(u["v"])}</strong>, com benefício médio de <strong>R$ {nf(u["medio"], 0)}</strong> por família.'
+    if u["f12"]:
+        lede += f' Há 12 meses eram {nf(u["f12"], 0)} famílias ({sinal(u["var12"], 1)}%).'
+    if m.get("pos_cob"):
+        lede += f' Em proporção da população, {esc(m["nome"])} ocupa a {m["pos_cob"]}ª posição entre os {m["n_cob"]} municípios {uf_de(m["uf2"], esc(uf["nome"]))}.'
+    hero = card(f'<span class="eyebrow">Bolsa Família · {esc(uf["nome"])}</span><h1>Bolsa Família em {esc(nome)}</h1><p class="lede">{lede}</p>')
+    tiles = [tile(f"Famílias · {mes_curtinho(ult)}", nf(u["f"], 0), "", chg(u["var12"], 1, "%", " em 12 meses") if u["var12"] is not None else "", "a"),
+             tile("Pessoas no programa", nf(u["p"], 0), "", f'<span class="chg flat">● {nf(u["cob"], 1)}% da população</span>' if u["cob"] is not None else "", "g"),
+             tile("Valor repassado no mês", *brl_partes(u["v"]), "", "b"),
+             tile("Benefício médio", nf(u["medio"], 0), "R$ por família", chg(u["medio"] - u["medio12"], 0, " R$", " em 12 meses") if u["medio12"] is not None else "", "k")]
+    ms = sorted(m["serie"])[-36:]
+    csv_href = "/dados/bolsa-familia-municipios.csv"
+    fonte = f'{x["fonte"]}'
+    svg = svg_linhas([{"vals": [m["serie"][k][0] for k in ms], "cor": "a"}], [mes_curtinho(k) for k in ms], f"Gráfico do número de famílias no Bolsa Família em {m['nome']} ({m['sigla']}), mês a mês", unidade="famílias")
+    linhas = [(k, m["serie"][k][0], m["serie"][k][1], m["serie"][k][2], m["serie"][k][2] / m["serie"][k][0]) for k in ms]
+    g = grafico(B, "bf-municipio", f"Famílias no Bolsa Família em {m['nome']} ({m['sigla']})", fonte, svg, ["Mês", "Famílias", "Pessoas", "Valor repassado (R$)", "Benefício médio (R$)"], linhas, "Bolsa Família", casas=0,
+                nota='<p class="small">Famílias que receberam o benefício em cada mês, nos últimos 36 meses. A tabela traz também pessoas, valor repassado e benefício médio.</p>',
+                ultimo=f"{nf(u['f'], 0)} famílias ({mes_curto(ult)})", csv_href=csv_href, csv_rotulo="Baixar CSV de todos os municípios")
+    comp = card(cab("Comparação") + bf_comparacao(B, m) +
+                f'<span class="src">Município, estado e Brasil em {mes_nome(ult)}. População estimada pelo IBGE para {esc(x["pop_ano"])}.</span>')
+    texto = card(BF_TEXTO + f'<p class="small"><a href="/bolsa-familia/{m["uf_slug"]}/">Ver todos os municípios {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/bolsa-familia/">Bolsa Família no Brasil</a></p>')
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{bf_busca_html(B, "Busque outro município")}{colunas([g, comp])}{texto}'
+    return pagina(B, f"/bolsa-familia/{m['uf_slug']}/{m['slug']}/", f"Bolsa Família em {nome}: {nf(u['f'], 0)} famílias em {mes_nome(ult)}",
+                  f"{nf(u['f'], 0)} famílias de {m['nome']} ({m['sigla']}) receberam o Bolsa Família em {mes_nome(ult)}"
+                  + (f", {nf(u['cob'], 1)}% da população" if u["cob"] is not None else "") + f", com repasse de {brl_abrev(u['v'])}. Evolução mensal e comparação com o estado, com dados do MDS.",
+                  corpo, "/bolsa-familia/", [("/bolsa-familia/", "Bolsa Família"), (f"/bolsa-familia/{m['uf_slug']}/", uf["nome"]), (None, m["nome"])])
+
+
+def bf_indice(B: Base) -> str:
+    """Índice de busca (JSON compacto): [nome, sigla, endereço, famílias, % da população]."""
+    itens = [[m["nome"], m["sigla"], f'/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/', m["u"]["f"], round(m["u"]["cob"], 1) if m["u"]["cob"] is not None else None]
+             for m in sorted(B.bf["mun"].values(), key=lambda m: -m["u"]["f"])]
+    return json.dumps(itens, ensure_ascii=False, separators=(",", ":"))
+
+
+def bf_painel_csv(B: Base):
+    """Todos os municípios e meses, em formato longo (um arquivo só)."""
+    x = B.bf
+    linhas = []
+    for cod in sorted(x["mun"]):
+        m = x["mun"][cod]
+        for k in x["meses"]:
+            s = m["serie"].get(k)
+            if s:
+                linhas.append((cod, m["nome"], m["sigla"], k, s[0], s[1], s[2]))
+    return linhas
+
+
 def pg_sobre(B: Base) -> str:
     corpo = card("<h1>Como funciona o Economia em Números</h1>"
                  '<p class="lede">Um portal independente que reúne dados abertos da economia brasileira e os organiza para consulta. Não tem ligação com o governo nem com instituições financeiras.</p>'
@@ -1613,6 +2124,8 @@ def pg_sobre(B: Base) -> str:
                  "<li><strong>Vendas no varejo:</strong> IBGE, Pesquisa Mensal de Comércio (SIDRA, tabelas 8880 e 8881, esta para o varejo ampliado).</li>"
                  "<li><strong>Crédito e inadimplência das famílias:</strong> Banco Central, estatísticas de crédito e endividamento das famílias (séries 20716, 20740, 21084, 21112, 29034 e 29037 do SGS).</li>"
                  "<li><strong>Dólar:</strong> cotação de venda do Banco Central, série 1 do SGS (Sistema PTAX).</li>"
+                 "<li><strong>Contas externas:</strong> Banco Central, balanço de pagamentos (séries 22701, 24419, 23079 e 22885 do SGS) e reservas internacionais, conceito liquidez (série 13982); balança comercial da Secex/MDIC, pelo Comex em Números.</li>"
+                 "<li><strong>Bolsa Família por município:</strong> Ministério do Desenvolvimento e Assistência Social (MDS), Matriz de Informação Social (MI Social); população estimada pelo IBGE (SIDRA, tabela 6579).</li>"
                  "<li><strong>Contas públicas:</strong> Banco Central, estatísticas fiscais em % do PIB (séries 13762, 4513, 5793 e 5727 do SGS).</li>"
                  "<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego; o saldo do mês é a variação do estoque de empregos formais (série 28763 do SGS, Banco Central).</li></ul>"
                  "<h2>Dados em CSV</h2>"
@@ -1625,7 +2138,7 @@ def pg_sobre(B: Base) -> str:
                  '<p class="small">Também na Família em Números: <a href="https://oleoemnumeros.com.br/">Óleo em Números</a>, '
                  '<a href="https://comexemnumeros.com.br/">Comex em Números</a> e <a href="https://vooemnumeros.com.br/">Voo em Números</a>.</p>')
     return pagina(B, "/sobre/", "Como funciona o Economia em Números: fontes e atualização",
-                  "De onde vêm os dados do Economia em Números (Banco Central e IBGE), como são atualizados e o que o site não é.", corpo, "/sobre/", [(None, "Como funciona")])
+                  "De onde vêm os dados do Economia em Números (Banco Central, IBGE, MDIC e MDS), como são atualizados e o que o site não é.", corpo, "/sobre/", [(None, "Como funciona")])
 
 
 def pg_404(B: Base) -> str:
@@ -1644,12 +2157,13 @@ def escrever(saida: Path, caminho: str, conteudo: str):
 
 
 def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None,
-          resumos_path: Path = RAIZ / "data" / "copom_resumos.json") -> list:
+          resumos_path: Path = RAIZ / "data" / "copom_resumos.json", bf_path: Path | None = None) -> list:
     dados = json.loads(dados_path.read_text(encoding="utf-8"))
     cal = json.loads(calendario_path.read_text(encoding="utf-8"))
     resumos = json.loads(resumos_path.read_text(encoding="utf-8")) if resumos_path.exists() else {}
     hoje = hoje or dt.datetime.fromisoformat(dados["gerado_em"]).date()
-    B = Base(dados, cal, hoje, resumos)
+    bf = json.loads(Path(bf_path).read_text(encoding="utf-8")) if bf_path and Path(bf_path).exists() else None
+    B = Base(dados, cal, hoje, resumos, bf)
     if saida.exists():
         shutil.rmtree(saida)
     saida.mkdir(parents=True)
@@ -1666,8 +2180,23 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
         paginas.append(("/credito/", pg_credito(B)))
     if B.tem_cambio:
         paginas.append(("/cambio/", pg_cambio(B)))
+    if B.tem_externo:
+        paginas.append(("/setor-externo/", pg_setor_externo(B)))
     if B.tem_fiscal:
         paginas.append(("/contas-publicas/", pg_fiscal(B)))
+    extras = []   # páginas escritas na hora (são milhares: não vale guardar todas na memória)
+    if B.tem_bf:
+        paginas.append(("/bolsa-familia/", pg_bf(B)))
+        for a in sorted(B.bf["uf"].values(), key=lambda a: a["nome"]):
+            paginas.append((f"/bolsa-familia/{a['slug']}/", pg_bf_uf(B, a)))
+        for m in sorted(B.bf["mun"].values(), key=lambda m: (m["uf_slug"], m["slug"])):
+            c = f"/bolsa-familia/{m['uf_slug']}/{m['slug']}/"
+            escrever(saida, c, pg_bf_mun(B, m))
+            extras.append(c)
+        escrever(saida, "/bolsa-familia/busca.json", bf_indice(B))
+        B.csvs["bolsa-familia-municipios"] = {"titulo": "Bolsa Família por município e mês (famílias, pessoas e valor repassado)", "fonte": B.bf["fonte"], "ultimo": mes_curto(B.bf["ult"]),
+                                              "grupo": "Bolsa Família", "cab": ["Código IBGE", "Município", "UF", "Mês", "Famílias beneficiárias", "Pessoas beneficiárias", "Valor repassado (R$)"],
+                                              "linhas": bf_painel_csv(B)}
     for a in B.ranking():
         paginas.append((f"/inflacao/{a['slug']}/", pg_area(B, a)))
     paginas.append(("/dados/", pg_dados(B)))  # por último: lista os CSV de todos os gráficos já montados
@@ -1680,15 +2209,17 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     # arquivos estáticos
     (saida / "assets").mkdir()
     v = dados["gerado_em"][:10]
-    for nome in ("estilo.css", "calc.js", "graficos.js"):
+    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js"):
         shutil.copy(SITE / nome, saida / "assets" / nome)
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
     (saida / "CNAME").write_text(DOMINIO + "\n", encoding="utf-8")
     (saida / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n", encoding="utf-8")
-    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/contas-publicas/": "0.9", "/credito/": "0.9", "/industria-e-varejo/": "0.9", "/inflacao/": "0.9", "/calculadora/": "0.8", "/dados/": "0.5", "/sobre/": "0.3"}
-    urls = "".join(f"<url><loc>{BASE}{c}</loc><lastmod>{v}</lastmod><priority>{prio.get(c, '0.6')}</priority></url>" for c, _ in paginas)
+    extras_set = set(extras)
+    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/contas-publicas/": "0.9", "/credito/": "0.9", "/industria-e-varejo/": "0.9", "/setor-externo/": "0.9", "/bolsa-familia/": "0.9", "/inflacao/": "0.9", "/calculadora/": "0.8", "/dados/": "0.5", "/sobre/": "0.3"}
+    todos = [c for c, _ in paginas] + extras
+    urls = "".join(f"<url><loc>{BASE}{c}</loc><lastmod>{v}</lastmod><priority>{prio.get(c, '0.4' if c in extras_set else '0.6')}</priority></url>" for c in todos)
     (saida / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>\n", encoding="utf-8")
-    return [c for c, _ in paginas]
+    return todos
 
 
 def main():
@@ -1696,8 +2227,9 @@ def main():
     ap.add_argument("--dados", default=str(RAIZ / "data" / "dados.json"))
     ap.add_argument("--saida", default=str(RAIZ / "docs"))
     ap.add_argument("--calendario", default=str(RAIZ / "data" / "copom_calendario.json"))
+    ap.add_argument("--bolsa-familia", default=str(RAIZ / "data" / "bolsa_familia.json"))
     a = ap.parse_args()
-    caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario))
+    caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario), bf_path=Path(a.bolsa_familia))
     print(f"{len(caminhos)} páginas geradas em {a.saida}")
 
 

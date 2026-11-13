@@ -11,7 +11,7 @@ sys.path.insert(0, str(RAIZ / "scripts"))
 sys.path.insert(0, str(RAIZ / "tests"))
 
 import gerar_site as g  # noqa: E402
-from exemplo import AREAS, gravar  # noqa: E402
+from exemplo import AREAS, balanca_exemplo, bf_exemplo, externo_exemplo, gravar, gravar_bf  # noqa: E402
 
 
 def sem_dados(t: str) -> str:
@@ -59,7 +59,7 @@ class TestSite(unittest.TestCase):
 
     def test_canonical_e_sitemap(self):
         s = self.ler("sitemap.xml")
-        self.assertEqual(s.count("<url>"), 5 + 16 + 1 + 27 + 2 + 1 + 1 + 2)
+        self.assertEqual(s.count("<url>"), 5 + 16 + 1 + 27 + 2 + 1 + 1 + 2 + 1)
         self.assertNotIn("404", s)
         self.assertIn('<link rel="canonical" href="https://economiaemnumeros.com.br/inflacao/salvador/">', self.ler("inflacao/salvador/index.html"))
         self.assertIn('content="noindex"', self.ler("404.html"))
@@ -216,7 +216,7 @@ class TestSemDadosNovos(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             dados = json.loads(gravar(d / "x.json").read_text(encoding="utf-8"))
-            for k in ("desocupacao", "caged", "atas", "cambio", "ibc", "pib", "fiscal", "credito", "industria", "varejo"):
+            for k in ("desocupacao", "caged", "atas", "cambio", "ibc", "pib", "fiscal", "credito", "industria", "varejo", "externo", "balanca"):
                 dados.pop(k)
             (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
             cam = g.gerar(d / "dados.json", d / "docs", resumos_path=d / "nao_existe.json")
@@ -471,7 +471,7 @@ class TestGraficosECsv(unittest.TestCase):
             self.assertEqual(n_graf, t.count("data-abre="), caminho)        # nenhum gráfico sem clique
             self.assertEqual(t.count('class="gfoot"'), n_graf, caminho)       # nem sem rodapé com fonte e data
             self.assertEqual(t.count("Baixar CSV"), n_graf, caminho)
-        self.assertEqual(total, 1 + 1 + 2 + 27 + 2 + 2 + 2 + 16 + 2 + 5 + 4)   # início, juros, emprego, 27 UFs, câmbio, atividade, inflação, 16 áreas, contas públicas, indústria e varejo, crédito
+        self.assertEqual(total, 1 + 1 + 2 + 27 + 2 + 2 + 2 + 16 + 2 + 5 + 4 + 6)   # início, juros, emprego, 27 UFs, câmbio, atividade, inflação, 16 áreas, contas públicas, indústria e varejo, crédito, setor externo
 
     def test_rodape_com_fonte_e_data(self):
         t = self.htmls["/juros/"]
@@ -644,7 +644,7 @@ class TestEixos(unittest.TestCase):
                     rot = re.search(r'<text class="yl"[^>]*>(.*?)</text>', bloco)
                     self.assertIsNotNone(rot, c)
                     self.assertGreater(len(rot.group(1)), 2, c)
-            self.assertEqual(total, 64)
+            self.assertEqual(total, 70)
             t = (d / "docs" / "cambio" / "index.html").read_text(encoding="utf-8")
             self.assertIn(">R$ por US$<", t)
             t = (d / "docs" / "contas-publicas" / "index.html").read_text(encoding="utf-8")
@@ -659,3 +659,302 @@ class TestEixos(unittest.TestCase):
                 t = (d / "docs" / rel).read_text(encoding="utf-8")
                 self.assertEqual(t.count('class="hbars"'), 1, rel)
                 self.assertIn('<div class="ul">IPCA acumulado em 12 meses (%)</div>', t, rel)
+
+
+def pt(n: int) -> str:
+    return f"{n:,}".replace(",", ".")
+
+
+class TestSetorExterno(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.d = Path(cls.tmp.name)
+        cls.dados = gravar(cls.d / "dados.json")
+        cls.saida = cls.d / "docs"
+        cls.caminhos = g.gerar(cls.dados, cls.saida)
+        cls.B = g.Base(json.loads(cls.dados.read_text(encoding="utf-8")), json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")), dt.date(2026, 11, 13))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def ler(self, rel):
+        return (self.saida / rel).read_text(encoding="utf-8")
+
+    def test_numeros_conferem_com_os_dados(self):
+        e = self.B.ext_stats()
+        ex = externo_exemplo()
+        self.assertAlmostEqual(e["ca12"]["v"], ex["ca_12m"][-1][1] / 1000, 6)
+        self.assertEqual(e["ca12"]["mes"], "2026-09")
+        self.assertAlmostEqual(e["pib"]["v"], ex["ca_pib"][-1][1], 6)
+        self.assertAlmostEqual(e["idp12"]["v"], sum(v for _, v in ex["idp_mensal"][-12:]) / 1000, 6)
+        self.assertAlmostEqual(e["idp12"]["dif12"], (sum(v for _, v in ex["idp_mensal"][-12:]) - sum(v for _, v in ex["idp_mensal"][-24:-12])) / 1000, 6)
+        self.assertAlmostEqual(e["res"]["v"], 358.2, 6)
+        self.assertEqual(e["res"]["data"], dt.date(2026, 11, 12))
+        self.assertEqual(e["res"]["mes"], "2026-11")
+        bal = balanca_exemplo()
+        exp12 = sum(v for _, v in bal["export"][-12:]) / 1000
+        imp12 = sum(v for _, v in bal["import"][-12:]) / 1000
+        b = e["bal"]
+        self.assertEqual(b["mes"], "2026-10")
+        self.assertAlmostEqual(b["exp12"], exp12, 6)
+        self.assertAlmostEqual(b["imp12"], imp12, 6)
+        self.assertAlmostEqual(b["sal12"], exp12 - imp12, 6)
+        self.assertAlmostEqual(b["saldo"], (bal["export"][-1][1] - bal["import"][-1][1]) / 1000, 6)
+        self.assertEqual(len(b["mensal"]), len(bal["export"]))
+        self.assertEqual(len(b["serie12"]), len(bal["export"]) - 11)
+        self.assertEqual(len(e["ca_idp"]), 60)
+
+    def test_pagina_e_textos(self):
+        t = self.ler("setor-externo/index.html")
+        e = self.B.ext_stats()
+        self.assertIn("US$ 358 bilhões em reservas internacionais", t)
+        self.assertIn("12/11/2026", t)
+        self.assertIn(f"déficit de US$ {g.nf(abs(e['ca12']['v']), 1)} bilhões", t)
+        self.assertIn(f"US$ {g.nf(e['bal']['sal12'], 1)} bilhões", t)
+        for slug in ("reservas-internacionais", "conta-corrente-pib", "conta-corrente-e-investimento-direto", "conta-corrente-mensal", "balanca-comercial-12-meses", "balanca-comercial-mensal"):
+            self.assertIn(f'href="/dados/{slug}.csv"', t)
+            self.assertTrue((self.saida / "dados" / f"{slug}.csv").exists(), slug)
+        self.assertIn("Comex em Números", t)
+        self.assertIn("Boletim Focus", t)              # o que o mercado espera para o dólar
+        self.assertIn("não é recomendação de investimento", t)   # o portal mostra números e avisa que não recomenda nada
+
+    def test_nav_home_e_csv(self):
+        for rel in ("index.html", "juros/index.html", "setor-externo/index.html"):
+            self.assertIn('href="/setor-externo/"', self.ler(rel), rel)
+        self.assertIn("Dólar que entra e sai do país", self.ler("index.html"))
+        csv = (self.saida / "dados" / "conta-corrente-pib.csv").read_bytes()
+        self.assertTrue(csv.startswith(b"\xef\xbb\xbf"))
+        linha = csv.decode("utf-8-sig").splitlines()[-1]
+        self.assertRegex(linha, r"^2026-09;-?\d+,\d+$")
+        d = self.ler("dados/index.html")
+        self.assertIn("Setor externo", d)
+        self.assertIn("/dados/reservas-internacionais.csv", d)
+        self.assertIn("setor-externo", self.ler("sitemap.xml"))
+
+    def gerar_sem(self, *chaves):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        d = Path(d.name)
+        dados = json.loads(gravar(d / "x.json").read_text(encoding="utf-8"))
+        for k in chaves:
+            dados.pop(k, None)
+        (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
+        cam = g.gerar(d / "dados.json", d / "docs")
+        return d / "docs", cam
+
+    def test_sem_balanca_a_pagina_continua(self):
+        docs, cam = self.gerar_sem("balanca")
+        self.assertIn("/setor-externo/", cam)
+        t = (docs / "setor-externo" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("balanca-comercial", t)
+        self.assertNotIn("Na balança comercial", t)
+        self.assertIn("conta-corrente-pib", t)
+        self.assertEqual(t.count("<h1"), 1)
+        self.assertIsNone(re.search(r"\bNone\b|\bnan\b", t))
+
+    def test_sem_externo_a_secao_some(self):
+        docs, cam = self.gerar_sem("externo")
+        self.assertNotIn("/setor-externo/", cam)
+        self.assertFalse((docs / "setor-externo").exists())
+        for rel in ("index.html", "juros/index.html"):
+            t = (docs / rel).read_text(encoding="utf-8")
+            self.assertNotIn("setor-externo", t)
+            self.assertNotIn("Setor externo", t)
+
+    def test_externo_curto_demais_e_ignorado(self):
+        docs, cam = self.gerar_sem()
+        dados = json.loads((docs.parent / "x.json").read_text(encoding="utf-8"))
+        dados["externo"]["ca_12m"] = dados["externo"]["ca_12m"][:5]
+        B = g.Base(dados, json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")), dt.date(2026, 11, 13))
+        self.assertFalse(B.tem_externo)
+        dados["externo"] = externo_exemplo()
+        dados["externo"].pop("reservas_ultima")
+        self.assertFalse(g.Base(dados, json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")), dt.date(2026, 11, 13)).tem_externo)
+
+
+class TestBolsaFamilia(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.d = Path(cls.tmp.name)
+        cls.dados = gravar(cls.d / "dados.json")
+        cls.bfp = gravar_bf(cls.d / "bf.json")
+        cls.saida = cls.d / "docs"
+        cls.caminhos = g.gerar(cls.dados, cls.saida, bf_path=cls.bfp)
+        cls.bf = bf_exemplo()
+        cls.ult = cls.bf["meses"]["2026-10"]
+        cls.esperados = {c for c in cls.ult if c in cls.bf["nomes"]}   # nomes conhecidos e presentes no último mês
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def ler(self, rel):
+        return (self.saida / rel).read_text(encoding="utf-8")
+
+    def test_paginas_geradas(self):
+        mun = [c for c in self.caminhos if c.count("/") == 4 and c.startswith("/bolsa-familia/")]
+        self.assertEqual(len(mun), len(self.esperados))
+        self.assertEqual(len(mun), 122)
+        for c in ("/bolsa-familia/", "/bolsa-familia/bahia/", "/bolsa-familia/sao-paulo/", "/bolsa-familia/acre/"):
+            self.assertIn(c, self.caminhos)
+        self.assertEqual(len(self.caminhos), len(set(self.caminhos)))
+        for c in self.caminhos:
+            self.assertTrue((self.saida / c.lstrip("/") / "index.html").exists(), c)
+        self.assertEqual(self.ler("sitemap.xml").count("<url>"), len(self.caminhos))
+
+    def test_nomes_repetidos_nao_se_sobrepoem(self):
+        for uf in ("bahia", "sao-paulo", "acre"):
+            t = self.ler(f"bolsa-familia/{uf}/bom-jesus/index.html")
+            self.assertIn("Bom Jesus", t)
+        sigla = {"bahia": "(BA)", "sao-paulo": "(SP)", "acre": "(AC)"}
+        for uf, s in sigla.items():
+            self.assertIn(s, self.ler(f"bolsa-familia/{uf}/bom-jesus/index.html"))
+        # "Poá" e "Poa" viram o mesmo endereço sem acento: o segundo ganha o código do IBGE
+        a = self.ler("bolsa-familia/sao-paulo/poa/index.html")
+        b = self.ler("bolsa-familia/sao-paulo/poa-350004/index.html")
+        self.assertIn("Poá (SP)", a)
+        self.assertIn("Poa (SP)", b)
+        self.assertNotEqual(a, b)
+
+    def test_numeros_do_municipio_e_do_estado(self):
+        cod = "290002"
+        f, p, v = self.ult[cod]
+        t = self.ler("bolsa-familia/bahia/salvador/index.html")
+        self.assertIn(f"<strong>{pt(f)} famílias</strong> de Salvador (BA)", t)
+        self.assertIn(f"{pt(p)} pessoas", t)
+        pop = self.bf["pop"][cod]
+        self.assertIn(f"{g.nf(p / pop * 100, 1)}% da população", t)
+        self.assertIn(g.brl_abrev(v), t)
+        self.assertIn(f"<strong>R$ {g.nf(v / f, 0)}</strong> por família", t)
+        ant = self.bf["meses"]["2025-10"][cod][0]
+        self.assertIn(f"Há 12 meses eram {pt(ant)} famílias ({g.sinal((f / ant - 1) * 100, 1)}%)", t)
+        self.assertIn("municípios da Bahia", t)
+        self.assertIn("Brasil", t)
+        ba = [c for c in self.esperados if c.startswith("29")]
+        f_ba = sum(self.ult[c][0] for c in ba)
+        tb = self.ler("bolsa-familia/bahia/index.html")
+        self.assertIn(f"<strong>{pt(f_ba)} famílias</strong> da Bahia", tb)
+        self.assertIn(f"Os {len(ba)} municípios da Bahia", tb)
+        tn = self.ler("bolsa-familia/index.html")
+        f_br = sum(self.ult[c][0] for c in self.esperados)
+        self.assertIn(g.nf(f_br / 1e6, 1) + " milhão", tn)
+        for nome in ("Bahia", "São Paulo", "Acre"):
+            self.assertIn(nome, tn)
+
+    def test_municipio_sem_populacao_e_municipio_novo(self):
+        t = self.ler("bolsa-familia/acre/cidade-12-7/index.html")       # 120007 não tem população
+        self.assertNotIn("da população estimada pelo IBGE", t)
+        self.assertNotIn("posição entre", t)
+        self.assertIn("–", t)
+        t = self.ler("bolsa-familia/bahia/cidade-29-6/index.html")      # 290006 só existe no último mês
+        self.assertNotIn("Há 12 meses eram", t)
+        self.assertNotIn("em 12 meses", sem_dados(t).split("Comparação")[0])
+        self.assertEqual(t.count("<h1"), 1)
+        self.assertFalse((self.saida / "bolsa-familia" / "bahia" / "cidade-29-5").exists())   # 290005 sumiu do último mês
+
+    def test_busca_indice_e_interface(self):
+        itens = json.loads(self.ler("bolsa-familia/busca.json"))
+        self.assertEqual(len(itens), 122)
+        fam = [x[3] for x in itens]
+        self.assertEqual(fam, sorted(fam, reverse=True))
+        for nome, uf, url, f, cob in itens:
+            self.assertTrue((self.saida / url.lstrip("/") / "index.html").exists(), url)
+            self.assertIn(uf, ("BA", "SP", "AC"))
+        self.assertIn("Poá", [x[0] for x in itens])
+        self.assertIn("Poa", [x[0] for x in itens])
+        self.assertTrue((self.saida / "assets" / "busca.js").exists())
+        for rel in ("bolsa-familia/index.html", "bolsa-familia/bahia/index.html", "bolsa-familia/bahia/salvador/index.html"):
+            t = self.ler(rel)
+            self.assertIn('data-indice="/bolsa-familia/busca.json"', t)
+            self.assertIn("/assets/busca.js", t)
+            self.assertIn('id="bf-res"', t)
+
+    def test_painel_csv_e_graficos_sem_csv_proprio(self):
+        bruto = (self.saida / "dados" / "bolsa-familia-municipios.csv").read_bytes()
+        self.assertTrue(bruto.startswith(b"\xef\xbb\xbf"))
+        linhas = bruto.decode("utf-8-sig").splitlines()
+        self.assertEqual(linhas[0], "Código IBGE;Município;UF;Mês;Famílias beneficiárias;Pessoas beneficiárias;Valor repassado (R$)")
+        esperado = sum(1 for m, mes in self.bf["meses"].items() for c in mes if c in self.bf["nomes"] and c in self.ult) 
+        self.assertEqual(len(linhas) - 1, esperado)
+        self.assertNotIn("999999", bruto.decode("utf-8-sig"))
+        self.assertIn("290002;Salvador;BA;2026-10;", "\n".join(linhas))
+        # gráficos de estado e município apontam para o painel e não criam arquivo próprio
+        nomes = {x.name for x in (self.saida / "dados").iterdir()}
+        self.assertFalse([n for n in nomes if n.startswith("bf-")])
+        t = self.ler("bolsa-familia/bahia/salvador/index.html")
+        self.assertIn('href="/dados/bolsa-familia-municipios.csv" download>Baixar CSV de todos os municípios', t)
+        for slug in ("bolsa-familia-familias", "bolsa-familia-valor-repassado", "bolsa-familia-beneficio-medio"):
+            self.assertIn(slug + ".csv", nomes)
+        d = self.ler("dados/index.html")
+        self.assertIn("Bolsa Família", d)
+        self.assertIn("/dados/bolsa-familia-municipios.csv", d)
+
+    def test_html_limpo(self):
+        for c in self.caminhos:
+            if not c.startswith("/bolsa-familia/"):
+                continue
+            t = self.ler(c.lstrip("/") + "index.html")
+            self.assertEqual(t.count("<h1"), 1, c)
+            self.assertIsNone(re.search(r"\bNone\b|\bnan\b|\binf\b|undefined|\{\{", re.sub(r"<script.*?</script>", "", t, flags=re.S)), c)
+            self.assertIn(f'<link rel="canonical" href="https://economiaemnumeros.com.br{c}">', t)
+            n = t.count('class="chart"')
+            self.assertEqual(t.count("Baixar CSV"), n, c)
+
+    def test_nav_home_e_rodape(self):
+        for rel in ("index.html", "setor-externo/index.html", "bolsa-familia/index.html"):
+            self.assertIn('href="/bolsa-familia/"', self.ler(rel), rel)
+        self.assertIn("Quantas famílias recebem, em cada município", self.ler("index.html"))
+        self.assertIn("MDS", self.ler("sobre/index.html"))
+
+    def test_sem_arquivo_ou_arquivo_curto_a_secao_some(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            dados = gravar(d / "dados.json")
+            cam = g.gerar(dados, d / "docs")                                  # sem bf_path
+            self.assertFalse([c for c in cam if "bolsa" in c])
+            self.assertNotIn("Bolsa Família", (d / "docs" / "index.html").read_text(encoding="utf-8").replace("Dados em CSV", ""))
+            bf = bf_exemplo()
+            bf["meses"] = {k: v for k, v in list(bf["meses"].items())[:2]}    # só 2 meses
+            (d / "bf2.json").write_text(json.dumps(bf), encoding="utf-8")
+            cam = g.gerar(dados, d / "docs2", bf_path=d / "bf2.json")
+            self.assertFalse([c for c in cam if "bolsa" in c])
+            bf = bf_exemplo()
+            for mes in bf["meses"].values():                                   # poucos municípios
+                for c in list(mes)[20:]:
+                    del mes[c]
+            (d / "bf3.json").write_text(json.dumps(bf), encoding="utf-8")
+            cam = g.gerar(dados, d / "docs3", bf_path=d / "bf3.json")
+            self.assertFalse([c for c in cam if "bolsa" in c])
+            cam = g.gerar(dados, d / "docs4", bf_path=d / "nao_existe.json")
+            self.assertFalse([c for c in cam if "bolsa" in c])
+
+
+class TestTextoPtBr(unittest.TestCase):
+    def test_slug(self):
+        self.assertEqual(g.slugify("São João del-Rei"), "sao-joao-del-rei")
+        self.assertEqual(g.slugify("Santa Bárbara d'Oeste"), "santa-barbara-d-oeste")
+        self.assertEqual(g.slugify("Poá"), g.slugify("Poa"))
+
+    def test_singular_e_plural(self):
+        self.assertEqual(g.milh(1.2), "1,2 milhão")
+        self.assertEqual(g.milh(0.3), "0,3 milhão")
+        self.assertEqual(g.milh(19.3), "19,3 milhões")
+        self.assertEqual(g.brl_abrev(1.1e6), "R$ 1,1 milhão")
+        self.assertEqual(g.brl_abrev(13.04e9), "R$ 13,0 bilhões")
+        self.assertEqual(g.brl_abrev(230.5e6), "R$ 230,5 milhões")
+        self.assertEqual(g.brl_abrev(85_000), "R$ 85 mil")
+        self.assertEqual(g.brl_abrev(640), "R$ 640")
+        self.assertEqual(g.brl_partes(13.04e9), ("R$ 13,0", "bilhões"))
+
+    def test_estado_com_artigo(self):
+        self.assertEqual(g.uf_de("29", "Bahia"), "da Bahia")
+        self.assertEqual(g.uf_em("29", "Bahia"), "na Bahia")
+        self.assertEqual(g.uf_de("12", "Acre"), "do Acre")
+        self.assertEqual(g.uf_em("12", "Acre"), "no Acre")
+        self.assertEqual(g.uf_de("35", "São Paulo"), "de São Paulo")
+        self.assertEqual(g.uf_em("35", "São Paulo"), "em São Paulo")
+        for cod, (slug, nome, sigla) in g.UFS.items():
+            self.assertTrue(g.uf_em(cod, nome).endswith(nome))

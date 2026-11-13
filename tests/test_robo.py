@@ -1,5 +1,7 @@
 import datetime as dt
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -384,6 +386,221 @@ class TestAtividadeECambio(unittest.TestCase):
         self.assertEqual(r.medida_ibge("PIMPF - Variação mês/mesmo mês do ano anterior", "%"), "yoy")
         self.assertEqual(r.medida_ibge("PMC - Variação mês/mês imediatamente anterior, com ajuste sazonal", "%"), "mm")
         self.assertEqual(r.medida_ibge("PMC - Variação acumulada em 12 meses", "%"), "a12")
+
+
+class TestSetorExterno(unittest.TestCase):
+    def _sgs(self, ca_mensal=lambda k: -3000.0 - k, ca_pib=lambda k: -2.5, idp=lambda k: 5000.0 + k, reservas=lambda k: 350000.0 + k):
+        """Séries sintéticas: 120 meses mensais (2016-2025 e 2026 até outubro) e 4.000 dias úteis de reservas até hoje."""
+        meses = [(dt.date(2016 + k // 12, k % 12 + 1, 1), k) for k in range(130)]
+        hoje = r.HOJE
+        dias = [(hoje - dt.timedelta(days=4000 - j), j) for j in range(4001)]
+
+        def sgs(cod, ini):
+            if cod == 22701:
+                return [(d, ca_mensal(k)) for d, k in meses]
+            if cod == 24419:  # soma móvel de 12 meses da série mensal
+                return [(d, sum(ca_mensal(j) for j in range(k - 11, k + 1))) for d, k in meses if k >= 11]
+            if cod == 23079:
+                return [(d, ca_pib(k)) for d, k in meses if k >= 11]
+            if cod == 22885:
+                return [(d, idp(k)) for d, k in meses]
+            if cod == 13982:
+                return [(d, reservas(j)) for d, j in dias]
+            raise AssertionError(cod)
+        return sgs
+
+    def test_externo_monta_series_e_confere_soma_de_12_meses(self):
+        with mock.patch.object(r, "sgs", self._sgs()), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            out = r.setor_externo()
+        self.assertEqual(set(out), {"ca_mensal", "ca_12m", "ca_pib", "idp_mensal", "reservas", "reservas_ultima"})
+        self.assertEqual(out["ca_12m"][-1][0], out["ca_mensal"][-1][0])
+        self.assertEqual(out["reservas"][-1][0], r.HOJE.strftime("%Y-%m"))  # último mês = último dia disponível
+        self.assertEqual(out["reservas_ultima"][0], r.HOJE.isoformat())
+        self.assertTrue(any(a.startswith("Reservas") for a in dbg["avisos"]))
+
+    def test_externo_recusa_serie_acumulada_que_nao_bate_com_a_mensal(self):
+        sgs = self._sgs()
+
+        def torta(cod, ini):
+            return [(d, v * 3) for d, v in sgs(cod, ini)] if cod == 24419 else sgs(cod, ini)
+        with mock.patch.object(r, "sgs", torta), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError) as e:
+                r.setor_externo()
+        self.assertIn("não bate", str(e.exception))
+
+    def test_externo_recusa_sinal_trocado_unidade_errada_e_reservas_velhas(self):
+        with mock.patch.object(r, "sgs", self._sgs(ca_pib=lambda k: 2.5)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.setor_externo()
+        with mock.patch.object(r, "sgs", self._sgs(idp=lambda k: 5.0)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):  # IDP em US$ bilhões no lugar de milhões
+                r.setor_externo()
+        with mock.patch.object(r, "sgs", self._sgs(reservas=lambda k: 355.0)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):  # reservas em US$ bilhões
+                r.setor_externo()
+        velhas = self._sgs()
+        with mock.patch.object(r, "sgs", lambda cod, ini: velhas(cod, ini)[:-60] if cod == 13982 else velhas(cod, ini)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.setor_externo()
+
+    def _comex(self, n=142, exp=lambda k: 3.0e10 + k * 1e8, imp=lambda k: 2.4e10 + k * 5e7):
+        meses = [f"{2015 + k // 12}-{k % 12 + 1:02d}" for k in range(n)]
+        return {"mes": meses[-1], "mensal": {"export": [{"mes": m, "fob": exp(k), "kg": 1} for k, m in enumerate(meses)],
+                                              "import": [{"mes": m, "fob": imp(k), "kg": 1} for k, m in enumerate(meses)]}}
+
+    def test_balanca_le_comex_em_us_milhoes(self):
+        comex = self._comex()
+        hoje = dt.date(2026, 11, 13)
+        with mock.patch.object(r, "get", lambda *a, **k: FakeResp(comex)), mock.patch.object(r, "sgs", lambda cod, ini: [(dt.date(2026, 9, 1), 7000.0)]), \
+                mock.patch.object(r, "HOJE", hoje), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            out = r.balanca()
+        self.assertEqual(out["mes"], "2026-10")
+        self.assertEqual(len(out["export"]), 142)
+        self.assertAlmostEqual(out["export"][-1][1], (3.0e10 + 141e8) / 1e6, places=1)  # US$ milhões
+        self.assertTrue(any("22707" in a for a in dbg["avisos"]))
+
+    def test_balanca_recusa_dado_curto_em_dolar_inteiro_ou_velho(self):
+        hoje = dt.date(2026, 11, 13)
+        for comex in (self._comex(n=30), self._comex(exp=lambda k: 3.0e4, imp=lambda k: 2.4e4), self._comex(n=100)):
+            with mock.patch.object(r, "get", lambda *a, **k: FakeResp(comex)), mock.patch.object(r, "sgs", lambda *a: []), \
+                    mock.patch.object(r, "HOJE", hoje), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+                with self.assertRaises(RuntimeError):
+                    r.balanca()
+
+    def test_balanca_segue_sem_a_conferencia_do_bcb(self):
+        def quebra(*a):
+            raise RuntimeError("fora do ar")
+        with mock.patch.object(r, "get", lambda *a, **k: FakeResp(self._comex())), mock.patch.object(r, "sgs", quebra), \
+                mock.patch.object(r, "HOJE", dt.date(2026, 11, 13)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            out = r.balanca()
+        self.assertEqual(out["mes"], "2026-10")
+        self.assertTrue(any("não feita" in a for a in dbg["avisos"]))
+
+
+class TestBolsaFamilia(unittest.TestCase):
+    UFS = ["11", "12", "13", "14", "15", "16", "17", "21", "22", "23", "24", "25", "26", "27", "28", "29", "31", "32", "33", "35", "41", "42", "43", "50", "51", "52", "53"]
+
+    def setUp(self):
+        self.codigos = [f"{uf}{i:04d}" for uf in self.UFS for i in range(210)]  # 5.670 municípios de mentira
+        self.tmp = tempfile.TemporaryDirectory()
+        self.arq = Path(self.tmp.name) / "bf.json"
+        self.addCleanup(self.tmp.cleanup)
+
+    def _sidra_pop(self):
+        cab = {"NC": "Nível Territorial (Código)", "V": "Valor", "D1C": "Município (Código)", "D1N": "Município", "D3C": "Ano (Código)"}
+        return [cab] + [{"NC": "6", "V": "37500", "D1C": c + "0", "D1N": f"Cidade {c} - {r_uf(c)}", "D3C": "2026"} for c in self.codigos]
+
+    def _doc(self, c, k, escala=1.0):
+        f = int((3000 + int(c[2:]) % 800) * escala) + k  # ~19 milhões de famílias no total, como o programa de verdade
+        return {"ibge": c, "anomes": "x", "f": f, "p": f * 2.5, "v": f * 680.0}
+
+    def _get(self, meses_publicados, escala=lambda ym: 1.0, falha_em=(), linhas_por_pagina=None):
+        """API fake: meses não publicados voltam sem documentos; `linhas_por_pagina` limita o `rows` para testar a paginação."""
+        chamadas = []
+
+        def get(url, params=None, **kw):
+            if "/t/6579/" in url:
+                return FakeResp(self._sidra_pop())
+            chamadas.append(params)
+            fq = params["fq"]
+            ym = next(x.split(":")[1] for x in fq if x.startswith("anomes_s:"))
+            ym = f"{ym[:4]}-{ym[4:]}"
+            if ym in falha_em:
+                raise RuntimeError("servidor fora do ar")
+            if ym not in meses_publicados:
+                return FakeResp({"response": {"numFound": 0, "start": 0, "docs": []}})
+            k = meses_publicados.index(ym)
+            todas = [self._doc(c, k, escala(ym)) for c in self.codigos]
+            ini, n = int(params["start"]), min(int(params["rows"]), linhas_por_pagina or 10**9)
+            return FakeResp({"response": {"numFound": len(todas), "start": ini, "docs": todas[ini:ini + n]}})
+        get.chamadas = chamadas
+        return get
+
+    def _roda(self, get, hoje=dt.date(2026, 11, 13), inicio="2023-03"):
+        with mock.patch.object(r, "get", get), mock.patch.object(r, "BF_ARQ", self.arq), mock.patch.object(r, "HOJE", hoje), \
+                mock.patch.object(r, "BF_INICIO", inicio), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            out = r.bolsa_familia()
+        return out, dbg
+
+    def test_baixa_os_meses_publicados_e_ignora_o_corrente_sem_dados(self):
+        pub = [f"{2023 + (2 + k) // 12}-{(2 + k) % 12 + 1:02d}" for k in range(44)]  # 2023-03 .. 2026-10
+        self.assertEqual(pub[-1], "2026-10")
+        out, dbg = self._roda(self._get(pub))
+        d = json.loads(self.arq.read_text(encoding="utf-8"))
+        self.assertEqual(sorted(d["meses"])[0], "2023-03")
+        self.assertEqual(sorted(d["meses"])[-1], "2026-10")  # 2026-11 ainda não saiu
+        self.assertEqual(len(d["meses"]), 44)
+        self.assertEqual(len(d["nomes"]), 5670)
+        self.assertEqual(d["nomes"][self.codigos[0]][1], r_uf(self.codigos[0]))
+        c = self.codigos[7]
+        self.assertEqual(d["meses"]["2026-10"][c][:2], [self._doc(c, 43)["f"], int(round(self._doc(c, 43)["p"]))])
+        self.assertEqual(out["ultimo"], "2026-10")
+        self.assertTrue(any("sem dados" in a and "2026-11" in a for a in dbg["avisos"]))
+
+    def test_pagina_quando_a_api_devolve_menos_que_o_total(self):
+        pub = ["2026-09", "2026-10"]
+        self._roda(self._get(pub, linhas_por_pagina=1000), hoje=dt.date(2026, 10, 20), inicio="2026-09")
+        d = json.loads(self.arq.read_text(encoding="utf-8"))
+        self.assertEqual(len(d["meses"]["2026-10"]), 5670)  # todas as páginas foram lidas
+
+    def test_segunda_execucao_so_refaz_o_ultimo_mes_guardado(self):
+        pub = ["2026-08", "2026-09"]
+        get = self._get(pub)
+        self._roda(get, hoje=dt.date(2026, 9, 20), inicio="2026-08")
+        n1 = len(get.chamadas)
+        self._roda(get, hoje=dt.date(2026, 9, 21), inicio="2026-08")
+        self.assertEqual(len(get.chamadas) - n1, 1)  # só 2026-09 de novo (e a população já estava guardada)
+        antes = self.arq.read_text(encoding="utf-8")
+        self._roda(get, hoje=dt.date(2026, 9, 22), inicio="2026-08")
+        self.assertEqual(self.arq.read_text(encoding="utf-8"), antes)  # arquivo idêntico: nenhum commit à toa
+
+    def test_recusa_mes_incompleto_e_nao_guarda(self):
+        pub = ["2026-08", "2026-09"]
+        get = self._get(pub, escala=lambda ym: 0.3 if ym == "2026-09" else 1.0)  # setembro com 30% das famílias
+        out, dbg = self._roda(get, hoje=dt.date(2026, 9, 20), inicio="2026-08")
+        d = json.loads(self.arq.read_text(encoding="utf-8"))
+        self.assertEqual(list(d["meses"]), ["2026-08"])
+        self.assertTrue(any("recusado" in x and "2026-09" in x for x in dbg["erros"] + dbg["avisos"]))
+
+    def test_mes_recusado_depois_de_historico_e_so_aviso_mas_no_primeiro_download_e_erro(self):
+        pub = ["2026-08", "2026-09"]
+        ruim = self._get(pub, escala=lambda ym: 0.3 if ym == "2026-09" else 1.0)
+        self._roda(self._get(["2026-08"]), hoje=dt.date(2026, 8, 20), inicio="2026-08")  # histórico guardado
+        _, dbg = self._roda(ruim, hoje=dt.date(2026, 9, 20), inicio="2026-08")
+        self.assertEqual(dbg["erros"], [])
+        self.assertTrue(any("recusado" in a for a in dbg["avisos"]))
+
+    def test_duas_falhas_seguidas_abortam(self):
+        pub = ["2026-08", "2026-09", "2026-10"]
+        with self.assertRaises(RuntimeError):
+            self._roda(self._get(pub, falha_em=("2026-10", "2026-09")), hoje=dt.date(2026, 10, 20), inicio="2026-08")
+
+    def test_confere_mes_pega_unidade_e_total_absurdos(self):
+        bom = {c: [3400, 8500, 2.3e6] for c in self.codigos}
+        self.assertIsNone(r.bf_confere_mes("2026-10", bom, None))
+        self.assertIn("municípios", r.bf_confere_mes("2026-10", dict(list(bom.items())[:100]), None))
+        self.assertIn("milhões", r.bf_confere_mes("2026-10", {c: [1, 2, 680.0] for c in self.codigos}, None))
+        self.assertIn("benefício médio", r.bf_confere_mes("2026-10", {c: [3400, 8500, 2.3e5] for c in self.codigos}, None))
+        self.assertIn("pessoas", r.bf_confere_mes("2026-10", {c: [3400, 1700, 2.3e6] for c in self.codigos}, None))
+
+    def test_populacao_recusa_resposta_incompleta(self):
+        cab = {"V": "Valor", "D1C": "Município (Código)", "D1N": "Município", "D3C": "Ano (Código)"}
+        curta = [cab] + [{"V": "1000", "D1C": "2927408", "D1N": "Salvador - BA", "D3C": "2026"}]
+        with mock.patch.object(r, "get", lambda *a, **k: FakeResp(curta)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.bf_populacao()
+
+    def test_meses_candidatos_vao_de_2023_03_ate_o_mes_atual(self):
+        with mock.patch.object(r, "BF_INICIO", "2023-03"):
+            m = r.bf_meses_candidatos(dt.date(2026, 11, 13))
+        self.assertEqual(m[0], "2023-03")
+        self.assertEqual(m[-1], "2026-11")
+        self.assertEqual(len(m), 45)
+
+
+def r_uf(codigo6):
+    return {"11": "RO", "12": "AC", "13": "AM", "14": "RR", "15": "PA", "16": "AP", "17": "TO", "21": "MA", "22": "PI", "23": "CE", "24": "RN", "25": "PB", "26": "PE",
+            "27": "AL", "28": "SE", "29": "BA", "31": "MG", "32": "ES", "33": "RJ", "35": "SP", "41": "PR", "42": "SC", "43": "RS", "50": "MS", "51": "MT", "52": "GO", "53": "DF"}[codigo6[:2]]
 
 
 if __name__ == "__main__":

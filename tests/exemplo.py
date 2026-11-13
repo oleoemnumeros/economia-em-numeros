@@ -130,6 +130,53 @@ def varejo_exemplo() -> dict:
     return {"restrito": _ibge_exemplo("2026-08", 0.4, 1.9, 1.5, 104.0), "ampliado": _ibge_exemplo("2026-08", 0.2, 1.1, 0.9, 102.0)}
 
 
+def externo_exemplo() -> dict:
+    """Setor externo até set/2026 (BCB, US$ milhões); reservas no fim de cada mês, com a leitura mais recente de 12/11/2026."""
+    ms = meses("2016-01", "2026-09")
+    ca_m = [[m, round(-4200 + ((k * 7) % 13 - 6) * 450 + (1500 if k % 12 in (2, 3) else 0), 1)] for k, m in enumerate(ms)]
+    ca_12 = [[ms[k], round(sum(v for _, v in ca_m[k - 11:k + 1]), 1)] for k in range(11, len(ms))]
+    ca_pib = [[m, round(v / 2_250_000 * 100, 2)] for m, v in ca_12]
+    idp = [[m, round(5200 + ((k * 5) % 11) * 300, 1)] for k, m in enumerate(ms)]
+    res = [[m, round(340_000 + ((k * 3) % 17) * 1500, 1)] for k, m in enumerate(meses("2016-01", "2026-11"))]
+    res[-1][1] = 358_200.0
+    return {"ca_mensal": ca_m, "ca_12m": ca_12, "ca_pib": ca_pib, "idp_mensal": idp, "reservas": res, "reservas_ultima": ["2026-11-12", 358_200.0]}
+
+
+def balanca_exemplo() -> dict:
+    """Exportações e importações mensais (US$ milhões) até out/2026, como o Comex em Números publica."""
+    ms = meses("2016-01", "2026-10")
+    return {"mes": ms[-1], "export": [[m, round(25_000 + ((k * 5) % 9) * 900 + k * 20, 1)] for k, m in enumerate(ms)],
+            "import": [[m, round(20_000 + ((k * 7) % 11) * 700 + k * 15, 1)] for k, m in enumerate(ms)]}
+
+
+def bf_exemplo() -> dict:
+    """Bolsa Família por município (dados sintéticos): 3 estados, 123 municípios, 15 meses; nomes repetidos entre estados e dentro de um estado."""
+    estados = {"29": ("BA", 45), "35": ("SP", 45), "12": ("AC", 33)}
+    nomes, pop, meses_bf = {}, {}, {}
+    cods = []
+    for uf, (sigla, n) in estados.items():
+        for i in range(1, n + 1):
+            cod = f"{uf}{i:04d}"
+            nome = {1: "Bom Jesus", 2: "Salvador" if uf == "29" else f"Cidade {uf}-2", 3: "Poá", 4: "Poa" if uf == "35" else f"Cidade {uf}-4"}.get(i, f"Cidade {uf}-{i}")
+            nomes[cod] = [nome, sigla]
+            pop[cod] = 9000 + (i * 7919) % 90000
+            cods.append(cod)
+    del pop["120007"]            # um município sem população: a proporção some, o resto continua
+    for k, ym in enumerate(meses("2025-08", "2026-10")):
+        mes = {}
+        for j, cod in enumerate(cods):
+            if ym == "2026-10" and cod == "290005":
+                continue          # sumiu do último mês
+            if cod == "290006" and ym != "2026-10":
+                continue          # só aparece no último mês
+            f = 1500 + (j * 37) % 2500 + k * 6
+            mes[cod] = [f, int(f * 2.6), round(f * 683.5, 2)]
+        meses_bf[ym] = mes
+    # os cinco primeiros estados da lista (códigos soltos) não têm nome: ficam de fora
+    meses_bf["2026-10"]["999999"] = [100, 250, 68000.0]
+    return {"fonte": "MDS (MI Social)", "pop_ano": "2025", "nomes": nomes, "pop": pop, "meses": meses_bf}
+
+
 def dados_exemplo() -> dict:
     ms = meses("2000-01", "2026-09")
     mensal = [[m, round(0.2 + ((i * 7) % 13) / 20, 2)] for i, m in enumerate(ms)]
@@ -156,6 +203,8 @@ def dados_exemplo() -> dict:
         "credito": credito_exemplo(),
         "industria": industria_exemplo(),
         "varejo": varejo_exemplo(),
+        "externo": externo_exemplo(),
+        "balanca": balanca_exemplo(),
         "atas": {"282": {"pdf": "https://www.bcb.gov.br/content/copom/atascopom/Copom282-not20261104282.pdf"}},
         "focus": {"data": "2026-11-10", "itens": [
             {"indicador": "Selic", "ano": 2026, "mediana": 13.5, "semana_anterior": 13.5},
@@ -175,4 +224,9 @@ def dados_exemplo() -> dict:
 
 def gravar(caminho: Path) -> Path:
     caminho.write_text(json.dumps(dados_exemplo(), ensure_ascii=False), encoding="utf-8")
+    return caminho
+
+
+def gravar_bf(caminho: Path) -> Path:
+    caminho.write_text(json.dumps(bf_exemplo(), ensure_ascii=False), encoding="utf-8")
     return caminho
