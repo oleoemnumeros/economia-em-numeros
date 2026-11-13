@@ -414,6 +414,18 @@ class TestContasPublicas(unittest.TestCase):
         self.assertEqual(f["dlsp"]["mes"], "2026-08")
         self.assertIsNotNone(f["dbgg"]["dif12"])
 
+    def test_lede_nao_repete_o_mes_quando_as_series_coincidem(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            dados = json.loads(self.dados.read_text(encoding="utf-8"))
+            dados["fiscal"]["dlsp"].append(["2026-09", 70.0])
+            (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
+            g.gerar(d / "dados.json", d / "docs")
+            t = (d / "docs" / "contas-publicas" / "index.html").read_text(encoding="utf-8")
+            lede = re.search(r'<p class="lede">(.*?)</p>', t, re.S).group(1)
+            self.assertNotIn("em setembro de 2026. No resultado", lede)
+            self.assertIn("setor público, em <strong>", lede)
+
     def test_sinal_do_resultado_fiscal(self):
         # no exemplo, a NFSP do Banco Central vem positiva (0,75) e significa déficit
         self.assertTrue(g.NFSP_POSITIVO_E_DEFICIT)

@@ -997,7 +997,8 @@ def pg_fiscal(B: Base) -> str:
     f = B.fis_stats()
     dbgg, dlsp, prim, nom = f["dbgg"], f["dlsp"], f["primario"], f["nominal"]
     lede = (f'A dívida bruta do governo geral ficou em <strong>{pct(dbgg["v"], 1)} do PIB</strong> em {mes_nome(dbgg["mes"])}'
-            f' e a dívida líquida do setor público, em <strong>{pct(dlsp["v"], 1)}</strong> em {mes_nome(dlsp["mes"])}. '
+            f' e a dívida líquida do setor público, em <strong>{pct(dlsp["v"], 1)}</strong>'
+            + ("" if dlsp["mes"] == dbgg["mes"] else f' em {mes_nome(dlsp["mes"])}') + ". "
             f'No resultado primário, o setor público consolidado teve <strong>{resultado_txt(prim["v"])}</strong> em 12 meses até {mes_nome(prim["mes"])}; '
             f'no nominal, que inclui os juros, {resultado_txt(nom["v"])}.')
     hero = card('<span class="eyebrow">Contas públicas</span><h1>Dívida pública e resultado fiscal do Brasil</h1>' f'<p class="lede">{lede}</p>')
