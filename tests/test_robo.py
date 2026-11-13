@@ -632,5 +632,99 @@ def r_uf(codigo6):
             "27": "AL", "28": "SE", "29": "BA", "31": "MG", "32": "ES", "33": "RJ", "35": "SP", "41": "PR", "42": "SC", "43": "RS", "50": "MS", "51": "MT", "52": "GO", "53": "DF"}[codigo6[:2]]
 
 
+CAB_7060 = {"NC": "Nível Territorial (Código)", "NN": "Nível Territorial", "MC": "Unidade de Medida (Código)", "MN": "Unidade de Medida", "V": "Valor",
+            "D1C": "Brasil (Código)", "D1N": "Brasil", "D2C": "Variável (Código)", "D2N": "Variável", "D3C": "Mês (Código)", "D3N": "Mês",
+            "D4C": "Geral, grupo, subgrupo, item e subitem (Código)", "D4N": "Geral, grupo, subgrupo, item e subitem"}
+
+
+def resposta_7060(cats, meses, variaveis, rotulo=lambda c, v: v["nome"] if v["nivel"] == "geral" else f"{c}.{v['nome']}"):
+    """Rótulos como o IBGE escreve: 'Índice geral', '1.Alimentação e bebidas', '1101001.Carnes'."""
+    linhas = [CAB_7060]
+    for cod, v in cats.items():
+        for var in variaveis:
+            for m in meses:
+                if m in v.get(var, {}):
+                    linhas.append({"NC": "1", "NN": "Brasil", "MC": "2", "MN": "%", "V": str(v[var][m]), "D1C": "1", "D1N": "Brasil", "D2C": var, "D2N": "IPCA",
+                                   "D3C": m.replace("-", ""), "D3N": m, "D4C": cod, "D4N": rotulo(cod, v)})
+    return linhas
+
+
+class TestComposicaoIPCA(unittest.TestCase):
+    def roda(self, cats, ms, acum=True):
+        def falso(url, *a, **k):
+            if "/v/63,66/" in url:
+                return FakeResp(resposta_7060(cats, ms, ["63", "66"]))
+            if not acum:
+                raise RuntimeError("fora do ar")
+            a12 = {c: {"nivel": v["nivel"], "nome": v["nome"], "2265": {ms[-1]: 4.1}} for c, v in cats.items()}
+            return FakeResp(resposta_7060(a12, ms, ["2265"]))
+        with mock.patch.object(r, "get", falso), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            return r.ipca_composicao(), dbg
+
+    def test_categoria_reconhece_o_nivel_pelo_codigo(self):
+        self.assertEqual(r._ipca_categoria("Índice geral"), ("geral", "0", "Índice geral"))
+        self.assertEqual(r._ipca_categoria("1.Alimentação e bebidas"), ("grupo", "1", "Alimentação e bebidas"))
+        self.assertEqual(r._ipca_categoria("11.Alimentação no domicílio")[0], "subgrupo")
+        self.assertEqual(r._ipca_categoria("1101.Tubérculos, raízes e legumes")[0], "item")
+        self.assertEqual(r._ipca_categoria("1101002.Batata-inglesa"), ("subitem", "1101002", "Batata-inglesa"))
+        self.assertIsNone(r._ipca_categoria("Rótulo estranho"))
+
+    def test_monta_grupos_subitens_e_acumulado(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from exemplo import tabela_7060
+        ms, cats = tabela_7060("2026-10", 13)
+        out, dbg = self.roda(cats, ms)
+        self.assertEqual(out["mes"], "2026-10")
+        self.assertEqual(out["meses"], ms[1:])                      # 13 meses baixados, os 12 últimos ficam
+        self.assertEqual(len(out["grupos"]), 9)
+        self.assertEqual(out["grupos"][0]["nome"], "Alimentação e bebidas")
+        self.assertEqual(len(out["grupos"][0]["v"]), 12)
+        self.assertGreaterEqual(len(out["subitens"]), 60)
+        self.assertEqual(out["grupos"][0]["acum12"], 4.1)
+        self.assertEqual(out["geral"]["acum12"], 4.1)
+        self.assertTrue(all(s["w"] > 0 for s in out["subitens"]))
+        self.assertTrue(all(len(s["cod"]) == 7 and s["cod"][0] == s["grupo"] for s in out["subitens"]))
+        soma = sum(g["w"][-1] * g["v"][-1] / 100 for g in out["grupos"])
+        self.assertAlmostEqual(soma, out["geral"]["v"][-1], delta=0.02)
+
+    def test_sem_o_acumulado_em_12_meses_o_resto_segue(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from exemplo import tabela_7060
+        ms, cats = tabela_7060("2026-10", 13)
+        out, dbg = self.roda(cats, ms, acum=False)
+        self.assertIsNone(out["grupos"][0]["acum12"])
+        self.assertTrue(any("sem o acumulado em 12 meses" in a for a in dbg["avisos"]))
+
+    def test_soma_que_nao_bate_com_o_indice_geral_e_recusada(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from exemplo import tabela_7060
+        ms, cats = tabela_7060("2026-10", 13)
+        cats["0"]["63"][ms[-1]] += 0.4                              # índice geral não bate com os grupos
+        with self.assertRaises(RuntimeError) as e:
+            self.roda(cats, ms)
+        self.assertIn("difere do índice geral", str(e.exception))
+
+    def test_numero_de_grupos_errado_e_recusado(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from exemplo import tabela_7060
+        ms, cats = tabela_7060("2026-10", 13)
+        del cats["9"]
+        with self.assertRaises(RuntimeError) as e:
+            self.roda(cats, ms)
+        self.assertIn("9 grupos", str(e.exception))
+
+    def test_mes_faltando_no_meio_e_recusado(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from exemplo import tabela_7060
+        ms, cats = tabela_7060("2026-10", 13)
+        del cats["0"]["63"][ms[6]]
+        with self.assertRaises(RuntimeError):
+            self.roda(cats, ms)
+
+    def test_mes_seguinte(self):
+        self.assertEqual(r._mes_seguinte("2026-12"), "2027-01")
+        self.assertEqual(r._mes_seguinte("2026-10"), "2026-11")
+
+
 if __name__ == "__main__":
     unittest.main()

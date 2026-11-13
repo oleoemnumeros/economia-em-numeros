@@ -198,3 +198,8 @@ details.dados td,details.dados th{font-variant-numeric:tabular-nums}
 .sug-ok p{margin:4px 0 0}
 .sug-ok:target,.sug-ok.on{display:block}
 .sug-ok:target ~ .sug,.sug-ok.on ~ .sug{display:none}
+/* Barras horizontais com valores negativos (composição do IPCA) */
+.hbar .track.div{position:relative}
+.hbar .track.div span{position:absolute;top:0;height:100%;border-radius:0}
+.hbar .track.div .zero{width:1px;background:var(--muted);z-index:1}
+.comp{display:grid;gap:20px}

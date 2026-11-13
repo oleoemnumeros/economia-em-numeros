@@ -503,7 +503,7 @@ class TestGraficosECsv(unittest.TestCase):
             self.assertEqual(n_graf, t.count("data-abre="), caminho)        # nenhum gráfico sem clique
             self.assertEqual(t.count('class="gfoot"'), n_graf, caminho)       # nem sem rodapé com fonte e data
             self.assertEqual(t.count("Baixar CSV"), n_graf, caminho)
-        self.assertEqual(total, 1 + 1 + 2 + 27 + 2 + 2 + 2 + 16 + 2 + 5 + 4 + 6)   # início, juros, emprego, 27 UFs, câmbio, atividade, inflação, 16 áreas, contas públicas, indústria e varejo, crédito, setor externo
+        self.assertEqual(total, 1 + 1 + 2 + 27 + 2 + 2 + 4 + 16 + 2 + 5 + 4 + 6)   # início, juros, emprego, 27 UFs, câmbio, atividade, inflação, 16 áreas, contas públicas, indústria e varejo, crédito, setor externo
 
     def test_rodape_com_fonte_e_data(self):
         t = self.htmls["/juros/"]
@@ -687,9 +687,10 @@ class TestEixos(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             g.gerar(gravar(d / "dados.json"), d / "docs")
-            for rel in ("index.html", "inflacao/index.html"):
+            for rel, n in (("index.html", 2), ("inflacao/index.html", 3)):      # regiões + composição do IPCA (1 na home, 2 em /inflacao/)
                 t = (d / "docs" / rel).read_text(encoding="utf-8")
-                self.assertEqual(t.count('class="hbars"'), 1, rel)
+                self.assertEqual(t.count('class="hbars"'), n, rel)
+                self.assertEqual(t.count('<div class="ul">'), n, rel)               # toda barra horizontal diz a unidade
                 self.assertIn('<div class="ul">IPCA acumulado em 12 meses (%)</div>', t, rel)
 
 
@@ -975,6 +976,100 @@ class TestBolsaFamilia(unittest.TestCase):
             self.assertFalse([c for c in cam if "bolsa" in c])
             cam = g.gerar(dados, d / "docs4", bf_path=d / "nao_existe.json")
             self.assertFalse([c for c in cam if "bolsa" in c])
+
+
+class TestComposicaoIPCA(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.d = Path(cls.tmp.name)
+        cls.dados = gravar(cls.d / "dados.json")
+        cls.saida = cls.d / "docs"
+        g.gerar(cls.dados, cls.saida)
+        cls.B = g.Base(json.loads(cls.dados.read_text(encoding="utf-8")), json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")), dt.date(2026, 11, 13))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def ler(self, rel):
+        return (self.saida / rel).read_text(encoding="utf-8")
+
+    def test_contribuicao_de_12_meses_reproduz_o_ipca_acumulado(self):
+        c = self.B.comp
+        self.assertEqual(len(c["grupos"]), 9)
+        soma12 = sum(x["c12"] for x in c["grupos"])
+        self.assertAlmostEqual(soma12, c["ipca12_calc"], delta=0.03)       # decomposição pela cadeia de índices
+        idx = 1.0
+        for v in c["geral"]:
+            idx *= 1 + v / 100
+        self.assertAlmostEqual(c["ipca12_calc"], (idx - 1) * 100, places=9)
+        self.assertAlmostEqual(sum(x["imp"][-1] for x in c["grupos"]), c["geral"][-1], delta=0.02)   # impactos do mês somam o índice geral
+
+    def test_impacto_e_peso_vezes_variacao(self):
+        s = max(self.B.comp["subs"], key=lambda x: x["imp"])
+        self.assertAlmostEqual(s["imp"], s["w"] * s["v"] / 100, places=12)
+        self.assertEqual(s["grupo"], next(x["nome"] for x in self.B.comp["grupos"] if x["cod"] in ("2", "5")))
+
+    def test_secao_na_pagina_de_inflacao(self):
+        t = self.ler("inflacao/index.html")
+        self.assertIn('id="composicao"', t)
+        self.assertIn("Composição do IPCA de setembro de 2026", t)
+        self.assertIn("O grupo que mais pesou foi", t)
+        self.assertIn("Itens que mais pressionaram o IPCA de setembro de 2026", t)
+        self.assertIn("Itens que mais aliviaram", t)
+        self.assertIn("Energia elétrica residencial", t)
+        self.assertIn("contribuição para o IPCA do mês, em pontos percentuais", t)
+        self.assertIn("contribuição para o IPCA em 12 meses, em pontos percentuais", t)
+        for slug in ("ipca-contribuicao-grupos-mes", "ipca-contribuicao-grupos-12m", "ipca-itens-contribuicao"):
+            self.assertTrue((self.saida / "dados" / f"{slug}.csv").exists(), slug)
+        self.assertEqual(t.count("<h1"), 1)
+
+    def test_csv_dos_itens_e_o_historico_dos_grupos(self):
+        itens = (self.saida / "dados" / "ipca-itens-contribuicao.csv").read_text(encoding="utf-8-sig").splitlines()
+        self.assertEqual(itens[0], "Código;Item;Grupo;Variação no mês (%);Peso (%);Contribuição (p.p.);Variação em 12 meses (%)")
+        self.assertEqual(len([l for l in itens if l]), 1 + 63)
+        cont = [float(l.split(";")[5].replace(",", ".")) for l in itens[1:] if l]
+        self.assertEqual(cont, sorted(cont, reverse=True))                  # do que mais pesou para o que menos pesou
+        hist = (self.saida / "dados" / "ipca-contribuicao-grupos-mes.csv").read_text(encoding="utf-8-sig").splitlines()
+        self.assertEqual(hist[0], "Mês;Grupo;Variação (%);Peso (%);Contribuição (p.p.)")
+        self.assertEqual(len([l for l in hist if l]), 1 + 12 * 9)
+
+    def test_card_na_home_e_fonte_no_sobre(self):
+        h = self.ler("index.html")
+        self.assertIn("Composição do IPCA de setembro de 2026", h)
+        self.assertIn('href="/inflacao/#composicao"', h)
+        self.assertIn("Composição do IPCA:", self.ler("sobre/index.html"))
+        self.assertIn("contribuição de cada item", self.ler("dados/index.html").lower())
+
+    def test_sem_composicao_nada_quebra_nem_aparece(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            d = json.loads(self.dados.read_text(encoding="utf-8"))
+            del d["composicao"]
+            (tmp / "d.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+            g.gerar(tmp / "d.json", tmp / "docs")
+            for rel in ("inflacao/index.html", "index.html"):
+                t = (tmp / "docs" / rel).read_text(encoding="utf-8")
+                self.assertNotIn("Composição do IPCA de", t, rel)
+                self.assertNotIn('id="composicao"', t, rel)
+            self.assertFalse((tmp / "docs" / "dados" / "ipca-itens-contribuicao.csv").exists())
+
+    def test_composicao_incompleta_e_ignorada(self):
+        base = json.loads(self.dados.read_text(encoding="utf-8"))
+        for ruim in ({**base["composicao"], "meses": base["composicao"]["meses"][:5]},
+                     {**base["composicao"], "grupos": base["composicao"]["grupos"][:3]},
+                     {**base["composicao"], "geral": {"v": ["x"] * 12}}):
+            b2 = dict(base, composicao=ruim)
+            B = g.Base(b2, json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")), dt.date(2026, 11, 13))
+            self.assertIsNone(B.comp)
+
+    def test_texto_sem_lixo_e_com_sinal_de_menos_de_verdade(self):
+        t = self.ler("inflacao/index.html")
+        sec = t[t.index('id="composicao"'):t.index("<h2>Últimos 12 meses</h2>")]
+        for ruim in (r"\bNone\b", r"\bnan\b", r"\bundefined\b"):
+            self.assertIsNone(re.search(ruim, sec), ruim)
+        self.assertNotRegex(sec, r"\d-\d")                                   # nada de hífen como sinal em número
 
 
 class TestTextoPtBr(unittest.TestCase):

@@ -43,6 +43,7 @@ F_PNAD_BR = "IBGE, PNAD Contínua (SIDRA, tabela 6381)"
 F_PNAD_UF = "IBGE, PNAD Contínua (SIDRA, tabela 4099)"
 F_CAGED = "Novo Caged (Ministério do Trabalho e Emprego), via Banco Central (SGS 28763)"
 F_IPCA = "IBGE, via Banco Central do Brasil (SGS 433 e 13522)"
+F_COMP = "IBGE (SIDRA, tabela 7060: variação e peso mensal de cada grupo e item do IPCA)"
 F_IPCA_AREA = "IBGE (SIDRA, tabela 7060); série do Brasil: SGS 13522 do Banco Central"
 F_PIB = "IBGE, Contas Nacionais Trimestrais (SIDRA, tabela 5932)"
 F_IBC = "Banco Central do Brasil (SGS 24364 e 24363)"
@@ -202,6 +203,7 @@ class Base:
         for slug, a in (dados.get("areas") or {}).items():
             self.areas[slug] = {"slug": slug, "nome": a["nome"], "uf": a["uf"],
                                 "mensal": {k: float(v) for k, v in a["mensal"]}, "acum12": {k: float(v) for k, v in a["acum12"]}}
+        self.comp = self._composicao(dados.get("composicao"))
         # a referência das áreas pode estar um mês atrás do Brasil; usamos o último mês comum
         meses_areas = [max(a["acum12"]) for a in self.areas.values() if a["acum12"]]
         self.ref_areas = min(meses_areas) if meses_areas else None
@@ -386,6 +388,35 @@ class Base:
                               "saldo": dm[m], "saldo_ant": dm.get(mes_antes(m, 12)), "serie12": s12, "mensal": mensal}
         return out
 
+    @staticmethod
+    def _composicao(c):
+        """Composição do IPCA. Impacto mensal de uma categoria = peso x variação / 100 (p.p.). A contribuição em 12 meses encadeia os meses:
+        o impacto de cada mês vale mais ou menos conforme o índice acumulado até o mês anterior, e a soma dos grupos reproduz o IPCA em 12 meses."""
+        if not c:
+            return None
+        try:
+            meses = list(c["meses"])
+            geral = [float(v) for v in c["geral"]["v"]]
+            if len(meses) != 12 or len(geral) != 12 or len(c["grupos"]) < 8:
+                return None
+            fator, idx = [], 1.0
+            for v in geral:
+                fator.append(idx)
+                idx *= 1 + v / 100
+            grupos = []
+            for g in c["grupos"]:
+                v, w = [float(x) for x in g["v"]], [float(x) for x in g["w"]]
+                imp = [a * b / 100 for a, b in zip(v, w)]
+                grupos.append({"cod": g["cod"], "nome": g["nome"], "v": v, "w": w, "imp": imp, "acum12": g.get("acum12"),
+                               "c12": sum(i * f for i, f in zip(imp, fator))})
+            nome_grupo = {g["cod"]: g["nome"] for g in grupos}
+            subs = [{"cod": s["cod"], "nome": s["nome"], "grupo": nome_grupo.get(s["grupo"], ""), "v": float(s["v"]), "w": float(s["w"]),
+                     "imp": float(s["w"]) * float(s["v"]) / 100, "acum12": s.get("acum12")} for s in c.get("subitens", [])]
+        except (KeyError, TypeError, ValueError):
+            return None
+        return {"mes": c["mes"], "meses": meses, "geral": geral, "acum12": c["geral"].get("acum12"), "ipca12_calc": (idx - 1) * 100,
+                "grupos": grupos, "subs": subs}
+
     def nav(self) -> list:
         itens = []
         if self.tem_atividade:
@@ -550,6 +581,23 @@ def hbarras(linhas, unidade="") -> str:
         m = f'<span class="meta">{meta}</span>' if meta else ""
         out.append(f'<div class="hbar"><span class="t">{rot}</span><span class="v">{fmt}</span>'
                    f'<span class="track"><span style="width:{w}%;background:var(--eco)"></span></span>{m}</div>')
+    legenda = f'<div class="ul">{esc(unidade)}</div>' if unidade else ""
+    return f'<div class="hbars">{legenda}{"".join(out)}</div>'
+
+
+def dbarras(linhas, unidade="") -> str:
+    """Barras horizontais que aceitam valores negativos (partem de uma linha de zero). linhas: (rótulo html, valor, valor formatado, meta html)."""
+    vals = [v for _, v, _, _ in linhas]
+    lo, hi = min(0, min(vals, default=0)), max(0, max(vals, default=0))
+    span = (hi - lo) or 1
+    pos = lambda v: (v - lo) / span * 100
+    out = []
+    for rot, v, fmt, meta in linhas:
+        esq, larg = pos(min(v, 0)), max(1.2, abs(v) / span * 100)
+        cor = "var(--eco2)" if v < 0 else "var(--eco)"
+        m = f'<span class="meta">{meta}</span>' if meta else ""
+        out.append(f'<div class="hbar"><span class="t">{rot}</span><span class="v">{fmt}</span>'
+                   f'<span class="track div"><span class="zero" style="left:{pos(0):.2f}%"></span><span style="left:{esq:.2f}%;width:{larg:.2f}%;background:{cor}"></span></span>{m}</div>')
     legenda = f'<div class="ul">{esc(unidade)}</div>' if unidade else ""
     return f'<div class="hbars">{legenda}{"".join(out)}</div>'
 
@@ -896,7 +944,7 @@ def pg_inicio(B: Base) -> str:
     calc = card('<span class="eyebrow">Ferramenta</span><h2>Calculadora de correção pelo IPCA</h2>'
                 '<p class="small">Quanto R$ 1.000 de alguns anos atrás valem hoje? Corrija qualquer valor pela inflação oficial, mês a mês, desde 2000.</p>'
                 '<p><a href="/calculadora/">Abrir a calculadora →</a></p>')
-    mais = [x for x in (card_atividade_inicio(B), card_ibge_inicio(B), card_emprego_inicio(B), card_bf_inicio(B), card_credito_inicio(B), card_cambio_inicio(B), card_externo_inicio(B), card_fiscal_inicio(B)) if x]
+    mais = [x for x in (card_comp_inicio(B), card_atividade_inicio(B), card_ibge_inicio(B), card_emprego_inicio(B), card_bf_inicio(B), card_credito_inicio(B), card_cambio_inicio(B), card_externo_inicio(B), card_fiscal_inicio(B)) if x]
     mais_html = "".join(f'<div class="cols">{"".join(mais[k:k + 2])}</div>' if len(mais[k:k + 2]) == 2 else mais[k] for k in range(0, len(mais), 2))
     corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{mais_html}{calc}'
     return pagina(B, "/", "Economia em Números: Selic, inflação (IPCA) e Copom em dados oficiais",
@@ -1576,6 +1624,90 @@ def _mensal_tabela(B: Base, linhas_meses, rot_area=None, area=None) -> str:
     return rows
 
 
+def _pp(v: float) -> str:
+    return f"{sinal(v, 2)} p.p."
+
+
+def comp_texto(B: Base) -> str:
+    c = B.comp
+    mn, v = mes_nome(c["mes"]), c["geral"][-1]
+    gs = sorted(c["grupos"], key=lambda g: -g["imp"][-1])
+    verbo = f"subiu {pct(abs(v), 2)}" if v > 0 else f"caiu {pct(abs(v), 2)}" if v < 0 else "ficou em 0,00%"
+    frases = [f"O IPCA {verbo} em {mn}."]
+    if gs[0]["imp"][-1] > 0:
+        resto = f", seguido de {esc(gs[1]['nome'])} ({_pp(gs[1]['imp'][-1])})" if gs[1]["imp"][-1] > 0 else ""
+        frases.append(f"O grupo que mais pesou foi <strong>{esc(gs[0]['nome'])}</strong> ({_pp(gs[0]['imp'][-1])}){resto}.")
+    puxou = min(gs, key=lambda g: g["imp"][-1])
+    if puxou["imp"][-1] < 0:
+        frases.append(f"{esc(puxou['nome'])} foi o grupo que mais segurou o índice ({_pp(puxou['imp'][-1])}).")
+    if c["subs"]:
+        topo, base = max(c["subs"], key=lambda s: s["imp"]), min(c["subs"], key=lambda s: s["imp"])
+        if topo["imp"] > 0:
+            frases.append(f"Entre os itens, a maior pressão veio de <strong>{esc(topo['nome'])}</strong> ({_pp(topo['imp'])}).")
+        if base["imp"] < 0:
+            frases.append(f"O maior alívio veio de {esc(base['nome'])} ({_pp(base['imp'])}).")
+    g12 = max(c["grupos"], key=lambda g: g["c12"])
+    total = c["acum12"] if c["acum12"] is not None else B.ipca_12.get(c["mes"], c["ipca12_calc"])
+    if g12["c12"] > 0:
+        frases.append(f"Em 12 meses, <strong>{esc(g12['nome'])}</strong> foi o grupo que mais contribuiu: {nf(g12['c12'], 2)} p.p. dos {pct(total, 2)} acumulados.")
+    return " ".join(frases)
+
+
+NOTA_COMP = ('<p class="src">A contribuição (ou impacto) é o peso da categoria na cesta multiplicado pela sua variação: mostra quantos pontos percentuais ela '
+             'somou ou tirou do IPCA. Uma categoria pode pesar muito porque subiu muito ou porque tem peso grande na cesta. '
+             'Os pesos mudam todo mês com os preços relativos, e a soma pode diferir do índice por arredondamento.</p>')
+
+
+def secao_comp(B: Base) -> str:
+    c = B.comp
+    if not c:
+        return ""
+    m, mn = c["mes"], mes_nome(c["mes"])
+    gs = sorted(c["grupos"], key=lambda g: -g["imp"][-1])
+    g1 = grafico(B, "ipca-contribuicao-grupos-mes", f"O que mais pesou no IPCA de {mn}: contribuição de cada grupo", F_COMP,
+                 dbarras([(esc(g["nome"]), g["imp"][-1], _pp(g["imp"][-1]), f'variação {pct(g["v"][-1], 2)} · peso {nf(g["w"][-1], 1)}% da cesta') for g in gs],
+                         "contribuição para o IPCA do mês, em pontos percentuais"),
+                 ["Grupo", "Variação (%)", "Peso (%)", "Contribuição (p.p.)"], [(g["nome"], g["v"][-1], g["w"][-1], g["imp"][-1]) for g in gs], "Inflação",
+                 ultimo=mn, casas=2,
+                 csv_cab=["Mês", "Grupo", "Variação (%)", "Peso (%)", "Contribuição (p.p.)"],
+                 csv_linhas=[(mm, g["nome"], g["v"][i], g["w"][i], g["imp"][i]) for i, mm in enumerate(c["meses"]) for g in c["grupos"]])
+    g2s = sorted(c["grupos"], key=lambda g: -g["c12"])
+    g2 = grafico(B, "ipca-contribuicao-grupos-12m", f"O que mais pesou no IPCA em 12 meses até {mn}", F_COMP,
+                 dbarras([(esc(g["nome"]), g["c12"], _pp(g["c12"]), f'variação em 12 meses: {pct(g["acum12"], 2)}' if g["acum12"] is not None else "") for g in g2s],
+                         "contribuição para o IPCA em 12 meses, em pontos percentuais"),
+                 ["Grupo", "Contribuição (p.p.)", "Variação em 12 meses (%)"], [(g["nome"], g["c12"], g["acum12"]) for g in g2s], "Inflação",
+                 ultimo=mn, casas=2)
+    pos = sorted((s for s in c["subs"] if s["imp"] > 0), key=lambda s: -s["imp"])[:10]
+    neg = sorted((s for s in c["subs"] if s["imp"] < 0), key=lambda s: s["imp"])[:5]
+    cel = lambda s: (f'<strong>{esc(s["nome"])}</strong><br><span class="src">{esc(s["grupo"])}</span>', nf(s["v"], 2) + "%", nf(s["w"], 2) + "%", _pp(s["imp"]))
+    cabs = ["Item", "Variação no mês", "Peso na cesta", "Contribuição"]
+    itens = ""
+    if c["subs"]:
+        B.csvs["ipca-itens-contribuicao"] = {
+            "titulo": f"IPCA de {mn}: contribuição de cada item (subitem)", "fonte": F_COMP, "ultimo": mn, "grupo": "Inflação",
+            "cab": ["Código", "Item", "Grupo", "Variação no mês (%)", "Peso (%)", "Contribuição (p.p.)", "Variação em 12 meses (%)"],
+            "linhas": [(s["cod"], s["nome"], s["grupo"], s["v"], s["w"], s["imp"], s["acum12"]) for s in sorted(c["subs"], key=lambda s: -s["imp"])]}
+        blocos = cab(f"Itens que mais pressionaram o IPCA de {mn}") + tabela(cabs, [cel(s) for s in pos], ["l", "r", "r", "r"])
+        if neg:
+            blocos += cab("Itens que mais aliviaram") + tabela(cabs, [cel(s) for s in neg], ["l", "r", "r", "r"])
+        atual = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
+        blocos += (f'<div class="gfoot tfoot"><span class="src">Fonte: {esc(F_COMP)}. Itens no nível mais detalhado do IBGE (subitens). Atualizado em {atual}.</span>'
+                   '<a class="csv" href="/dados/ipca-itens-contribuicao.csv" download>Baixar todos os itens (CSV)</a></div>')
+        itens = card(blocos)
+    topo = card(f'<span class="eyebrow">O que mais pesou</span><h2>Composição do IPCA de {mn}</h2><p class="lede">{comp_texto(B)}</p>' + NOTA_COMP)
+    return f'<div id="composicao" class="comp">{topo}<div class="cols">{g1}{g2}</div>{itens}</div>'
+
+
+def card_comp_inicio(B: Base) -> str:
+    c = B.comp
+    if not c:
+        return ""
+    gs = sorted(c["grupos"], key=lambda g: -g["imp"][-1])[:4]
+    return card(f'<span class="eyebrow">O que mais pesou</span><h2>Composição do IPCA de {mes_nome(c["mes"])}</h2>'
+                + dbarras([(esc(g["nome"]), g["imp"][-1], _pp(g["imp"][-1]), "") for g in gs], "contribuição para o IPCA do mês (p.p.)")
+                + '<p><a href="/inflacao/#composicao">Ver os grupos e itens que mais pesaram →</a></p>')
+
+
 def pg_inflacao(B: Base) -> str:
     ref = B.ref
     ms36 = B.meses_ipca(36)
@@ -1612,7 +1744,7 @@ def pg_inflacao(B: Base) -> str:
                  "Ele acompanha a variação dos preços de uma cesta de produtos e serviços consumida por famílias com rendimento de 1 a 40 salários mínimos.</p>"
                  "<p>A meta de inflação, definida pelo Conselho Monetário Nacional, é de 3%, com tolerância de 1,5 ponto percentual para mais ou para menos. "
                  "O Banco Central usa a taxa Selic para tentar levar o IPCA à meta.</p>")
-    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="cols">{g12}{gm}</div>{tab}{reg}{texto}'
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="cols">{g12}{gm}</div>{secao_comp(B)}{tab}{reg}{texto}'
     return pagina(B, "/inflacao/", f"IPCA: inflação de {pct(B.ipca_12[ref], 2)} em 12 meses ({mes_nome(ref)}) e por região",
                   f"IPCA acumulado em 12 meses: {pct(B.ipca_12[ref], 2)} até {mes_nome(ref)}. Veja a inflação por região metropolitana e capital, mês a mês, com dados do IBGE.",
                   corpo, "/inflacao/", [(None, "Inflação")])
@@ -2182,6 +2314,7 @@ def pg_sobre(B: Base) -> str:
                  '<li><strong>Bolsa Família por município:</strong> Ministério do Desenvolvimento e Assistência Social (MDS), Matriz de Informação Social (MI Social); população estimada pelo IBGE (SIDRA, tabela 6579).</li>'
                  '<li><strong>IPCA do Brasil:</strong> IBGE, pelas séries 433 e 13522 do Banco Central.</li>'
                  '<li><strong>IPCA por região:</strong> IBGE, Sistema IBGE de Recuperação Automática (SIDRA), tabela 7060.</li>'
+                 '<li><strong>Composição do IPCA:</strong> IBGE, SIDRA, tabela 7060 (variação e peso mensal de cada grupo e item); a contribuição de cada um é o peso vezes a variação.</li>'
                  '<li><strong>Meta da Selic, decisões e calendário do Copom:</strong> Banco Central do Brasil (série 432 do SGS e calendário oficial).</li>'
                  '<li><strong>Atas do Copom:</strong> documentos oficiais do Banco Central; os resumos são nossos.</li>'
                  '<li><strong>Expectativas de mercado:</strong> Boletim Focus, do Banco Central.</li>'

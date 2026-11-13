@@ -177,6 +177,42 @@ def bf_exemplo() -> dict:
     return {"fonte": "MDS (MI Social)", "pop_ano": "2025", "nomes": nomes, "pop": pop, "meses": meses_bf}
 
 
+# ---- composição do IPCA (SIDRA 7060): nove grupos e subitens sintéticos; a soma dos impactos dos grupos dá o índice geral
+GRUPOS_IPCA = [("1", "Alimentação e bebidas", 21.5), ("2", "Habitação", 15.0), ("3", "Artigos de residência", 3.8), ("4", "Vestuário", 4.6),
+               ("5", "Transportes", 20.5), ("6", "Saúde e cuidados pessoais", 13.5), ("7", "Despesas pessoais", 10.3),
+               ("8", "Educação", 5.5), ("9", "Comunicação", 5.3)]
+NOMES_SUB = {("2", 1): "Energia elétrica residencial", ("5", 1): "Gasolina", ("1", 1): "Carnes", ("6", 1): "Planos de saúde", ("8", 1): "Cursos regulares"}
+
+
+def tabela_7060(ate: str = "2026-09", n: int = 13):
+    """Valores sintéticos: {código: {nivel, nome, '63': {mês: v}, '66': {mês: w}}} para o índice geral, 9 grupos e 7 subitens por grupo."""
+    ms = meses("2025-01", ate)[-n:]
+    cats = {"0": {"nivel": "geral", "nome": "Índice geral", "63": {}, "66": {m: 100.0 for m in ms}}}
+    for g, nome, w in GRUPOS_IPCA:
+        c = {"nivel": "grupo", "nome": nome, "63": {}, "66": {m: w for m in ms}}
+        cats[g] = c
+        for i, m in enumerate(ms):
+            c["63"][m] = round(0.05 + ((i * 3 + int(g) * 5) % 11) / 10 - 0.3, 2)
+        for k in range(1, 8):
+            cod = f"{g}1{k:02d}{k:03d}"[:7]
+            ws = round(w * (0.3 if k == 1 else 0.7 / 6), 4)
+            cats[cod] = {"nivel": "subitem", "nome": NOMES_SUB.get((g, k), f"Subitem {g}.{k}"), "66": {m: ws for m in ms},
+                         "63": {m: round(cats[g]["63"][m] + (0.9 if k == 1 and g in "25" else -0.2 * (k % 3)), 2) for m in ms}}
+    for m in ms:
+        cats["0"]["63"][m] = round(sum(cats[g]["66"][m] * cats[g]["63"][m] / 100 for g, _, _ in GRUPOS_IPCA), 2)
+    return ms, cats
+
+
+def composicao_exemplo(ate: str = "2026-09") -> dict:
+    """O mesmo formato que o robô grava em dados.json['composicao']."""
+    ms, cats = tabela_7060(ate, 12)
+    grupos = [{"cod": g, "nome": nome, "v": [cats[g]["63"][m] for m in ms], "w": [cats[g]["66"][m] for m in ms], "acum12": round(3.0 + int(g) / 3, 2)}
+              for g, nome, _ in GRUPOS_IPCA]
+    subs = [{"cod": c, "nome": v["nome"], "grupo": c[0], "v": v["63"][ms[-1]], "w": v["66"][ms[-1]], "acum12": round(2.0 + int(c[0]) / 2, 2)}
+            for c, v in sorted(cats.items()) if v["nivel"] == "subitem"]
+    return {"mes": ms[-1], "meses": ms, "geral": {"v": [cats["0"]["63"][m] for m in ms], "acum12": 4.5}, "grupos": grupos, "subitens": subs}
+
+
 def dados_exemplo() -> dict:
     ms = meses("2000-01", "2026-09")
     mensal = [[m, round(0.2 + ((i * 7) % 13) / 20, 2)] for i, m in enumerate(ms)]
@@ -194,6 +230,7 @@ def dados_exemplo() -> dict:
         "selic": {"meta": meta, "ultima_data_serie": "2026-11-12"},
         "ipca": {"mensal": mensal, "acum12": acum},
         "areas": areas,
+        "composicao": composicao_exemplo(),
         "desocupacao": emprego_exemplo(),
         "caged": caged_exemplo(),
         "cambio": cambio_exemplo(),

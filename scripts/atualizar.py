@@ -18,6 +18,7 @@ Se uma fonte essencial (Selic ou IPCA do Brasil) falhar, sai com erro e não mex
 """
 import datetime as dt
 import json
+import re
 import sys
 import time
 from urllib.parse import quote
@@ -146,6 +147,112 @@ def ipca_areas():
         a["mensal"] = sorted([k, v] for k, v in a["mensal"].items())
         a["acum12"] = sorted([k, v] for k, v in a["acum12"].items())
     return out
+
+
+IPCA_NIVEL = {1: "grupo", 2: "subgrupo", 4: "item", 7: "subitem"}   # pelo número de dígitos do código ("1", "11", "1101", "1101002")
+
+
+def _ipca_categoria(nome: str):
+    """Nível, código e nome limpo de uma categoria da tabela 7060 ('1.Alimentação e bebidas', '1101002.Batata-inglesa', 'Índice geral')."""
+    nome = str(nome).strip()
+    if nome.lower() in ("índice geral", "indice geral"):
+        return "geral", "0", "Índice geral"
+    m = re.match(r"^(\d+)\.\s*(.+)$", nome)
+    if not m or len(m.group(1)) not in IPCA_NIVEL:
+        return None
+    return IPCA_NIVEL[len(m.group(1))], m.group(1), m.group(2).strip()
+
+
+def _ipca_7060(variaveis: str, ultimos: int) -> dict:
+    """Tabela 7060 (IPCA, Brasil) para todas as categorias: {código: {nivel, nome, <variável>: {AAAA-MM: valor}}}."""
+    url = f"https://apisidra.ibge.gov.br/values/t/7060/n1/all/v/{variaveis}/p/last%20{ultimos}/c315/all"
+    linhas = get(url, tentativas=3, timeout=120).json()
+    cab, dados = linhas[0], linhas[1:]
+    chaves = [k for k in cab if k.startswith("D") and k.endswith("C")]
+    k_var = next((k for k in chaves if str(cab[k]).startswith("Variável")), None)
+    k_mes = next((k for k in chaves if str(cab[k]).lower().startswith("mês")), None)
+    k_ter = next((k for k in chaves if any(s in str(cab[k]) for s in ("Brasil", "Territ"))), None)
+    k_cl = next((k for k in chaves if k not in (k_var, k_mes, k_ter)), None)
+    if not (k_var and k_mes and k_cl):
+        raise RuntimeError(f"IPCA composição: colunas não encontradas; cabeçalho: {cab}")
+    cats, ignoradas = {}, set()
+    for x in dados:
+        cl = _ipca_categoria(x.get(k_cl[:-1] + "N", ""))
+        if cl is None:
+            ignoradas.add(str(x.get(k_cl[:-1] + "N", ""))[:40])
+            continue
+        nivel, cod, nome = cl
+        try:
+            val = float(x.get("V"))
+        except (TypeError, ValueError):
+            continue
+        mes = str(x[k_mes])
+        c = cats.setdefault(cod, {"nivel": nivel, "nome": nome})
+        c.setdefault(str(x[k_var]), {})[f"{mes[:4]}-{mes[4:6]}"] = val
+    debug["avisos"].append(f"IPCA composição ({variaveis}): {len(dados)} linhas, {len(cats)} categorias; ignoradas {sorted(ignoradas)[:6]}; amostra {dados[:1]}")
+    return cats
+
+
+def ipca_composicao():
+    """Composição do IPCA do Brasil: variação (v63) e peso (v66) mensais de cada grupo nos últimos 12 meses e de cada subitem no último mês.
+    O impacto de uma categoria no IPCA do mês é peso x variação / 100 (em pontos percentuais); a soma dos nove grupos tem de dar o índice geral."""
+    cats = _ipca_7060("63,66", 13)
+    geral = cats.get("0")
+    if not geral or "63" not in geral:
+        raise RuntimeError(f"IPCA composição: sem o índice geral; códigos achados: {sorted(cats)[:12]}")
+    meses = sorted(geral["63"])[-12:]
+    if len(meses) < 12 or any(_mes_seguinte(a) != b for a, b in zip(meses, meses[1:])):
+        raise RuntimeError(f"IPCA composição: meses do índice geral incompletos ou com buraco: {meses}")
+    grupos = sorted((c for c, v in cats.items() if v["nivel"] == "grupo"), key=int)
+    if len(grupos) != 9:
+        raise RuntimeError(f"IPCA composição: esperava 9 grupos e achei {len(grupos)}: {[cats[c]['nome'] for c in grupos]}")
+    out_g = []
+    for cod in grupos:
+        c = cats[cod]
+        v = [c.get("63", {}).get(m) for m in meses]
+        w = [c.get("66", {}).get(m) for m in meses]
+        if None in v or None in w:
+            raise RuntimeError(f"IPCA composição: grupo {c['nome']} sem variação ou peso em algum mês (v {v}, w {w})")
+        out_g.append({"cod": cod, "nome": c["nome"], "v": v, "w": w})
+    v_geral = [geral["63"][m] for m in meses]
+    pior = 0.0
+    for i, m in enumerate(meses):
+        soma_w = sum(g["w"][i] for g in out_g)
+        soma_imp = sum(g["w"][i] * g["v"][i] / 100 for g in out_g)
+        if abs(soma_w - 100) > 0.3:
+            raise RuntimeError(f"IPCA composição: pesos dos grupos somam {soma_w:.2f} em {m} (esperado 100)")
+        pior = max(pior, abs(soma_imp - v_geral[i]))
+    if pior > 0.05:
+        raise RuntimeError(f"IPCA composição: a soma dos impactos dos grupos difere do índice geral em até {pior:.3f} p.p.")
+    if pior > 0.02:
+        debug["avisos"].append(f"IPCA composição: soma dos impactos dos grupos difere do índice geral em até {pior:.3f} p.p. (arredondamento dos pesos)")
+    ult = meses[-1]
+    subs = [{"cod": c, "nome": v["nome"], "grupo": c[0], "v": v["63"][ult], "w": v["66"][ult]}
+            for c, v in cats.items() if v["nivel"] == "subitem" and ult in v.get("63", {}) and ult in v.get("66", {}) and v["66"][ult] > 0]
+    if len(subs) < 50:
+        raise RuntimeError(f"IPCA composição: só {len(subs)} subitens com variação e peso em {ult}")
+    soma_sub = sum(s["w"] * s["v"] / 100 for s in subs)
+    debug["avisos"].append(f"IPCA composição {ult}: índice geral {v_geral[-1]}; soma dos grupos {sum(g['w'][-1] * g['v'][-1] / 100 for g in out_g):.3f}; "
+                           f"soma dos {len(subs)} subitens {soma_sub:.3f}; maior diferença mensal dos grupos {pior:.3f}")
+    acum12 = {}
+    try:   # variação acumulada em 12 meses de cada categoria (só o último mês): complemento
+        for cod, v in _ipca_7060("2265", 1).items():
+            for m, val in v.get("2265", {}).items():
+                if m == ult:
+                    acum12[cod] = val
+    except Exception as e:  # noqa: BLE001
+        debug["avisos"].append(f"IPCA composição: sem o acumulado em 12 meses por categoria: {e}")
+    for g in out_g:
+        g["acum12"] = acum12.get(g["cod"])
+    for s in subs:
+        s["acum12"] = acum12.get(s["cod"])
+    return {"mes": ult, "meses": meses, "geral": {"v": v_geral, "acum12": acum12.get("0")}, "grupos": out_g,
+            "subitens": sorted(subs, key=lambda s: s["cod"])}
+
+
+def _mes_seguinte(m: str) -> str:
+    a, n = int(m[:4]), int(m[5:7])
+    return f"{a + (n == 12)}-{1 if n == 12 else n + 1:02d}"
 
 
 FOCUS_IND = ("Selic", "IPCA", "PIB Total", "Câmbio", "Resultado primário", "Resultado nominal",
@@ -835,7 +942,7 @@ def main():
     novo = dict(antigo)
     essenciais_ok = True
     t0 = time.time()
-    for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("focus", focus, False),
+    for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("composicao", ipca_composicao, False), ("focus", focus, False),
                              ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False),
                              ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False), ("fiscal", fiscal, False),
                              ("credito", credito, False), ("industria", producao_industrial, False), ("varejo", varejo, False),
