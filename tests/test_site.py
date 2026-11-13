@@ -472,3 +472,24 @@ class TestContasPublicas(unittest.TestCase):
             home = (d / "docs" / "index.html").read_text(encoding="utf-8")
             self.assertNotIn("contas-publicas", home)
             self.assertNotIn("Contas públicas", home)
+
+
+class TestEixos(unittest.TestCase):
+    def test_todo_grafico_tem_unidade_no_eixo_y(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            dados = gravar(d / "dados.json")
+            cam = g.gerar(dados, d / "docs")
+            total = 0
+            for c in cam:
+                t = (d / "docs" / c.lstrip("/") / "index.html").read_text(encoding="utf-8")
+                for bloco in re.findall(r'<div class="chart".*?</svg></div>', t, flags=re.S):
+                    total += 1
+                    rot = re.search(r'<text class="yl"[^>]*>(.*?)</text>', bloco)
+                    self.assertIsNotNone(rot, c)
+                    self.assertGreater(len(rot.group(1)), 2, c)
+            self.assertEqual(total, 55)
+            t = (d / "docs" / "cambio" / "index.html").read_text(encoding="utf-8")
+            self.assertIn(">R$ por US$<", t)
+            t = (d / "docs" / "contas-publicas" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("abaixo de zero = déficit", t)

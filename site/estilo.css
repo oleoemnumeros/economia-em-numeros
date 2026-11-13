@@ -172,3 +172,6 @@ details.dados[open] summary{margin-bottom:8px}
 details.dados .scroll{max-height:320px;overflow:auto}
 details.dados thead th{position:sticky;top:0;background:var(--surface)}
 details.dados td,details.dados th{font-variant-numeric:tabular-nums}
+
+/* Unidade do eixo vertical, no alto à esquerda de cada gráfico */
+.chart text.yl{fill:var(--ink);font-weight:600}

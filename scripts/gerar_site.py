@@ -418,7 +418,7 @@ def lista_links(itens) -> str:
 
 
 # ------------------------------------------------------------------ gráficos SVG (estáticos)
-W, H, PL, PR, PT, PB = 640, 240, 58, 16, 14, 34
+W, H, PL, PR, PT, PB = 640, 240, 58, 16, 42, 34
 
 
 def _eixo(vals, zero=False, margem=0.12):
@@ -437,11 +437,17 @@ def _eixo(vals, zero=False, margem=0.12):
     return lo, hi, marcas, d
 
 
+def _rotulo_y(texto: str) -> str:
+    """Unidade do eixo vertical, escrita no alto à esquerda (horizontal, para ler sem inclinar a cabeça)."""
+    return f'<text class="yl" x="4" y="21" text-anchor="start">{esc(texto)}</text>' if texto else ""
+
+
 def _grade(lo, hi, marcas, d) -> str:
     y = lambda v: PT + (H - PT - PB) * (1 - (v - lo) / (hi - lo))
     g = ""
     for t in marcas:
-        g += (f'<line x1="{PL}" x2="{W - PR}" y1="{y(t):.1f}" y2="{y(t):.1f}" style="stroke:var(--line)"/>'
+        cor = "var(--muted)" if abs(t) < 1e-9 and lo < 0 else "var(--line)"   # o zero fica mais marcado quando há valores negativos
+        g += (f'<line x1="{PL}" x2="{W - PR}" y1="{y(t):.1f}" y2="{y(t):.1f}" style="stroke:{cor}"/>'
               f'<text x="{PL - 6}" y="{y(t) + 4:.1f}" text-anchor="end">{nf(t, d)}</text>')
     return g
 
@@ -457,13 +463,13 @@ def _rotulos_x(rotulos, x) -> str:
     return g
 
 
-def svg_linhas(series, rotulos, aria, zero=False) -> str:
+def svg_linhas(series, rotulos, aria, zero=False, unidade="") -> str:
     """series: lista de dicts {vals, cor ('a'|'b'|'m'), tracejada}; todas com o mesmo tamanho que rotulos."""
     lo, hi, marcas, d = _eixo([v for s in series for v in s["vals"]], zero=zero)
     n = len(rotulos)
     x = lambda i: PL + (W - PL - PR) * (i / (n - 1) if n > 1 else 0.5)
     y = lambda v: PT + (H - PT - PB) * (1 - (v - lo) / (hi - lo))
-    g = _grade(lo, hi, marcas, d) + _rotulos_x(rotulos, x)
+    g = _rotulo_y(unidade) + _grade(lo, hi, marcas, d) + _rotulos_x(rotulos, x)
     cores = {"a": "var(--eco)", "b": "var(--eco2)", "m": "var(--muted)"}
     for s in series:
         c = cores[s.get("cor", "a")]
@@ -476,13 +482,13 @@ def svg_linhas(series, rotulos, aria, zero=False) -> str:
     return f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>'
 
 
-def svg_degraus(pontos, ate: dt.date, aria) -> str:
+def svg_degraus(pontos, ate: dt.date, aria, unidade="") -> str:
     """Gráfico em degraus no tempo. pontos: [(data, valor)] ordenados, o valor vale até o próximo ponto."""
     lo, hi, marcas, d = _eixo([v for _, v in pontos], zero=True)
     t0, t1 = pontos[0][0].toordinal(), ate.toordinal()
     x = lambda dia: PL + (W - PL - PR) * (dia.toordinal() - t0) / max(1, t1 - t0)
     y = lambda v: PT + (H - PT - PB) * (1 - (v - lo) / (hi - lo))
-    g = _grade(lo, hi, marcas, d)
+    g = _rotulo_y(unidade) + _grade(lo, hi, marcas, d)
     anos = list(range(pontos[0][0].year + 1, ate.year + 1))
     passo = 2 if len(anos) > 5 else 1
     for ano in anos[::passo]:
@@ -497,13 +503,13 @@ def svg_degraus(pontos, ate: dt.date, aria) -> str:
     return f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>'
 
 
-def svg_barras(vals, rotulos, aria) -> str:
+def svg_barras(vals, rotulos, aria, unidade="") -> str:
     lo, hi, marcas, d = _eixo(vals, zero=True, margem=0.08)
     y = lambda v: PT + (H - PT - PB) * (1 - (v - lo) / (hi - lo))
     n = len(vals)
     bw = (W - PL - PR) / n
     x = lambda k: PL + bw * k + bw / 2
-    g = _grade(lo, hi, marcas, d) + _rotulos_x(rotulos, x)
+    g = _rotulo_y(unidade) + _grade(lo, hi, marcas, d) + _rotulos_x(rotulos, x)
     for k, v in enumerate(vals):
         y0, y1 = y(max(v, 0)), y(min(v, 0))
         cor = "var(--eco2)" if v < 0 else "var(--eco)"
@@ -735,7 +741,7 @@ def pg_inicio(B: Base) -> str:
                 "Sem cadastro e sem opinião: só o número, a fonte e a data.</p>")
     sel19 = [(d, v) for d, v in B.mud if d >= dt.date(2019, 1, 1)] or B.mud
     selic = grafico(B, "selic-meta", "Meta da Selic desde 2019", F_SELIC,
-                    svg_degraus(sel19, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2019"),
+                    svg_degraus(sel19, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2019", unidade="% ao ano"),
                     ["Em vigor desde", "Meta da Selic (% ao ano)"], [(d.isoformat(), v) for d, v in sel19], "Juros e Copom",
                     nota='<p class="small">Meta da taxa Selic definida pelo Copom, em % ao ano. Cada degrau é uma decisão do comitê.</p>',
                     ultimo=f"{pct(B.selic, 2)} ao ano, em vigor desde {data_br(B.selic_desde)}", csv_linhas=[(d.isoformat(), v) for d, v in B.mud])
@@ -802,7 +808,7 @@ def pg_juros(B: Base) -> str:
     hero = card('<span class="eyebrow">Política monetária</span><h1>Selic e reuniões do Copom</h1>'
                 f'<p class="lede">A meta da Selic está em <strong>{pct(B.selic, 2)} ao ano</strong> desde {data_br(B.selic_desde)}. '
                 "Veja o histórico de decisões, o calendário das próximas reuniões e o que o mercado espera para os juros.</p>")
-    graf = grafico(B, "selic-meta", "Meta da Selic desde 2016", F_SELIC, svg_degraus(B.mud, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2016"),
+    graf = grafico(B, "selic-meta", "Meta da Selic desde 2016", F_SELIC, svg_degraus(B.mud, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2016", unidade="% ao ano"),
                    ["Em vigor desde", "Meta da Selic (% ao ano)"], [(d.isoformat(), v) for d, v in B.mud], "Juros e Copom",
                    ultimo=f"{pct(B.selic, 2)} ao ano, em vigor desde {data_br(B.selic_desde)}")
     fut = [r for r in B.reunioes if r["fim"] >= B.hoje][:8]
@@ -877,7 +883,7 @@ def pg_emprego(B: Base) -> str:
     ult36 = mov[-36:]
     g1 = grafico(B, "desocupacao-brasil", "Taxa de desocupação", F_PNAD_BR,
                  svg_linhas([{"vals": [x[2] for x in ult36], "cor": "a"}], [mes_curtinho(f"{x[0][:4]}-{x[0][4:]}") for x in ult36],
-                            "Gráfico da taxa de desocupação no Brasil, em trimestres móveis, nos últimos 36 meses"),
+                            "Gráfico da taxa de desocupação no Brasil, em trimestres móveis, nos últimos 36 meses", unidade="% da força de trabalho"),
                  ["Trimestre móvel", "Taxa de desocupação (%)"], [(rot_movel_curto(x[0]), x[2]) for x in ult36], "Emprego", casas=1,
                  nota='<p class="small">Pessoas de 14 anos ou mais sem trabalho que procuraram emprego, em % da força de trabalho. Cada ponto é um trimestre móvel, identificado pelo mês final.</p>',
                  ultimo=f"trimestre {rot_movel(ult[0])} ({pct(ult[2], 1)})",
@@ -887,8 +893,8 @@ def pg_emprego(B: Base) -> str:
     if cg:
         c24 = cg[-24:]
         g2 = grafico(B, "caged-saldo", "Saldo mensal de vagas formais", F_CAGED,
-                     svg_barras([v / 1000 for _, v in c24], [mes_curtinho(m) for m, _ in c24], "Gráfico de barras do saldo mensal de vagas formais do Novo Caged nos últimos 24 meses, em milhares"),
-                     ["Mês", "Saldo de vagas formais"], c24, "Emprego", casas=0, csv_linhas=cg,
+                     svg_barras([v / 1000 for _, v in c24], [mes_curtinho(m) for m, _ in c24], "Gráfico de barras do saldo mensal de vagas formais do Novo Caged nos últimos 24 meses, em milhares", unidade="Milhares de vagas no mês"),
+                     ["Mês", "Saldo (vagas)"], c24, "Emprego", casas=0, csv_linhas=cg,
                      nota='<p class="small">Em milhares de vagas. Admissões menos desligamentos de empregos com carteira assinada. Dezembro costuma ter saldo negativo.</p>',
                      ultimo=f"{mes_nome(cg[-1][0])}: {saldo_txt(cg[-1][1])} vagas")
     graficos = f'<div class="cols">{g1}{g2}</div>' if g2 else g1
@@ -935,8 +941,8 @@ def pg_uf(B: Base, u: dict) -> str:
     series = [{"vals": [u["serie"][c] for c in comuns], "cor": "b"}, {"vals": [br[c] for c in comuns], "cor": "m", "tracejada": True}]
     todos = [c for c in sorted(u["serie"]) if c in br]
     graf = grafico(B, f"desocupacao-{u['slug']}", f"Taxa de desocupação: {esc(u['nome'])} e Brasil", F_PNAD_UF,
-                   svg_linhas(series, [rot_tri(c) for c in comuns], f"Gráfico da taxa de desocupação em {u['nome']} e no Brasil"),
-                   ["Trimestre", u["nome"], "Brasil"], [(rot_tri(c, True), u["serie"][c], br[c]) for c in comuns], "Emprego por estado", casas=1,
+                   svg_linhas(series, [rot_tri(c) for c in comuns], f"Gráfico da taxa de desocupação em {u['nome']} e no Brasil", unidade="% da força de trabalho"),
+                   ["Trimestre", f'{u["nome"]} (%)', "Brasil (%)"], [(rot_tri(c, True), u["serie"][c], br[c]) for c in comuns], "Emprego por estado", casas=1,
                    legenda=f'<div class="leg"><span><i style="background:var(--eco2)"></i>{esc(u["nome"])}</span><span><i style="background:var(--muted)"></i>Brasil</span></div>',
                    ultimo=f"{rot_tri(ult, True)}: {pct(u['taxa'], 1)}",
                    csv_cab=["Trimestre", f"Desocupação {u['nome']} (%)", "Desocupação Brasil (%)"],
@@ -1020,8 +1026,8 @@ def pg_fiscal(B: Base) -> str:
     cm = sorted(set(d1) & set(d2))
     g1 = grafico(B, "divida-publica", "Dívida bruta e dívida líquida (% do PIB)", "Banco Central do Brasil (SGS 13762 e 4513)",
                  svg_linhas([{"vals": [d1[m] for m in cm], "cor": "a"}, {"vals": [d2[m] for m in cm], "cor": "b"}], [mes_curtinho(m) for m in cm],
-                            "Gráfico da dívida bruta do governo geral e da dívida líquida do setor público, em % do PIB"),
-                 ["Mês", "Dívida bruta", "Dívida líquida"], [(m, d1[m], d2[m]) for m in cm], "Contas públicas", casas=1,
+                            "Gráfico da dívida bruta do governo geral e da dívida líquida do setor público, em % do PIB", unidade="% do PIB"),
+                 ["Mês", "Dívida bruta (% do PIB)", "Dívida líquida (% do PIB)"], [(m, d1[m], d2[m]) for m in cm], "Contas públicas", casas=1,
                  legenda=leg("Dívida bruta (governo geral)", "Dívida líquida (setor público)"),
                  nota='<p class="small">A bruta soma o que o governo deve; a líquida desconta ativos do setor público, como as reservas internacionais.</p>',
                  ultimo=f"bruta {pct(dbgg['v'], 1)} ({mes_curto(dbgg['mes'])}); líquida {pct(dlsp['v'], 1)} ({mes_curto(dlsp['mes'])})",
@@ -1030,8 +1036,8 @@ def pg_fiscal(B: Base) -> str:
     cr = sorted(set(d3) & set(d4))
     g2 = grafico(B, "resultado-fiscal", "Resultado primário e nominal em 12 meses (% do PIB)", "Banco Central do Brasil (SGS 5793 e 5727)",
                  svg_linhas([{"vals": [d3[m] for m in cr], "cor": "a"}, {"vals": [d4[m] for m in cr], "cor": "b"}], [mes_curtinho(m) for m in cr],
-                            "Gráfico do resultado primário e do resultado nominal do setor público consolidado, acumulados em 12 meses, em % do PIB", zero=True),
-                 ["Mês", "Primário", "Nominal"], [(m, d3[m], d4[m]) for m in cr], "Contas públicas",
+                            "Gráfico do resultado primário e do resultado nominal do setor público consolidado, acumulados em 12 meses, em % do PIB", zero=True, unidade="% do PIB (abaixo de zero = déficit)"),
+                 ["Mês", "Primário (% do PIB)", "Nominal (% do PIB)"], [(m, d3[m], d4[m]) for m in cr], "Contas públicas",
                  legenda=leg("Resultado primário", "Resultado nominal (com juros)"),
                  nota='<p class="small">Soma dos últimos 12 meses, em % do PIB. Acima de zero é superávit; abaixo de zero, déficit.</p>',
                  ultimo=f"primário {sinal(prim['v'], 2)}% e nominal {sinal(nom['v'], 2)}% ({mes_curto(prim['mes'])})",
@@ -1077,16 +1083,16 @@ def pg_cambio(B: Base) -> str:
     s12 = c["serie12"]
     g1 = grafico(B, "dolar-diario", "Dólar nos últimos 12 meses", F_CAMBIO,
                  svg_linhas([{"vals": [v for _, v in s12], "cor": "a"}], [mes_curtinho(x.strftime("%Y-%m")) for x, _ in s12],
-                            "Gráfico da cotação de venda do dólar em reais nos últimos 12 meses"),
-                 ["Data", "Dólar venda (R$)"], [(x.isoformat(), v) for x, v in s12], "Câmbio",
+                            "Gráfico da cotação de venda do dólar em reais nos últimos 12 meses", unidade="R$ por US$"),
+                 ["Data", "Dólar venda (R$ por US$)"], [(x.isoformat(), v) for x, v in s12], "Câmbio",
                  nota=f'<p class="small">Cotação de venda, em R$ por US$, a cada dia útil. Mínima em 12 meses: R$ {nf(c["min12"], 2)}; máxima: R$ {nf(c["max12"], 2)}.</p>',
                  ultimo=f"{data_br(c['data'])}: R$ {nf(c['ult'], 2)}",
                  csv_cab=["Data", "Dólar venda (R$ por US$)"], csv_linhas=[(a, float(v)) for a, v in B.cambio["diario"]])
     m = c["mensal"]
     g2 = grafico(B, "dolar-mensal", "Dólar desde 2016 (média mensal)", F_CAMBIO,
                  svg_linhas([{"vals": [v for _, v in m], "cor": "b"}], [mes_curtinho(x) for x, _ in m],
-                            "Gráfico da média mensal da cotação do dólar em reais desde 2016"),
-                 ["Mês", "Média do mês (R$)"], m, "Câmbio",
+                            "Gráfico da média mensal da cotação do dólar em reais desde 2016", unidade="R$ por US$ (média do mês)"),
+                 ["Mês", "Média do mês (R$ por US$)"], m, "Câmbio",
                  nota='<p class="small">Média das cotações de venda de cada mês, em R$ por US$.</p>',
                  ultimo=f"{mes_nome(m[-1][0])}: R$ {nf(m[-1][1], 2)} (média)",
                  csv_cab=["Mês", "Média do mês (R$ por US$)", "Fechamento do mês (R$ por US$)"],
@@ -1148,7 +1154,7 @@ def pg_atividade(B: Base) -> str:
     if r:
         u12 = [x for x in B.pib if x.get("qoq") is not None][-12:]
         graf.append(grafico(B, "pib-trimestral", "PIB: variação sobre o trimestre anterior", F_PIB,
-                            svg_barras([x["qoq"] for x in u12], [rot_tri(x["t"]) for x in u12], "Gráfico de barras da variação trimestral do PIB, com ajuste sazonal, nos últimos 12 trimestres"),
+                            svg_barras([x["qoq"] for x in u12], [rot_tri(x["t"]) for x in u12], "Gráfico de barras da variação trimestral do PIB, com ajuste sazonal, nos últimos 12 trimestres", unidade="% sobre o trimestre anterior"),
                             ["Trimestre", "Vs. trim. anterior (%)"], [(rot_tri(x["t"], True), x["qoq"]) for x in u12], "Atividade",
                             nota='<p class="small">Em %, com ajuste sazonal, comparando cada trimestre com o anterior.</p>',
                             ultimo=f"{rot_tri(r['t'], True)}: {sinal(r['qoq'], 1)}%",
@@ -1158,7 +1164,7 @@ def pg_atividade(B: Base) -> str:
         s36 = i["sa"][-36:]
         nsa = {m: v for m, v in B.ibc["nsa"]}
         graf.append(grafico(B, "ibcbr", "IBC-Br: nível da atividade", F_IBC,
-                            svg_linhas([{"vals": [v for _, v in s36], "cor": "a"}], [mes_curtinho(m) for m, _ in s36], "Gráfico do índice IBC-Br com ajuste sazonal nos últimos 36 meses"),
+                            svg_linhas([{"vals": [v for _, v in s36], "cor": "a"}], [mes_curtinho(m) for m, _ in s36], "Gráfico do índice IBC-Br com ajuste sazonal nos últimos 36 meses", unidade="Índice, com ajuste sazonal"),
                             ["Mês", "IBC-Br (índice)"], s36, "Atividade",
                             nota='<p class="small">Índice com ajuste sazonal, nos últimos 36 meses. O IBC-Br é uma aproximação mensal do PIB; o que importa é a direção, não o valor absoluto.</p>',
                             ultimo=f"{mes_nome(i['mes'])}: {nf(s36[-1][1], 2)}",
@@ -1229,12 +1235,12 @@ def pg_inflacao(B: Base) -> str:
     tiles.append(tile("Meta de inflação", "3,00", "% ± 1,5", "", "g"))
     g12 = grafico(B, "ipca-12-meses", "IPCA acumulado em 12 meses", F_IPCA,
                   svg_linhas([{"vals": [B.ipca_12[m] for m in ms36], "cor": "b"}], [mes_curtinho(m) for m in ms36],
-                             "Gráfico do IPCA acumulado em 12 meses nos últimos 36 meses"),
+                             "Gráfico do IPCA acumulado em 12 meses nos últimos 36 meses", unidade="% acumulado em 12 meses"),
                   ["Mês", "IPCA em 12 meses (%)"], [(m, B.ipca_12[m]) for m in ms36], "Inflação",
                   ultimo=f"{mes_nome(ref)}: {pct(B.ipca_12[ref], 2)}", csv_linhas=[(m, B.ipca_12[m]) for m in sorted(B.ipca_12)])
     ms24v = [m for m in ms24 if m in B.ipca_m]
     gm = grafico(B, "ipca-mensal", "IPCA mensal", F_IPCA,
-                 svg_barras([B.ipca_m[m] for m in ms24v], [mes_curtinho(m) for m in ms24v], "Gráfico de barras do IPCA mensal nos últimos 24 meses"),
+                 svg_barras([B.ipca_m[m] for m in ms24v], [mes_curtinho(m) for m in ms24v], "Gráfico de barras do IPCA mensal nos últimos 24 meses", unidade="% no mês"),
                  ["Mês", "IPCA no mês (%)"], [(m, B.ipca_m[m]) for m in ms24v], "Inflação",
                  ultimo=f"{mes_nome(ref)}: {pct(B.ipca_m[ref], 2)}", csv_linhas=[(m, B.ipca_m[m]) for m in sorted(B.ipca_m)])
     rk = B.ranking()
@@ -1285,8 +1291,8 @@ def pg_area(B: Base, a: dict) -> str:
     series = [{"vals": [a["acum12"][m] for m in comuns], "cor": "b"}, {"vals": [B.ipca_12[m] for m in comuns], "cor": "m", "tracejada": True}]
     todos = [m for m in sorted(a["acum12"]) if m in B.ipca_12]
     graf = grafico(B, f"ipca-12m-{a['slug']}", f"IPCA em 12 meses: {esc(a['nome'])} e Brasil", F_IPCA_AREA,
-                   svg_linhas(series, [mes_curtinho(m) for m in comuns], f"Gráfico do IPCA acumulado em 12 meses em {a['nome']} e no Brasil"),
-                   ["Mês", a["nome"], "Brasil"], [(m, a["acum12"][m], B.ipca_12[m]) for m in comuns], "Inflação por área",
+                   svg_linhas(series, [mes_curtinho(m) for m in comuns], f"Gráfico do IPCA acumulado em 12 meses em {a['nome']} e no Brasil", unidade="% acumulado em 12 meses"),
+                   ["Mês", f'{a["nome"]} (%)', "Brasil (%)"], [(m, a["acum12"][m], B.ipca_12[m]) for m in comuns], "Inflação por área",
                    legenda=f'<div class="leg"><span><i style="background:var(--eco2)"></i>{esc(a["nome"])}</span><span><i style="background:var(--muted)"></i>Brasil</span></div>',
                    ultimo=f"{mes_nome(ref)}: {pct(v12, 2)}",
                    csv_cab=["Mês", f"IPCA em 12 meses {a['nome']} (%)", "IPCA em 12 meses Brasil (%)"],
