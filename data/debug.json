@@ -1,0 +1,7 @@
+{
+ "inicio": "2026-11-13T13:15:44",
+ "avisos": [],
+ "erros": [
+  "focus: https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais falhou: HTTP 400: /*{\n  \"codigo\" : 400,\n  \"mensagem\" : \"The types 'Edm.Boolean' and 'Edm.String' are not compatible.\"\n}*/"
+ ]
+}
