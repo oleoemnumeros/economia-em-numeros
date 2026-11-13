@@ -4,6 +4,8 @@ on:
   # Selic e Focus mudam toda semana, o IPCA sai por volta do dia 10: o robô confere todo dia.
   schedule:
     - cron: "23 11 * * *"
+    # Fechamento do dólar (PTAX) do próprio dia: sai à tarde nos dias úteis (17h35 em Brasília).
+    - cron: "35 20 * * 1-5"
   # Botão "Run workflow" na aba Actions
   workflow_dispatch:
   # Roda quando o código do robô, do site ou o calendário do Copom muda

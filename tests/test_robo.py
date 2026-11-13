@@ -140,5 +140,69 @@ class TestEmprego(unittest.TestCase):
                 r.caged()
 
 
+def dias_uteis(ini: dt.date, fim: dt.date):
+    d = ini
+    while d <= fim:
+        if d.weekday() < 5:
+            yield d
+        d += dt.timedelta(days=1)
+
+
+class TestAtividadeECambio(unittest.TestCase):
+    def test_cambio_recorta_diario_e_calcula_mensal(self):
+        serie = [(d, 5.0 + (i % 7) / 10) for i, d in enumerate(dias_uteis(dt.date(2016, 1, 4), dt.date(2026, 11, 12)))]
+        with mock.patch.object(r, "sgs", lambda *a: serie), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            out = r.cambio()
+        self.assertEqual(out["diario"][-1][0], "2026-11-12")
+        self.assertGreaterEqual(dt.date.fromisoformat(out["diario"][0][0]), dt.date(2025, 10, 8))
+        self.assertLess(len(out["diario"]), 300)
+        self.assertEqual(out["mensal"][0][0], "2016-01")
+        m = out["mensal"][-1]
+        self.assertEqual(m[0], "2026-11")
+        self.assertEqual(m[2], serie[-1][1])  # fim do mês = última cotação disponível
+
+    def test_cambio_recusa_serie_estranha(self):
+        ruim = [(d, 0.5) for d in dias_uteis(dt.date(2016, 1, 4), dt.date(2026, 11, 12))]
+        with mock.patch.object(r, "sgs", lambda *a: ruim), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.cambio()
+        curta = [(d, 5.0) for d in dias_uteis(dt.date(2026, 1, 4), dt.date(2026, 11, 12))]
+        with mock.patch.object(r, "sgs", lambda *a: curta), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.cambio()
+
+    def test_ibc_duas_series_e_trava(self):
+        meses = [(dt.date(2022 + (m // 12), m % 12 + 1, 1), 140.0 + m / 10) for m in range(48)]
+        with mock.patch.object(r, "sgs", lambda cod, ini: meses), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            out = r.ibcbr()
+        self.assertEqual(set(out), {"sa", "nsa"})
+        self.assertEqual(out["sa"][0][0], "2022-01")
+        self.assertEqual(out["sa"][-1][0], "2025-12")
+        variacao = [(d, 1.2) for d, _ in meses]  # variação em %, não índice
+        with mock.patch.object(r, "sgs", lambda cod, ini: variacao), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.ibcbr()
+
+    def _linhas_pib(self, vars_=("6561", "6563", "6564")):
+        cab = {"NC": "Nível Territorial (Código)", "NN": "Nível Territorial", "MC": "Unidade de Medida (Código)", "MN": "Unidade de Medida", "V": "Valor",
+               "D1C": "Brasil (Código)", "D1N": "Brasil", "D2C": "Variável (Código)", "D2N": "Variável", "D3C": "Trimestre (Código)", "D3N": "Trimestre",
+               "D4C": "Setores e subsetores (Código)", "D4N": "Setores e subsetores"}
+        tris = [f"{a}0{q}" for a in (2023, 2024, 2025, 2026) for q in (1, 2, 3, 4)][:16]
+        return [cab] + [{"NC": "1", "V": f"{0.1 * i + 1:.1f}", "D1C": "1", "D2C": v, "D3C": t, "D4C": "90707"} for i, t in enumerate(tris) for v in vars_]
+
+    def test_pib_monta_trimestres(self):
+        with mock.patch.object(r, "get", lambda *a, **k: FakeResp(self._linhas_pib())), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            out = r.pib()["trimestral"]
+        self.assertEqual(len(out), 16)
+        self.assertEqual(out[0]["t"], "202301")
+        self.assertEqual(out[-1]["t"], "202604")
+        self.assertEqual(set(out[0]), {"t", "yoy", "a4", "qoq"})
+
+    def test_pib_recusa_variaveis_inesperadas(self):
+        with mock.patch.object(r, "get", lambda *a, **k: FakeResp(self._linhas_pib(("1", "2")))), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.pib()
+
+
 if __name__ == "__main__":
     unittest.main()

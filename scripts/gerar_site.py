@@ -124,6 +124,21 @@ def rot_movel(cod: str) -> str:
     return "-".join(nomes) + f" de {ano}"
 
 
+def var_pct(v, ref):
+    return (v / ref - 1) * 100 if ref else None
+
+
+def verbo_var(v, d=1, pos="cresceu", neg="recuou") -> str:
+    """'cresceu 0,4%', 'recuou 0,3%' ou 'ficou estável' (quando arredonda para zero)."""
+    if round(abs(v), d) == 0:
+        return "ficou estável"
+    return f"{pos if v > 0 else neg} {nf(abs(v), d)}%"
+
+
+def pct_sinal(v, d=1) -> str:
+    return "–" if v is None else f"{sinal(v, d)}%"
+
+
 def saldo_txt(v: float) -> str:
     return ("+" if v > 0 else "−" if v < 0 else "") + nf(abs(v), 0)
 
@@ -154,6 +169,9 @@ class Base:
         self.resumos = (resumos or {}).get("atas", {})
         self.des = dados.get("desocupacao") or None
         self.caged = dados.get("caged") or None
+        self.cambio = dados.get("cambio") or None
+        self.pib = (dados.get("pib") or {}).get("trimestral") or None
+        self.ibc = dados.get("ibc") or None
 
     # Atas, emprego ----------------------------------------------------------
     def ata_pdf(self, n: int):
@@ -163,11 +181,65 @@ class Base:
     def tem_emprego(self) -> bool:
         return bool(self.des and "1" in (self.des.get("trimestral") or {}) and self.des.get("movel"))
 
+    @property
+    def tem_cambio(self) -> bool:
+        return bool(self.cambio and len(self.cambio.get("diario") or []) > 30)
+
+    @property
+    def tem_pib(self) -> bool:
+        return bool(self.pib and any(r.get("qoq") is not None for r in self.pib))
+
+    @property
+    def tem_ibc(self) -> bool:
+        return bool(self.ibc and len(self.ibc.get("sa") or []) >= 14 and len(self.ibc.get("nsa") or []) >= 25)
+
+    @property
+    def tem_atividade(self) -> bool:
+        return self.tem_pib or self.tem_ibc
+
     def nav(self) -> list:
-        itens = list(NAV)
+        itens = [NAV[0]]
         if self.tem_emprego:
-            itens.insert(1, ("/emprego/", "Emprego"))
-        return itens
+            itens.append(("/emprego/", "Emprego"))
+        if self.tem_atividade:
+            itens.append(("/atividade/", "Atividade"))
+        if self.tem_cambio:
+            itens.append(("/cambio/", "Câmbio"))
+        return itens + NAV[1:]
+
+    # Câmbio ---------------------------------------------------------------
+    def cambio_stats(self) -> dict:
+        d = [(dt.date.fromisoformat(a), float(v)) for a, v in self.cambio["diario"]]
+        mensal = {m: (med, fim) for m, med, fim in self.cambio.get("mensal", [])}
+        data, ult = d[-1]
+
+        def ate(dia):
+            vs = [v for x, v in d if x <= dia]
+            return vs[-1] if vs else None
+
+        def var(ref):
+            return (ult / ref - 1) * 100 if ref else None
+
+        fim_mes_ant = ate(data.replace(day=1) - dt.timedelta(days=1))
+        fim_ano_ant = (mensal.get(f"{data.year - 1}-12") or (None, None))[1]
+        ult12 = [(x, v) for x, v in d if x > data - dt.timedelta(days=365)]
+        linhas = []
+        for k in range(len(d) - 1, max(len(d) - 11, 0), -1):
+            linhas.append((d[k][0], d[k][1], var_pct(d[k][1], d[k - 1][1])))
+        return {"data": data, "ult": ult, "dia": var(d[-2][1]) if len(d) > 1 else None, "mes": var(fim_mes_ant), "ano": var(fim_ano_ant),
+                "a12": var(ate(data - dt.timedelta(days=365))), "min12": min(v for _, v in ult12), "max12": max(v for _, v in ult12),
+                "serie12": ult12, "linhas": linhas, "mensal": [(m, med) for m, med, _ in self.cambio.get("mensal", [])]}
+
+    # Atividade ------------------------------------------------------------
+    def pib_ref(self):
+        return next((r for r in reversed(self.pib) if r.get("qoq") is not None), None)
+
+    def ibc_stats(self) -> dict:
+        sa = [(m, float(v)) for m, v in self.ibc["sa"]]
+        nsa = [(m, float(v)) for m, v in self.ibc["nsa"]]
+        linhas = [(sa[k][0], sa[k][1], var_pct(sa[k][1], sa[k - 1][1])) for k in range(len(sa) - 1, max(len(sa) - 13, 0), -1)]
+        return {"mes": sa[-1][0], "mm": var_pct(sa[-1][1], sa[-2][1]), "mes_nsa": nsa[-1][0], "yoy": var_pct(nsa[-1][1], nsa[-13][1]),
+                "a12": var_pct(sum(v for _, v in nsa[-12:]), sum(v for _, v in nsa[-24:-12])), "sa": sa, "linhas": linhas}
 
     def uf_lista(self) -> list:
         """UFs com a taxa do último trimestre, ordenadas da maior para a menor taxa de desocupação."""
@@ -317,7 +389,7 @@ def _grade(lo, hi, marcas, d) -> str:
 def _rotulos_x(rotulos, x) -> str:
     n = len(rotulos)
     passo = math.ceil(n / 5)
-    pos = [k for k in range(0, n, passo) if (n - 1 - k) >= passo * 0.7] + [n - 1]
+    pos = [k for k in range(0, n, passo) if (n - 1 - k) >= passo] + [n - 1]
     g = ""
     for k in pos:
         ancora = "start" if k == 0 else "end" if k == n - 1 else "middle"
@@ -399,7 +471,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
     gerado = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
     v = B.d["gerado_em"][:10]
     robots = '<meta name="robots" content="noindex">\n' if noindex else ""
-    emprego_link = '<a href="/emprego/">Emprego</a> · ' if B.tem_emprego else ""
+    rodape = " · ".join(f'<a href="{h}">{"Como funciona" if h == "/sobre/" else t}</a>' for h, t in B.nav())
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -435,7 +507,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <footer><div>
 <span><strong>Economia em Números</strong> · versão beta</span>
 <span>Portal independente, sem ligação com o governo. Os números vêm de fontes públicas (Banco Central e IBGE) e não são recomendação de investimento nem aconselhamento financeiro.</span>
-<span><a href="/juros/">Juros e Copom</a> · {emprego_link}<a href="/inflacao/">Inflação</a> · <a href="/calculadora/">Calculadora</a> · <a href="/sobre/">Como funciona</a></span>
+<span>{rodape}</span>
 </div>{familia_html()}</footer>
 {GOAT}
 </body>
@@ -526,7 +598,9 @@ def pg_inicio(B: Base) -> str:
     calc = card('<span class="eyebrow">Ferramenta</span><h2>Calculadora de correção pelo IPCA</h2>'
                 '<p class="small">Quanto R$ 1.000 de alguns anos atrás valem hoje? Corrija qualquer valor pela inflação oficial, mês a mês, desde 2000.</p>'
                 '<p><a href="/calculadora/">Abrir a calculadora →</a></p>')
-    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{card_emprego_inicio(B)}{calc}'
+    mais = [x for x in (card_emprego_inicio(B), card_atividade_inicio(B), card_cambio_inicio(B)) if x]
+    mais_html = "".join(f'<div class="cols">{"".join(mais[k:k + 2])}</div>' if len(mais[k:k + 2]) == 2 else mais[k] for k in range(0, len(mais), 2))
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{mais_html}{calc}'
     return pagina(B, "/", "Economia em Números: Selic, inflação (IPCA) e Copom em dados oficiais",
                   f"Selic em {pct(B.selic, 2)} ao ano e IPCA de {pct(B.ipca_12[ref], 2)} em 12 meses. Juros, inflação por região, calendário do Copom e expectativas do Focus, com fonte e data.",
                   corpo)
@@ -718,6 +792,160 @@ def pg_uf(B: Base, u: dict) -> str:
                   corpo, "/emprego/", [("/emprego/", "Emprego"), (None, u["nome"])])
 
 
+def focus_item(B: Base, ind: str, ano: int):
+    return next((it for it in (B.focus or {}).get("itens", []) if it["indicador"] == ind and it["ano"] == ano), None)
+
+
+def card_cambio_inicio(B: Base) -> str:
+    if not B.tem_cambio:
+        return ""
+    c = B.cambio_stats()
+    txt = f'No fechamento de {data_br(c["data"])}, a cotação de venda foi de <strong>R$ {nf(c["ult"], 2)}</strong>.'
+    if c["a12"] is not None:
+        txt += f' Em 12 meses, o dólar {verbo_var(c["a12"], 1, "subiu", "caiu")}.'
+    return card('<span class="eyebrow">Câmbio</span><h2>Dólar em reais</h2>'
+                f'<p>{txt}</p><p><a href="/cambio/">Ver o histórico e as projeções do mercado →</a></p>')
+
+
+def card_atividade_inicio(B: Base) -> str:
+    if not B.tem_atividade:
+        return ""
+    partes = []
+    r = B.pib_ref() if B.tem_pib else None
+    if r:
+        partes.append(f'O PIB {verbo_var(r["qoq"], 1)} no {rot_tri(r["t"], True)} frente ao trimestre anterior.')
+    if B.tem_ibc:
+        i = B.ibc_stats()
+        partes.append(f'O IBC-Br, termômetro mensal do Banco Central, {verbo_var(i["mm"], 1, "subiu", "caiu")} em {mes_nome(i["mes"])}.')
+    return card('<span class="eyebrow">Atividade econômica</span><h2>PIB e IBC-Br</h2>'
+                f'<p>{" ".join(partes)}</p><p><a href="/atividade/">Ver PIB trimestral e IBC-Br mensal →</a></p>')
+
+
+def pg_cambio(B: Base) -> str:
+    c = B.cambio_stats()
+    dia = c["dia"]
+    lede = f'O dólar fechou a <strong>R$ {nf(c["ult"], 2)}</strong> em {data_br(c["data"])} (cotação de venda do Banco Central)'
+    if dia is not None:
+        lede += f', {verbo_var(dia, 2, "em alta de", "em queda de").replace("ficou estável", "estável")} no dia'
+    lede += "."
+    if c["ano"] is not None and c["a12"] is not None:
+        lede += f' No ano, {verbo_var(c["ano"], 1, "alta de", "queda de").replace("ficou estável", "variação nula")}; em 12 meses, {verbo_var(c["a12"], 1, "alta de", "queda de").replace("ficou estável", "variação nula")}.'
+    hero = card('<span class="eyebrow">Câmbio</span><h1>Dólar hoje e histórico: último fechamento e variação</h1>' f'<p class="lede">{lede}</p>')
+    tiles = [tile("Dólar (venda)", f'R$ {nf(c["ult"], 2)}', "", chg(dia, 2, "%", " no dia") if dia is not None else "", "a")]
+    for rot, k, cor in (("No mês", "mes", "b"), ("No ano", "ano", "k"), ("Em 12 meses", "a12", "g")):
+        if c[k] is not None:
+            tiles.append(tile(rot, sinal(c[k], 2), "%", "", cor))
+    s12 = c["serie12"]
+    g1 = card(cab("Dólar nos últimos 12 meses", '<span class="src">Fonte: Banco Central</span>') + '<div class="chart">' +
+              svg_linhas([{"vals": [v for _, v in s12], "cor": "a"}], [mes_curtinho(x.strftime("%Y-%m")) for x, _ in s12],
+                         "Gráfico da cotação de venda do dólar em reais nos últimos 12 meses") + "</div>"
+              f'<p class="small">Cotação de venda, em R$ por US$, a cada dia útil. Mínima em 12 meses: R$ {nf(c["min12"], 2)}; máxima: R$ {nf(c["max12"], 2)}.</p>')
+    m = c["mensal"]
+    g2 = card(cab("Dólar desde 2016 (média mensal)", '<span class="src">Fonte: Banco Central</span>') + '<div class="chart">' +
+              svg_linhas([{"vals": [v for _, v in m], "cor": "b"}], [mes_curtinho(x) for x, _ in m],
+                         "Gráfico da média mensal da cotação do dólar em reais desde 2016") + "</div>"
+              '<p class="small">Média das cotações de venda de cada mês, em R$ por US$.</p>') if len(m) >= 24 else ""
+    graficos = f'<div class="cols">{g1}{g2}</div>' if g2 else g1
+    rows = [[data_br(x), nf(v, 2), chg(vr, 2, "%") if vr is not None else "–"] for x, v, vr in c["linhas"]]
+    tab = card(cab("Últimas cotações", '<span class="src">Fonte: Banco Central</span>') +
+               tabela(["Data", "Venda (R$)", "No dia"], rows, ["l", "r", "r"]))
+    foc = ""
+    anos = [a for a in (B.hoje.year, B.hoje.year + 1) if focus_item(B, "Câmbio", a)]
+    if anos:
+        frows = []
+        for a in anos:
+            it = focus_item(B, "Câmbio", a)
+            frows.append([str(a), f'R$ {nf(it["mediana"], 2)}', pct_sinal(var_pct(it["mediana"], c["ult"]), 1),
+                          chg(it["mediana"] - it["semana_anterior"], 2, "") if it.get("semana_anterior") is not None else "–"])
+        dfoc = data_br(dt.date.fromisoformat(B.focus["data"]))
+        foc = card(cab("O que o mercado espera (Boletim Focus)") +
+                   tabela(["Fim de", "Mediana", "Vs. atual", "Semana"], frows, ["l", "r", "r", "r"]) +
+                   f'<span class="src">Mediana das projeções do mercado para o câmbio ao fim de cada ano, em R$ por US$ (posição de {dfoc}). "Vs. atual" compara com o último fechamento; "Semana" é a variação da projeção desde o boletim anterior. Fonte: Banco Central.</span>')
+    linha = f'<div class="cols">{tab}{foc}</div>' if foc else tab
+    texto = card("<h2>Como ler a cotação do dólar</h2>"
+                 "<p>A série desta página é a <strong>cotação de venda do dólar</strong> calculada pelo Banco Central a partir do Sistema PTAX, uma por dia útil, "
+                 "e é a referência usada em contratos e relatórios. O site atualiza os números quando o Banco Central os divulga.</p>"
+                 "<p>Aplicativos e corretoras mostram a cotação em tempo real, que muda a cada segundo e pode ficar diferente do fechamento do Banco Central. "
+                 "Variações de poucos centavos no dia fazem parte da oscilação normal do mercado.</p>"
+                 "<p>As projeções são do Boletim Focus e refletem a opinião média de instituições financeiras; não são garantia do que vai acontecer. "
+                 "Este portal mostra dados e não recomenda compra ou venda de moeda.</p>")
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{graficos}{linha}{texto}'
+    return pagina(B, "/cambio/", f"Dólar hoje: R$ {nf(c['ult'], 2)} no último fechamento ({data_br(c['data'])}) e histórico",
+                  f"Dólar a R$ {nf(c['ult'], 2)} no fechamento de {data_br(c['data'])}. Cotação de venda do Banco Central, variação no dia, no mês e em 12 meses, histórico desde 2016 e projeções do Boletim Focus.",
+                  corpo, "/cambio/", [(None, "Câmbio")])
+
+
+def pg_atividade(B: Base) -> str:
+    r = B.pib_ref() if B.tem_pib else None
+    i = B.ibc_stats() if B.tem_ibc else None
+    lede = []
+    if r:
+        t = f'O PIB do Brasil <strong>{verbo_var(r["qoq"], 1)}</strong> no {rot_tri(r["t"], True)} em relação ao trimestre anterior (com ajuste sazonal)'
+        if r.get("yoy") is not None:
+            t += f' e {verbo_var(r["yoy"], 1, "cresceu", "recuou")} na comparação com o mesmo trimestre de {int(r["t"][:4]) - 1}'
+        lede.append(t + ".")
+    if i:
+        lede.append(f'O IBC-Br, indicador mensal do Banco Central, <strong>{verbo_var(i["mm"], 1, "subiu", "caiu")}</strong> em {mes_nome(i["mes"])} frente ao mês anterior (com ajuste sazonal).')
+    hero = card('<span class="eyebrow">Atividade econômica</span><h1>PIB e IBC-Br: o ritmo da economia brasileira</h1>' f'<p class="lede">{" ".join(lede)}</p>')
+    tiles = []
+    if r:
+        tiles.append(tile("PIB vs. trimestre anterior", sinal(r["qoq"], 1), "%", f'<span class="chg flat">● {rot_tri(r["t"])}, com ajuste sazonal</span>', "a"))
+        if r.get("yoy") is not None:
+            tiles.append(tile("PIB vs. mesmo trimestre", sinal(r["yoy"], 1), "%", "", "b"))
+        if r.get("a4") is not None:
+            tiles.append(tile("PIB em 4 trimestres", sinal(r["a4"], 1), "%", "", "k"))
+    if i:
+        tiles.append(tile(f"IBC-Br em {MES_CURTO[int(i['mes'][5:]) - 1]}", sinal(i["mm"], 1), "%", '<span class="chg flat">● vs. mês anterior</span>', "g"))
+        if len(tiles) < 4 and i["a12"] is not None:
+            tiles.append(tile("IBC-Br em 12 meses", sinal(i["a12"], 1), "%", "", "k"))
+    graf = []
+    if r:
+        u12 = [x for x in B.pib if x.get("qoq") is not None][-12:]
+        graf.append(card(cab("PIB: variação sobre o trimestre anterior", '<span class="src">Fonte: IBGE (Contas Nacionais Trimestrais)</span>') + '<div class="chart">' +
+                         svg_barras([x["qoq"] for x in u12], [rot_tri(x["t"]) for x in u12], "Gráfico de barras da variação trimestral do PIB, com ajuste sazonal, nos últimos 12 trimestres") + "</div>"
+                         '<p class="small">Em %, com ajuste sazonal, comparando cada trimestre com o anterior.</p>'))
+    if i:
+        s36 = i["sa"][-36:]
+        graf.append(card(cab("IBC-Br: nível da atividade", '<span class="src">Fonte: Banco Central</span>') + '<div class="chart">' +
+                         svg_linhas([{"vals": [v for _, v in s36], "cor": "a"}], [mes_curtinho(m) for m, _ in s36], "Gráfico do índice IBC-Br com ajuste sazonal nos últimos 36 meses") + "</div>"
+                         '<p class="small">Índice (2002 = 100) com ajuste sazonal, nos últimos 36 meses. O IBC-Br é uma aproximação mensal do PIB.</p>'))
+    graficos = f'<div class="cols">{"".join(graf)}</div>' if len(graf) == 2 else "".join(graf)
+    tabs = []
+    if r:
+        rows = [[rot_tri(x["t"], True), pct_sinal(x.get("qoq")), pct_sinal(x.get("yoy")), pct_sinal(x.get("a4"))] for x in [y for y in B.pib if y.get("qoq") is not None][-8:][::-1]]
+        tabs.append(card(cab("PIB por trimestre", '<span class="src">Fonte: IBGE</span>') +
+                         tabela(["Trimestre", "Vs. trim. anterior", "Vs. mesmo trim.", "4 trimestres"], rows, ["l", "r", "r", "r"]) +
+                         '<span class="src">Variações do PIB em volume. A primeira coluna usa série com ajuste sazonal; as demais, comparações com o mesmo período do ano anterior.</span>'))
+    if i:
+        rows = [[mes_nome(m), nf(v, 1), pct_sinal(vr)] for m, v, vr in i["linhas"]]
+        tabs.append(card(cab("IBC-Br mês a mês", '<span class="src">Fonte: Banco Central</span>') +
+                         tabela(["Mês", "Índice", "Vs. mês anterior"], rows, ["l", "r", "r"]) +
+                         '<span class="src">Série com ajuste sazonal.</span>'))
+    tab = f'<div class="cols">{"".join(tabs)}</div>' if len(tabs) == 2 else "".join(tabs)
+    foc = ""
+    anos = [a for a in (B.hoje.year, B.hoje.year + 1) if focus_item(B, "PIB Total", a)]
+    if anos:
+        frows = []
+        for a in anos:
+            it = focus_item(B, "PIB Total", a)
+            frows.append([str(a), pct(it["mediana"], 2), chg(it["mediana"] - it["semana_anterior"], 2, "") if it.get("semana_anterior") is not None else "–"])
+        foc = card(cab("O que o mercado espera para o PIB (Boletim Focus)") + tabela(["Ano", "Crescimento esperado", "Semana"], frows, ["l", "r", "r"]) +
+                   f'<span class="src">Mediana das projeções do mercado (posição de {data_br(dt.date.fromisoformat(B.focus["data"]))}). Fonte: Banco Central.</span>')
+    texto = card("<h2>Como ler os indicadores de atividade</h2>"
+                 "<p>O <strong>PIB</strong> é a soma de tudo o que a economia produz, medido pelo IBGE a cada trimestre. "
+                 "As variações em volume descontam a inflação, e o ajuste sazonal tira o efeito de épocas do ano em que a produção costuma subir ou cair.</p>"
+                 "<p>O <strong>IBC-Br</strong> é um índice mensal do Banco Central que reúne dados de agropecuária, indústria, serviços e impostos para estimar o ritmo da economia. "
+                 "Serve de termômetro antes de o PIB sair, mas não é a medida oficial e pode ser diferente do PIB do IBGE.</p>")
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{graficos}{tab}{foc}{texto}'
+    if r:
+        titulo = f"PIB do Brasil: {sinal(r['qoq'], 1)}% no {rot_tri(r['t'], True)} e IBC-Br atualizado"
+        desc = f"PIB de {sinal(r['qoq'], 1)}% sobre o trimestre anterior no {rot_tri(r['t'], True)}" + (f" e IBC-Br de {mes_nome(i['mes'])}" if i else "") + ". Dados do IBGE e do Banco Central, com gráficos, tabelas e projeções do Focus."
+    else:
+        titulo = f"IBC-Br: atividade econômica em {mes_nome(i['mes'])}"
+        desc = f"IBC-Br de {mes_nome(i['mes'])}: {sinal(i['mm'], 1)}% sobre o mês anterior. Dados do Banco Central, com gráfico e tabela."
+    return pagina(B, "/atividade/", titulo, desc, corpo, "/atividade/", [(None, "Atividade")])
+
+
 def _mensal_tabela(B: Base, linhas_meses, rot_area=None, area=None) -> str:
     rows = []
     for m in linhas_meses:
@@ -843,6 +1071,9 @@ def pg_sobre(B: Base) -> str:
                  "<li><strong>Expectativas de mercado:</strong> Boletim Focus, do Banco Central.</li>"
                  "<li><strong>Atas do Copom:</strong> documentos oficiais do Banco Central; os resumos são nossos.</li>"
                  "<li><strong>Taxa de desocupação:</strong> IBGE, PNAD Contínua (SIDRA, tabelas 4099 e 6381).</li>"
+                 "<li><strong>PIB:</strong> IBGE, Contas Nacionais Trimestrais (SIDRA, tabela 5932).</li>"
+                 "<li><strong>IBC-Br:</strong> Banco Central (séries 24363 e 24364 do SGS).</li>"
+                 "<li><strong>Dólar:</strong> cotação de venda do Banco Central, série 1 do SGS (Sistema PTAX).</li>"
                  "<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego; o saldo do mês é a variação do estoque de empregos formais (série 28763 do SGS, Banco Central).</li></ul>"
                  "<h2>Atualização</h2>"
                  "<p>Um robô confere as fontes todos os dias e republica o site quando há dado novo. A data da última atualização aparece no alto de cada página.</p>"
@@ -885,6 +1116,10 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
         paginas.append(("/emprego/", pg_emprego(B)))
         for u in B.uf_lista():
             paginas.append((f"/emprego/{u['slug']}/", pg_uf(B, u)))
+    if B.tem_atividade:
+        paginas.append(("/atividade/", pg_atividade(B)))
+    if B.tem_cambio:
+        paginas.append(("/cambio/", pg_cambio(B)))
     for a in B.ranking():
         paginas.append((f"/inflacao/{a['slug']}/", pg_area(B, a)))
     for caminho, conteudo in paginas:
@@ -898,7 +1133,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
     (saida / "CNAME").write_text(DOMINIO + "\n", encoding="utf-8")
     (saida / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n", encoding="utf-8")
-    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/inflacao/": "0.9", "/calculadora/": "0.8", "/sobre/": "0.3"}
+    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/inflacao/": "0.9", "/calculadora/": "0.8", "/sobre/": "0.3"}
     urls = "".join(f"<url><loc>{BASE}{c}</loc><lastmod>{v}</lastmod><priority>{prio.get(c, '0.6')}</priority></url>" for c, _ in paginas)
     (saida / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>\n", encoding="utf-8")
     return [c for c, _ in paginas]

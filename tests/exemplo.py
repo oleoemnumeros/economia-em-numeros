@@ -57,6 +57,32 @@ def caged_exemplo() -> dict:
     return {"saldo": [[m, (-1) ** i * 90000 + i * 500] for i, m in enumerate(meses("2020-01", "2026-09"))]}
 
 
+def cambio_exemplo() -> dict:
+    d, i, dias = dt.date(2025, 10, 8), 0, []
+    while d <= dt.date(2026, 11, 12):
+        if d.weekday() < 5:
+            dias.append([d.isoformat(), round(5.2 + ((i * 3) % 11) / 20 - i * 0.0005, 4)])
+            i += 1
+        d += dt.timedelta(days=1)
+    mensal = [[m, round(4.0 + (k % 24) / 10, 4), round(4.0 + ((k * 5) % 24) / 10, 4)] for k, m in enumerate(meses("2016-01", "2026-11"))]
+    mensal[-1][2] = dias[-1][1]
+    for m in mensal:
+        if m[0] == "2025-12":
+            m[2] = 5.31  # fim do ano anterior, usado nos testes
+    return {"diario": dias, "mensal": mensal}
+
+
+def ibc_exemplo() -> dict:
+    ms = meses("2022-01", "2026-08")
+    return {"sa": [[m, round(140 + k * 0.15 + (k % 3) * 0.2, 2)] for k, m in enumerate(ms)],
+            "nsa": [[m, round(140 + k * 0.15 + ((k % 12) - 6) * 0.9, 2)] for k, m in enumerate(ms)]}
+
+
+def pib_exemplo() -> dict:
+    return {"trimestral": [{"t": t, "yoy": round(2.5 - i * 0.1, 1), "a4": round(3.0 - i * 0.12, 1), "qoq": round(((-1) ** i) * 0.3 + 0.2, 1)}
+                           for i, t in enumerate(trimestres("202301", "202602"))]}
+
+
 def dados_exemplo() -> dict:
     ms = meses("2000-01", "2026-09")
     mensal = [[m, round(0.2 + ((i * 7) % 13) / 20, 2)] for i, m in enumerate(ms)]
@@ -76,6 +102,9 @@ def dados_exemplo() -> dict:
         "areas": areas,
         "desocupacao": emprego_exemplo(),
         "caged": caged_exemplo(),
+        "cambio": cambio_exemplo(),
+        "ibc": ibc_exemplo(),
+        "pib": pib_exemplo(),
         "atas": {"282": {"pdf": "https://www.bcb.gov.br/content/copom/atascopom/Copom282-not20261104282.pdf"}},
         "focus": {"data": "2026-11-10", "itens": [
             {"indicador": "Selic", "ano": 2026, "mediana": 13.5, "semana_anterior": 13.5},

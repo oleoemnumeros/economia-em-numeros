@@ -286,12 +286,67 @@ def caged():
     return {"saldo": [x for x in saldo if x[0] >= "2020-01"]}
 
 
+def cambio():
+    """Dólar americano (venda), série diária 1 do SGS (Sistema PTAX, Banco Central)."""
+    serie = sgs(1, dt.date(2016, 1, 1))
+    debug["avisos"].append(f"Câmbio SGS 1: últimas leituras {[(d.isoformat(), v) for d, v in serie[-3:]]}")
+    if len(serie) < 500:
+        raise RuntimeError(f"SGS 1 com poucos dias ({len(serie)})")
+    if not all(1.0 < v < 15.0 for _, v in serie):
+        raise RuntimeError("SGS 1 com cotação fora da faixa esperada (R$ 1 a R$ 15 por dólar); conferir a série")
+    por_mes = {}
+    for d, v in serie:
+        por_mes.setdefault(d.strftime("%Y-%m"), []).append(v)
+    mensal = [[m, round(sum(vs) / len(vs), 4), vs[-1]] for m, vs in sorted(por_mes.items())]
+    corte = serie[-1][0] - dt.timedelta(days=400)
+    return {"diario": [[d.isoformat(), v] for d, v in serie if d >= corte], "mensal": mensal}
+
+
+def ibcbr():
+    """IBC-Br (Banco Central): série com ajuste sazonal (24364) e sem ajuste (24363)."""
+    out = {}
+    for chave, cod in (("sa", 24364), ("nsa", 24363)):
+        serie = sgs(cod, dt.date(2022, 1, 1))
+        if len(serie) < 30 or not all(50 < v < 400 for _, v in serie):
+            raise RuntimeError(f"SGS {cod} fora do esperado (índice entre 50 e 400, pelo menos 30 meses); conferir a série")
+        out[chave] = [[d.strftime("%Y-%m"), v] for d, v in serie]
+    debug["avisos"].append(f"IBC-Br: últimas leituras com ajuste {out['sa'][-3:]}; sem ajuste {out['nsa'][-2:]}")
+    return out
+
+
+def pib():
+    """PIB trimestral (IBGE, Contas Nacionais, tabela 5932): contra igual trimestre do ano anterior (6561),
+    acumulado em quatro trimestres (6563) e contra o trimestre anterior com ajuste sazonal (6564)."""
+    linhas = get("https://apisidra.ibge.gov.br/values/t/5932/n1/all/v/6561,6563,6564/p/last%2016/c11255/90707").json()
+    cab, dados = linhas[0], linhas[1:]
+    k_var = next((k for k, v in cab.items() if k.startswith("D") and k.endswith("C") and str(v).lower().startswith("variável")), None)
+    k_per = next((k for k, v in cab.items() if k.startswith("D") and k.endswith("C") and str(v).lower().startswith("trimestre")), None)
+    if not k_var or not k_per:
+        raise RuntimeError(f"PIB: colunas de variável/trimestre não encontradas; cabeçalho: {cab}")
+    por = {}
+    for x in dados:
+        try:
+            v = float(x.get("V"))
+        except (TypeError, ValueError):
+            continue
+        por.setdefault(str(x[k_per]), {})[str(x[k_var])] = v
+    vistas = {c for d in por.values() for c in d}
+    if not {"6561", "6564"} <= vistas:
+        raise RuntimeError(f"PIB: variáveis esperadas 6561/6563/6564, vieram {sorted(vistas)}; cabeçalho: {cab}")
+    saida = [{"t": t, "yoy": d.get("6561"), "a4": d.get("6563"), "qoq": d.get("6564")} for t, d in sorted(por.items())]
+    if len(saida) < 8 or any(abs(v) > 25 for r in saida for k, v in r.items() if k != "t" and v is not None):
+        raise RuntimeError(f"PIB fora do esperado: {len(saida)} trimestres; últimos: {saida[-2:]}")
+    debug["avisos"].append(f"PIB: últimos trimestres {saida[-2:]}")
+    return {"trimestral": saida}
+
+
 def main():
     antigo = json.loads(DADOS.read_text(encoding="utf-8")) if DADOS.exists() else {}
     novo = dict(antigo)
     essenciais_ok = True
     for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("focus", focus, False),
-                             ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False)]:
+                             ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False),
+                             ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False)]:
         try:
             novo[nome] = fn()
             print(f"ok: {nome}")

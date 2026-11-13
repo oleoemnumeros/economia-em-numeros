@@ -37,6 +37,8 @@ class TestSite(unittest.TestCase):
         for slug in AREAS:
             self.assertTrue((self.saida / "inflacao" / slug / "index.html").exists(), slug)
         self.assertTrue((self.saida / "emprego" / "index.html").exists())
+        self.assertTrue((self.saida / "atividade" / "index.html").exists())
+        self.assertTrue((self.saida / "cambio" / "index.html").exists())
         for slug, _, _ in g.UFS.values():
             self.assertTrue((self.saida / "emprego" / slug / "index.html").exists(), slug)
         self.assertEqual(self.ler("CNAME").strip(), "economiaemnumeros.com.br")
@@ -52,7 +54,7 @@ class TestSite(unittest.TestCase):
 
     def test_canonical_e_sitemap(self):
         s = self.ler("sitemap.xml")
-        self.assertEqual(s.count("<url>"), 5 + 16 + 1 + 27)
+        self.assertEqual(s.count("<url>"), 5 + 16 + 1 + 27 + 2)
         self.assertNotIn("404", s)
         self.assertIn('<link rel="canonical" href="https://economiaemnumeros.com.br/inflacao/salvador/">', self.ler("inflacao/salvador/index.html"))
         self.assertIn('content="noindex"', self.ler("404.html"))
@@ -139,6 +141,60 @@ class TestSite(unittest.TestCase):
         self.assertIn('<a href="/emprego/">Emprego</a>', self.ler("index.html"))
         self.assertIn("Desemprego e vagas formais", self.ler("index.html"))
 
+    def test_cambio_pagina(self):
+        t = self.ler("cambio/index.html")
+        self.assertIn("Dólar hoje e histórico", t)
+        self.assertIn("12/11/2026", t)
+        self.assertIn("R$ 5,60", t)                            # projeção do Focus para 2026
+        self.assertIn("Vs. atual", t)
+        self.assertIn("Sistema PTAX", t)
+        self.assertGreaterEqual(t.count("<svg"), 3)           # logo + 2 gráficos
+        self.assertEqual(t.count("<tr><td"), 10 + 2)          # 10 últimas cotações + 2 projeções
+
+    def test_cambio_variacoes(self):
+        B = g.Base(json.loads(self.dados.read_text(encoding="utf-8")), json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")), dt.date(2026, 11, 13))
+        c = B.cambio_stats()
+        self.assertEqual(c["data"], dt.date(2026, 11, 12))
+        self.assertAlmostEqual(c["dia"], (c["ult"] / c["linhas"][1][1] - 1) * 100, places=9)
+        self.assertAlmostEqual(c["ano"], (c["ult"] / 5.31 - 1) * 100, places=9)   # fim de dez/2025 no exemplo
+        self.assertLessEqual(c["min12"], c["ult"])
+        self.assertGreaterEqual(c["max12"], c["ult"])
+        self.assertEqual(len(c["linhas"]), 10)
+
+    def test_atividade_pagina(self):
+        t = self.ler("atividade/index.html")
+        self.assertIn("PIB e IBC-Br", t)
+        self.assertIn("2º trimestre de 2026", t)
+        self.assertIn("agosto de 2026", t)
+        self.assertIn("Boletim Focus", t)
+        self.assertGreaterEqual(t.count("<svg"), 3)
+
+    def test_ibc_contas(self):
+        B = g.Base(json.loads(self.dados.read_text(encoding="utf-8")), json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")), dt.date(2026, 11, 13))
+        i = B.ibc_stats()
+        sa, nsa = dict(B.ibc["sa"]), dict(B.ibc["nsa"])
+        self.assertEqual(i["mes"], "2026-08")
+        self.assertAlmostEqual(i["mm"], (sa["2026-08"] / sa["2026-07"] - 1) * 100, places=9)
+        self.assertAlmostEqual(i["yoy"], (nsa["2026-08"] / nsa["2025-08"] - 1) * 100, places=9)
+        meses = sorted(nsa)
+        self.assertAlmostEqual(i["a12"], (sum(nsa[m] for m in meses[-12:]) / sum(nsa[m] for m in meses[-24:-12]) - 1) * 100, places=9)
+        self.assertEqual(len(i["linhas"]), 12)
+
+    def test_nav_e_home_com_cartoes(self):
+        h = self.ler("index.html")
+        for rotulo in ("Atividade", "Câmbio"):
+            self.assertIn(f'">{rotulo}</a>', h)
+        self.assertIn('href="/cambio/"', h)
+        self.assertIn('href="/atividade/"', h)
+
+    def test_textos_de_variacao(self):
+        self.assertEqual(g.verbo_var(0.44, 1), "cresceu 0,4%")
+        self.assertEqual(g.verbo_var(-0.3, 1), "recuou 0,3%")
+        self.assertEqual(g.verbo_var(0.02, 1), "ficou estável")
+        self.assertEqual(g.verbo_var(1.234, 2, "subiu", "caiu"), "subiu 1,23%")
+        self.assertEqual(g.pct_sinal(None), "–")
+        self.assertEqual(g.pct_sinal(-0.25, 2), "−0,25%")
+
     def test_rotulos(self):
         self.assertEqual(g.rot_tri("202602"), "2º tri/26")
         self.assertEqual(g.rot_tri("202602", True), "2º trimestre de 2026")
@@ -155,7 +211,7 @@ class TestSemDadosNovos(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             dados = json.loads(gravar(d / "x.json").read_text(encoding="utf-8"))
-            for k in ("desocupacao", "caged", "atas"):
+            for k in ("desocupacao", "caged", "atas", "cambio", "ibc", "pib"):
                 dados.pop(k)
             (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
             cam = g.gerar(d / "dados.json", d / "docs", resumos_path=d / "nao_existe.json")
@@ -163,7 +219,8 @@ class TestSemDadosNovos(unittest.TestCase):
             self.assertFalse((d / "docs" / "emprego").exists())
             for rel in ("index.html", "juros/index.html"):
                 t = (d / "docs" / rel).read_text(encoding="utf-8")
-                self.assertNotIn("/emprego/", t)
+                for rota in ("/emprego/", "/cambio/", "/atividade/"):
+                    self.assertNotIn(rota, t)
             j = (d / "docs" / "juros" / "index.html").read_text(encoding="utf-8")
             self.assertIn("ainda está em preparação", j)          # a ata mais recente aparece mesmo sem PDF conhecido
             self.assertIn("bcb.gov.br/publicacoes/atascopom", j)   # e aponta para a lista oficial
@@ -178,6 +235,42 @@ class TestSemDadosNovos(unittest.TestCase):
             t = (d / "docs" / "emprego" / "index.html").read_text(encoding="utf-8")
             self.assertNotIn("Novo Caged registrou", t)
             self.assertIn("Menor taxa", t)
+
+
+class TestSoUmaFonteNova(unittest.TestCase):
+    def gerar_sem(self, *chaves):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        d = Path(d.name)
+        dados = json.loads(gravar(d / "x.json").read_text(encoding="utf-8"))
+        for k in chaves:
+            dados.pop(k, None)
+        (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
+        g.gerar(d / "dados.json", d / "docs")
+        return d / "docs"
+
+    def test_atividade_so_com_ibc(self):
+        docs = self.gerar_sem("pib")
+        t = (docs / "atividade" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("IBC-Br", t)
+        self.assertNotIn("PIB por trimestre", t)
+        self.assertGreater((docs / "cambio" / "index.html").stat().st_size, 1000)
+
+    def test_atividade_so_com_pib(self):
+        docs = self.gerar_sem("ibc")
+        t = (docs / "atividade" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("PIB por trimestre", t)
+        self.assertNotIn("IBC-Br mês a mês", t)
+
+    def test_sem_pib_nem_ibc_nao_ha_pagina(self):
+        docs = self.gerar_sem("pib", "ibc")
+        self.assertFalse((docs / "atividade").exists())
+        self.assertNotIn("/atividade/", (docs / "index.html").read_text(encoding="utf-8"))
+
+    def test_sem_cambio_nao_ha_pagina(self):
+        docs = self.gerar_sem("cambio")
+        self.assertFalse((docs / "cambio").exists())
+        self.assertNotIn("/cambio/", (docs / "index.html").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
