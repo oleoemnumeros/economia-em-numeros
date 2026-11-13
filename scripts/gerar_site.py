@@ -882,7 +882,7 @@ def pg_atividade(B: Base) -> str:
     if r:
         t = f'O PIB do Brasil <strong>{verbo_var(r["qoq"], 1)}</strong> no {rot_tri(r["t"], True)} em relação ao trimestre anterior (com ajuste sazonal)'
         if r.get("yoy") is not None:
-            t += f' e {verbo_var(r["yoy"], 1, "cresceu", "recuou")} na comparação com o mesmo trimestre de {int(r["t"][:4]) - 1}'
+            t += f' e {verbo_var(r["yoy"], 1, "avançou", "recuou")} na comparação com o mesmo trimestre de {int(r["t"][:4]) - 1}'
         lede.append(t + ".")
     if i:
         lede.append(f'O IBC-Br, indicador mensal do Banco Central, <strong>{verbo_var(i["mm"], 1, "subiu", "caiu")}</strong> em {mes_nome(i["mes"])} frente ao mês anterior (com ajuste sazonal).')
@@ -908,7 +908,7 @@ def pg_atividade(B: Base) -> str:
         s36 = i["sa"][-36:]
         graf.append(card(cab("IBC-Br: nível da atividade", '<span class="src">Fonte: Banco Central</span>') + '<div class="chart">' +
                          svg_linhas([{"vals": [v for _, v in s36], "cor": "a"}], [mes_curtinho(m) for m, _ in s36], "Gráfico do índice IBC-Br com ajuste sazonal nos últimos 36 meses") + "</div>"
-                         '<p class="small">Índice (2002 = 100) com ajuste sazonal, nos últimos 36 meses. O IBC-Br é uma aproximação mensal do PIB.</p>'))
+                         '<p class="small">Índice com ajuste sazonal, nos últimos 36 meses. O IBC-Br é uma aproximação mensal do PIB; o que importa é a direção, não o valor absoluto.</p>'))
     graficos = f'<div class="cols">{"".join(graf)}</div>' if len(graf) == 2 else "".join(graf)
     tabs = []
     if r:
