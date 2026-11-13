@@ -42,7 +42,7 @@ def esc(s) -> str:
 
 def nf(v, d=1) -> str:
     s = f"{v:,.{d}f}"
-    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+    return s.replace(",", "X").replace(".", ",").replace("X", ".").replace("-", "−")  # sinal de menos de verdade
 
 
 def pct(v, d=2) -> str:

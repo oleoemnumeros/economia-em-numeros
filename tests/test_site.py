@@ -81,6 +81,7 @@ class TestSite(unittest.TestCase):
     def test_formatacao(self):
         self.assertEqual(g.nf(1234.567, 2), "1.234,57")
         self.assertEqual(g.pct(4.376, 2), "4,38%")
+        self.assertEqual(g.pct(-0.594, 2), "−0,59%")
         self.assertEqual(g.mes_nome("2026-09"), "setembro de 2026")
         self.assertEqual(g.sinal(-0.25), "−0,25")
 
