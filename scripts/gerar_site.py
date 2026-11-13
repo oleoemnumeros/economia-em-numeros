@@ -11,6 +11,7 @@ import datetime as dt
 import html
 import json
 import math
+import re
 import shutil
 from pathlib import Path
 
@@ -33,6 +34,16 @@ NAV = [("/juros/", "Juros e Copom"), ("/inflacao/", "Inflação"), ("/calculador
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 MES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 MUNICIPIOS = {"brasilia", "goiania", "campo-grande", "rio-branco", "sao-luis", "aracaju"}  # as outras 10 áreas são regiões metropolitanas
+NFSP_POSITIVO_E_DEFICIT = True  # convenção das séries de necessidades de financiamento (NFSP) do Banco Central: valor positivo = déficit
+F_SELIC = "Banco Central do Brasil (SGS 432)"
+F_PNAD_BR = "IBGE, PNAD Contínua (SIDRA, tabela 6381)"
+F_PNAD_UF = "IBGE, PNAD Contínua (SIDRA, tabela 4099)"
+F_CAGED = "Novo Caged (Ministério do Trabalho e Emprego), via Banco Central (SGS 28763)"
+F_IPCA = "IBGE, via Banco Central do Brasil (SGS 433 e 13522)"
+F_IPCA_AREA = "IBGE (SIDRA, tabela 7060); série do Brasil: SGS 13522 do Banco Central"
+F_PIB = "IBGE, Contas Nacionais Trimestrais (SIDRA, tabela 5932)"
+F_IBC = "Banco Central do Brasil (SGS 24364 e 24363)"
+F_CAMBIO = "Banco Central do Brasil (SGS 1, dólar venda)"
 NUM_PRIMEIRA_REUNIAO = 260  # 30–31/01/2024; mesma regra do robô (conferida com as atas 266, 268, 274 e 276 a 281)
 ATAS_LISTA = "https://www.bcb.gov.br/publicacoes/atascopom/cronologicos"
 UFS = {  # código IBGE -> (endereço, nome, sigla)
@@ -124,6 +135,25 @@ def rot_movel(cod: str) -> str:
     return "-".join(nomes) + f" de {ano}"
 
 
+def rot_movel_curto(cod: str) -> str:
+    """'202606' -> 'abr-jun/2026' (para tabelas estreitas)."""
+    m, ano = int(cod[4:]), cod[:4]
+    return f"{MES_CURTO[(m - 3) % 12]}-{MES_CURTO[m - 1]}/{ano}"
+
+
+def mes_antes(m: str, n: int) -> str:
+    """'2026-09', 12 -> '2025-09'."""
+    k = int(m[:4]) * 12 + int(m[5:]) - 1 - n
+    return f"{k // 12}-{k % 12 + 1:02d}"
+
+
+def resultado_txt(v: float) -> str:
+    """Resultado fiscal em % do PIB com sinal natural: positivo = superávit, negativo = déficit."""
+    if round(abs(v), 1) == 0:
+        return "resultado próximo de zero"
+    return f"{'superávit' if v > 0 else 'déficit'} de {pct(abs(v), 1)} do PIB"
+
+
 def var_pct(v, ref):
     return (v / ref - 1) * 100 if ref else None
 
@@ -172,6 +202,8 @@ class Base:
         self.cambio = dados.get("cambio") or None
         self.pib = (dados.get("pib") or {}).get("trimestral") or None
         self.ibc = dados.get("ibc") or None
+        self.fiscal = dados.get("fiscal") or None
+        self.csvs = {}  # slug -> dados de cada gráfico (viram os arquivos /dados/<slug>.csv)
 
     # Atas, emprego ----------------------------------------------------------
     def ata_pdf(self, n: int):
@@ -194,6 +226,32 @@ class Base:
         return bool(self.ibc and len(self.ibc.get("sa") or []) >= 14 and len(self.ibc.get("nsa") or []) >= 25)
 
     @property
+    def tem_fiscal(self) -> bool:
+        return bool(self.fiscal and all(len(self.fiscal.get(k) or []) >= 14 for k in ("dbgg", "dlsp", "primario", "nominal")))
+
+    def fis(self, chave: str) -> list:
+        return [(m, float(v)) for m, v in self.fiscal[chave]]
+
+    def fis_stats(self) -> dict:
+        """Última leitura de cada série fiscal e a diferença para 12 meses antes (em p.p. do PIB)."""
+        out = {}
+        for chave in ("dbgg", "dlsp"):
+            out[chave] = self.fis(chave)
+        for chave in ("primario", "nominal"):
+            out[chave] = self.fis_resultado(chave)
+        res = {}
+        for chave, serie in out.items():
+            d = dict(serie)
+            m, v = serie[-1]
+            ant = d.get(mes_antes(m, 12))
+            res[chave] = {"mes": m, "v": v, "dif12": v - ant if ant is not None else None, "serie": serie}
+        return res
+
+    def fis_resultado(self, chave: str) -> list:
+        """Resultado fiscal com sinal 'natural': positivo = superávit, negativo = déficit."""
+        return [(m, -v if NFSP_POSITIVO_E_DEFICIT else v) for m, v in self.fis(chave)]
+
+    @property
     def tem_atividade(self) -> bool:
         return self.tem_pib or self.tem_ibc
 
@@ -205,6 +263,8 @@ class Base:
             itens.append(("/atividade/", "Atividade"))
         if self.tem_cambio:
             itens.append(("/cambio/", "Câmbio"))
+        if self.tem_fiscal:
+            itens.append(("/contas-publicas/", "Contas públicas"))
         return itens + NAV[1:]
 
     # Câmbio ---------------------------------------------------------------
@@ -397,9 +457,9 @@ def _rotulos_x(rotulos, x) -> str:
     return g
 
 
-def svg_linhas(series, rotulos, aria) -> str:
+def svg_linhas(series, rotulos, aria, zero=False) -> str:
     """series: lista de dicts {vals, cor ('a'|'b'|'m'), tracejada}; todas com o mesmo tamanho que rotulos."""
-    lo, hi, marcas, d = _eixo([v for s in series for v in s["vals"]])
+    lo, hi, marcas, d = _eixo([v for s in series for v in s["vals"]], zero=zero)
     n = len(rotulos)
     x = lambda i: PL + (W - PL - PR) * (i / (n - 1) if n > 1 else 0.5)
     y = lambda v: PT + (H - PT - PB) * (1 - (v - lo) / (hi - lo))
@@ -451,6 +511,85 @@ def svg_barras(vals, rotulos, aria) -> str:
     return f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>'
 
 
+# ------------------------------------------------------------------ cartão de gráfico: fonte, data, dados e CSV
+def chave_tri(cod: str) -> str:
+    return f"{cod[:4]}-T{int(cod[4:])}"
+
+
+def rot_periodo(p) -> str:
+    p = str(p)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", p):
+        return f"{p[8:]}/{p[5:7]}/{p[:4]}"
+    if re.fullmatch(r"\d{4}-\d{2}", p):
+        return mes_curto(p)
+    if re.fullmatch(r"\d{4}-T[1-4]", p):
+        return f"{p[6]}º tri/{p[:4]}"
+    return p
+
+
+def csv_texto(cabecalho, linhas) -> str:
+    """CSV para abrir direto no Excel em português: ponto e vírgula, vírgula decimal, UTF-8 com BOM."""
+    def cel(v):
+        if v is None:
+            return ""
+        if isinstance(v, float):
+            return f"{v:.6f}".rstrip("0").rstrip(".").replace(".", ",")
+        v = str(v)
+        return '"' + v.replace('"', '""') + '"' if any(c in v for c in ';"\r\n') else v
+    return "\ufeff" + "\r\n".join([";".join(cel(c) for c in cabecalho)] + [";".join(cel(c) for c in l) for l in linhas]) + "\r\n"
+
+
+def grafico(B, slug, titulo, fonte, svg, cabecalho, linhas, grupo, nota="", legenda="", ultimo="", casas=2, csv_linhas=None, csv_cab=None) -> str:
+    """Cartão de gráfico: título, gráfico (clicável: abre a tabela de dados), rodapé com fonte, último dado e data de atualização,
+    link para o CSV e a tabela dos números. A primeira coluna é o período (texto); as demais, valores."""
+    B.csvs[slug] = {"titulo": html.unescape(re.sub(r"<[^>]+>", "", titulo)), "fonte": fonte, "ultimo": ultimo, "grupo": grupo,
+                    "cab": [html.unescape(c) for c in (csv_cab or cabecalho)], "linhas": csv_linhas if csv_linhas is not None else linhas}
+
+    def fmt(v):
+        if v is None:
+            return "–"
+        if isinstance(v, (int, float)):
+            return nf(v, casas)
+        return esc(rot_periodo(v))
+
+    tab = tabela([esc(c) for c in cabecalho], [[fmt(c) for c in l] for l in linhas[::-1]], ["l"] + ["r"] * (len(cabecalho) - 1))
+    atual = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
+    ult = f" Último dado: {esc(ultimo)}." if ultimo else ""
+    return card(cab(titulo) +
+                f'<div class="chart" data-abre="d-{slug}" role="button" tabindex="0" title="Clique para ver os dados">{svg}</div>' +
+                legenda + nota +
+                f'<div class="gfoot"><span class="src">Fonte: {esc(fonte)}.{ult} Atualizado em {atual}.</span>'
+                f'<a class="csv" href="/dados/{slug}.csv" download>Baixar CSV</a></div>'
+                f'<details class="dados" id="d-{slug}"><summary>Ver os dados do gráfico ({len(linhas)} linhas)</summary>{tab}</details>')
+
+
+def pg_dados(B: Base) -> str:
+    ordem = ["Juros e Copom", "Inflação", "Inflação por área", "Emprego", "Emprego por estado", "Atividade", "Câmbio", "Contas públicas"]
+    grupos = {}
+    for slug, c in B.csvs.items():
+        grupos.setdefault(c["grupo"], []).append((slug, c))
+    blocos = []
+    for g in sorted(grupos, key=lambda x: ordem.index(x) if x in ordem else 99):
+        itens = "".join(f'<li><a href="/dados/{slug}.csv" download>{esc(c["titulo"])}</a>'
+                        f'<span class="small"> · {esc(c["fonte"])}{" · último dado: " + esc(c["ultimo"]) if c["ultimo"] else ""}</span></li>'
+                        for slug, c in sorted(grupos[g], key=lambda x: x[1]["titulo"]))
+        if " por " in g:
+            blocos.append(card(f'<details><summary><strong>{esc(g)}</strong> ({len(grupos[g])} arquivos)</summary><ul class="plain">{itens}</ul></details>'))
+        else:
+            blocos.append(card(f'<h2>{esc(g)}</h2><ul class="plain">{itens}</ul>'))
+    atual = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
+    hero = card('<span class="eyebrow">Dados abertos</span><h1>Baixe os números dos gráficos em CSV</h1>'
+                '<p class="lede">Cada gráfico do portal tem um arquivo CSV com a série completa. Os arquivos abrem direto no Excel em português '
+                '(separador ponto e vírgula, vírgula decimal, acentos corretos) e se atualizam sozinhos junto com o site.</p>')
+    citar = card("<h2>Como citar</h2>"
+                 "<p>Os números são públicos e vêm das fontes oficiais indicadas em cada gráfico e em cada arquivo. Ao publicar, cite a fonte original e este portal, por exemplo:</p>"
+                 f'<p><em>Fonte: Banco Central do Brasil, via Economia em Números (economiaemnumeros.com.br), dados atualizados em {atual}.</em></p>'
+                 '<p class="small">Cada arquivo traz a série completa disponível no portal; o período mais curto mostrado no gráfico é só um recorte para leitura.</p>')
+    return pagina(B, "/dados/", "Dados em CSV: baixe as séries de juros, inflação, emprego, atividade, câmbio e contas públicas",
+                  "Arquivos CSV com os números de cada gráfico do Economia em Números: Selic, IPCA, desemprego, PIB, IBC-Br, dólar e dívida pública, com fonte e data.",
+                  f"{hero}{''.join(blocos)}{citar}", "", [(None, "Dados em CSV")])
+
+
 # ------------------------------------------------------------------ moldura
 def familia_html(atual="Economia em Números") -> str:
     itens = []
@@ -471,7 +610,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
     gerado = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
     v = B.d["gerado_em"][:10]
     robots = '<meta name="robots" content="noindex">\n' if noindex else ""
-    rodape = " · ".join(f'<a href="{h}">{"Como funciona" if h == "/sobre/" else t}</a>' for h, t in B.nav())
+    rodape = " · ".join(f'<a href="{h}">{"Como funciona" if h == "/sobre/" else t}</a>' for h, t in B.nav()) + ' · <a href="/dados/">Dados em CSV</a>'
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -509,6 +648,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <span>Portal independente, sem ligação com o governo. Os números vêm de fontes públicas (Banco Central e IBGE) e não são recomendação de investimento nem aconselhamento financeiro.</span>
 <span>{rodape}</span>
 </div>{familia_html()}</footer>
+<script src="/assets/graficos.js?v={v}" defer></script>
 {GOAT}
 </body>
 </html>
@@ -516,16 +656,24 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 
 
 # ------------------------------------------------------------------ páginas
-def blocos_focus(B: Base) -> str:
+FOCUS_PRINCIPAL = {"Selic": ("Selic ao fim do ano", lambda v: pct(v, 2)), "IPCA": ("IPCA (inflação)", lambda v: pct(v, 2)),
+                   "PIB Total": ("PIB (crescimento)", lambda v: pct(v, 2)), "Câmbio": ("Câmbio (R$ por US$)", lambda v: nf(v, 2))}
+FOCUS_FISCAL = {"Resultado primário": ("Resultado primário", lambda v: pct(v, 2)), "Resultado nominal": ("Resultado nominal", lambda v: pct(v, 2)),
+                "Dívida bruta do governo geral": ("Dívida bruta", lambda v: pct(v, 1)), "Dívida líquida do setor público": ("Dívida líquida", lambda v: pct(v, 1))}
+
+
+def blocos_focus(B: Base, nomes=None, titulo="Expectativas do mercado (Boletim Focus)", complemento="") -> str:
     f = B.focus
     if not f or not f.get("itens"):
         return ""
+    nomes = nomes or FOCUS_PRINCIPAL
+    itens = [it for it in f["itens"] if it["indicador"] in nomes]
+    if not itens:
+        return ""
     por = {}
-    for it in f["itens"]:
+    for it in itens:
         por.setdefault(it["indicador"], {})[it["ano"]] = it
-    anos = sorted({it["ano"] for it in f["itens"]})
-    nomes = {"Selic": ("Selic ao fim do ano", lambda v: pct(v, 2)), "IPCA": ("IPCA (inflação)", lambda v: pct(v, 2)),
-             "PIB Total": ("PIB (crescimento)", lambda v: pct(v, 2)), "Câmbio": ("Câmbio (R$ por US$)", lambda v: nf(v, 2))}
+    anos = sorted({it["ano"] for it in itens})
     linhas = []
     for ind, (rot, fm) in nomes.items():
         if ind not in por:
@@ -541,9 +689,9 @@ def blocos_focus(B: Base) -> str:
         cels.append(var or "–")
         linhas.append(cels)
     dia = data_br(dt.date.fromisoformat(f["data"]))
-    return card(cab("Expectativas do mercado (Boletim Focus)") +
+    return card(cab(titulo) +
                 tabela(["Indicador"] + [str(a) for a in anos] + ["Semana"], linhas, ["l"] + ["r"] * (len(anos) + 1)) +
-                f'<span class="src">Mediana das projeções do mercado, Boletim Focus (posição de {dia}). \"Semana\" é a variação da projeção para {anos[0]} desde o boletim anterior. Fonte: Banco Central do Brasil.</span>')
+                f'<span class="src">Mediana das projeções do mercado, Boletim Focus (posição de {dia}). \"Semana\" é a variação da projeção para {anos[0]} desde o boletim anterior.{complemento} Fonte: Banco Central do Brasil.</span>')
 
 
 def card_copom(B: Base) -> str:
@@ -585,10 +733,12 @@ def pg_inicio(B: Base) -> str:
                 '<p class="lede">Os principais indicadores da economia brasileira em um só lugar, direto das fontes oficiais: '
                 f"a <strong>Selic está em {pct(B.selic, 2)} ao ano</strong> e a inflação em 12 meses é de <strong>{pct(B.ipca_12[ref], 2)}</strong> ({mes_nome(ref)}). "
                 "Sem cadastro e sem opinião: só o número, a fonte e a data.</p>")
-    selic = card(cab("Meta da Selic desde 2019", '<span class="src">Fonte: Banco Central</span>') +
-                 '<div class="chart">' + svg_degraus([(d, v) for d, v in B.mud if d >= dt.date(2019, 1, 1)] or B.mud, B.hoje,
-                                                    "Gráfico em degraus da meta da taxa Selic desde 2019") + "</div>"
-                 '<p class="small">Meta da taxa Selic definida pelo Copom, em % ao ano. Cada degrau é uma decisão do comitê.</p>')
+    sel19 = [(d, v) for d, v in B.mud if d >= dt.date(2019, 1, 1)] or B.mud
+    selic = grafico(B, "selic-meta", "Meta da Selic desde 2019", F_SELIC,
+                    svg_degraus(sel19, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2019"),
+                    ["Em vigor desde", "Meta da Selic (% ao ano)"], [(d.isoformat(), v) for d, v in sel19], "Juros e Copom",
+                    nota='<p class="small">Meta da taxa Selic definida pelo Copom, em % ao ano. Cada degrau é uma decisão do comitê.</p>',
+                    ultimo=f"{pct(B.selic, 2)} ao ano, em vigor desde {data_br(B.selic_desde)}", csv_linhas=[(d.isoformat(), v) for d, v in B.mud])
     rk = B.ranking()
     infl = card(cab("Inflação por região", '<a class="small" href="/inflacao/">ver as 16 áreas →</a>') +
                 hbarras([(f'<a href="/inflacao/{a["slug"]}/">{esc(a["nome"])}</a>', a["acum12"][B.ref_areas], pct(a["acum12"][B.ref_areas], 2), "") for a in rk[:8]]) +
@@ -598,7 +748,7 @@ def pg_inicio(B: Base) -> str:
     calc = card('<span class="eyebrow">Ferramenta</span><h2>Calculadora de correção pelo IPCA</h2>'
                 '<p class="small">Quanto R$ 1.000 de alguns anos atrás valem hoje? Corrija qualquer valor pela inflação oficial, mês a mês, desde 2000.</p>'
                 '<p><a href="/calculadora/">Abrir a calculadora →</a></p>')
-    mais = [x for x in (card_emprego_inicio(B), card_atividade_inicio(B), card_cambio_inicio(B)) if x]
+    mais = [x for x in (card_emprego_inicio(B), card_atividade_inicio(B), card_cambio_inicio(B), card_fiscal_inicio(B)) if x]
     mais_html = "".join(f'<div class="cols">{"".join(mais[k:k + 2])}</div>' if len(mais[k:k + 2]) == 2 else mais[k] for k in range(0, len(mais), 2))
     corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{mais_html}{calc}'
     return pagina(B, "/", "Economia em Números: Selic, inflação (IPCA) e Copom em dados oficiais",
@@ -652,8 +802,9 @@ def pg_juros(B: Base) -> str:
     hero = card('<span class="eyebrow">Política monetária</span><h1>Selic e reuniões do Copom</h1>'
                 f'<p class="lede">A meta da Selic está em <strong>{pct(B.selic, 2)} ao ano</strong> desde {data_br(B.selic_desde)}. '
                 "Veja o histórico de decisões, o calendário das próximas reuniões e o que o mercado espera para os juros.</p>")
-    graf = card(cab("Meta da Selic desde 2016", '<span class="src">Fonte: Banco Central</span>') + '<div class="chart">' +
-                svg_degraus(B.mud, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2016") + "</div>")
+    graf = grafico(B, "selic-meta", "Meta da Selic desde 2016", F_SELIC, svg_degraus(B.mud, B.hoje, "Gráfico em degraus da meta da taxa Selic desde 2016"),
+                   ["Em vigor desde", "Meta da Selic (% ao ano)"], [(d.isoformat(), v) for d, v in B.mud], "Juros e Copom",
+                   ultimo=f"{pct(B.selic, 2)} ao ano, em vigor desde {data_br(B.selic_desde)}")
     fut = [r for r in B.reunioes if r["fim"] >= B.hoje][:8]
     cal = card(cab("Próximas reuniões do Copom") +
                tabela(["Reunião", "Datas", "Ata"], [[f"{r['num']}ª", periodo_reuniao(r["ini"], r["fim"]) + f" de {r['fim'].year}", data_br(r["ata"])] for r in fut], ["l", "l", "r"]) +
@@ -724,16 +875,22 @@ def pg_emprego(B: Base) -> str:
         tiles.append(tile("Menor taxa", nf(ufs[-1]["taxa"], 1), f'% · {ufs[-1]["sigla"]}', "", "b"))
         tiles.append(tile("Maior taxa", nf(ufs[0]["taxa"], 1), f'% · {ufs[0]["sigla"]}', "", "g"))
     ult36 = mov[-36:]
-    g1 = card(cab("Taxa de desocupação", '<span class="src">Fonte: IBGE (PNAD Contínua)</span>') + '<div class="chart">' +
-              svg_linhas([{"vals": [x[2] for x in ult36], "cor": "a"}], [mes_curtinho(f"{x[0][:4]}-{x[0][4:]}") for x in ult36],
-                         "Gráfico da taxa de desocupação no Brasil, em trimestres móveis, nos últimos 36 meses") + "</div>"
-              '<p class="small">Pessoas de 14 anos ou mais sem trabalho que procuraram emprego, em % da força de trabalho. Cada ponto é um trimestre móvel, identificado pelo mês final.</p>')
+    g1 = grafico(B, "desocupacao-brasil", "Taxa de desocupação", F_PNAD_BR,
+                 svg_linhas([{"vals": [x[2] for x in ult36], "cor": "a"}], [mes_curtinho(f"{x[0][:4]}-{x[0][4:]}") for x in ult36],
+                            "Gráfico da taxa de desocupação no Brasil, em trimestres móveis, nos últimos 36 meses"),
+                 ["Trimestre móvel", "Taxa de desocupação (%)"], [(rot_movel_curto(x[0]), x[2]) for x in ult36], "Emprego", casas=1,
+                 nota='<p class="small">Pessoas de 14 anos ou mais sem trabalho que procuraram emprego, em % da força de trabalho. Cada ponto é um trimestre móvel, identificado pelo mês final.</p>',
+                 ultimo=f"trimestre {rot_movel(ult[0])} ({pct(ult[2], 1)})",
+                 csv_cab=["Mês final do trimestre (AAAA-MM)", "Trimestre móvel", "Taxa de desocupação (%)"],
+                 csv_linhas=[(f"{x[0][:4]}-{x[0][4:]}", rot_movel(x[0]), x[2]) for x in mov])
     g2 = ""
     if cg:
         c24 = cg[-24:]
-        g2 = card(cab("Saldo mensal de vagas formais", '<span class="src">Fonte: Novo Caged (MTE), via Banco Central</span>') + '<div class="chart">' +
-                  svg_barras([v / 1000 for _, v in c24], [mes_curtinho(m) for m, _ in c24], "Gráfico de barras do saldo mensal de vagas formais do Novo Caged nos últimos 24 meses, em milhares") + "</div>"
-                  '<p class="small">Em milhares de vagas. Admissões menos desligamentos de empregos com carteira assinada. Dezembro costuma ter saldo negativo.</p>')
+        g2 = grafico(B, "caged-saldo", "Saldo mensal de vagas formais", F_CAGED,
+                     svg_barras([v / 1000 for _, v in c24], [mes_curtinho(m) for m, _ in c24], "Gráfico de barras do saldo mensal de vagas formais do Novo Caged nos últimos 24 meses, em milhares"),
+                     ["Mês", "Saldo de vagas formais"], c24, "Emprego", casas=0, csv_linhas=cg,
+                     nota='<p class="small">Em milhares de vagas. Admissões menos desligamentos de empregos com carteira assinada. Dezembro costuma ter saldo negativo.</p>',
+                     ultimo=f"{mes_nome(cg[-1][0])}: {saldo_txt(cg[-1][1])} vagas")
     graficos = f'<div class="cols">{g1}{g2}</div>' if g2 else g1
     tab = ""
     if ufs:
@@ -776,9 +933,14 @@ def pg_uf(B: Base, u: dict) -> str:
         tiles.append(tile("Brasil", nf(br[ult], 1), "%", "", "g"))
     tiles.append(tile("Posição", ordinal_f(pos), f"de {len(ufs)}", "", "b"))
     series = [{"vals": [u["serie"][c] for c in comuns], "cor": "b"}, {"vals": [br[c] for c in comuns], "cor": "m", "tracejada": True}]
-    graf = card(cab(f"Taxa de desocupação: {esc(u['nome'])} e Brasil", '<span class="src">Fonte: IBGE (PNAD Contínua)</span>') +
-                '<div class="chart">' + svg_linhas(series, [rot_tri(c) for c in comuns], f"Gráfico da taxa de desocupação em {u['nome']} e no Brasil") + "</div>"
-                f'<div class="leg"><span><i style="background:var(--eco2)"></i>{esc(u["nome"])}</span><span><i style="background:var(--muted)"></i>Brasil</span></div>')
+    todos = [c for c in sorted(u["serie"]) if c in br]
+    graf = grafico(B, f"desocupacao-{u['slug']}", f"Taxa de desocupação: {esc(u['nome'])} e Brasil", F_PNAD_UF,
+                   svg_linhas(series, [rot_tri(c) for c in comuns], f"Gráfico da taxa de desocupação em {u['nome']} e no Brasil"),
+                   ["Trimestre", u["nome"], "Brasil"], [(rot_tri(c, True), u["serie"][c], br[c]) for c in comuns], "Emprego por estado", casas=1,
+                   legenda=f'<div class="leg"><span><i style="background:var(--eco2)"></i>{esc(u["nome"])}</span><span><i style="background:var(--muted)"></i>Brasil</span></div>',
+                   ultimo=f"{rot_tri(ult, True)}: {pct(u['taxa'], 1)}",
+                   csv_cab=["Trimestre", f"Desocupação {u['nome']} (%)", "Desocupação Brasil (%)"],
+                   csv_linhas=[(chave_tri(c), u["serie"][c], br[c]) for c in todos])
     rows = [[rot_tri(c, True), pct(u["serie"][c], 1), pct(br[c], 1), f'{sinal(u["serie"][c] - br[c], 1)} p.p.'] for c in comuns[::-1]]
     tab = card(cab("Trimestre a trimestre") + tabela(["Trimestre", esc(u["nome"]), "Brasil", "Diferença"], rows, ["l", "r", "r", "r"]))
     outras = card(cab("Outros estados") + lista_links([(f'/emprego/{x["slug"]}/', f'{esc(x["nome"])} ({x["sigla"]})', pct(x["taxa"], 1)) for x in ufs if x["cod"] != u["cod"]]) +
@@ -821,6 +983,82 @@ def card_atividade_inicio(B: Base) -> str:
                 f'<p>{" ".join(partes)}</p><p><a href="/atividade/">Ver PIB trimestral e IBC-Br mensal →</a></p>')
 
 
+def card_fiscal_inicio(B: Base) -> str:
+    if not B.tem_fiscal:
+        return ""
+    f = B.fis_stats()
+    txt = (f'A dívida bruta do governo geral ficou em <strong>{pct(f["dbgg"]["v"], 1)} do PIB</strong> em {mes_nome(f["dbgg"]["mes"])}. '
+           f'O setor público teve {resultado_txt(f["primario"]["v"])} no resultado primário em 12 meses.')
+    return card('<span class="eyebrow">Contas públicas</span><h2>Dívida e resultado fiscal</h2>'
+                f'<p>{txt}</p><p><a href="/contas-publicas/">Ver dívida, resultado primário e nominal →</a></p>')
+
+
+def pg_fiscal(B: Base) -> str:
+    f = B.fis_stats()
+    dbgg, dlsp, prim, nom = f["dbgg"], f["dlsp"], f["primario"], f["nominal"]
+    lede = (f'A dívida bruta do governo geral ficou em <strong>{pct(dbgg["v"], 1)} do PIB</strong> em {mes_nome(dbgg["mes"])}'
+            f' e a dívida líquida do setor público, em <strong>{pct(dlsp["v"], 1)}</strong> em {mes_nome(dlsp["mes"])}. '
+            f'No resultado primário, o setor público consolidado teve <strong>{resultado_txt(prim["v"])}</strong> em 12 meses até {mes_nome(prim["mes"])}; '
+            f'no nominal, que inclui os juros, {resultado_txt(nom["v"])}.')
+    hero = card('<span class="eyebrow">Contas públicas</span><h1>Dívida pública e resultado fiscal do Brasil</h1>' f'<p class="lede">{lede}</p>')
+
+    def tl(rot, d, un, cor, resultado=False):
+        extra = chg(d["dif12"], 1, " p.p.", " em 12 meses") if d["dif12"] is not None else ""
+        if resultado:
+            extra = f'<span class="chg flat">● {"superávit" if d["v"] > 0 else "déficit" if d["v"] < 0 else "equilíbrio"}</span>' + (" " + extra if extra else "")
+        valor = sinal(d["v"], 1) if resultado else nf(d["v"], 1)
+        return tile(f'{rot} · {mes_curtinho(d["mes"])}', valor, un, extra, cor)
+    tiles = [tl("Dívida bruta", dbgg, "% do PIB", "a"), tl("Dívida líquida", dlsp, "% do PIB", "b"),
+             tl("Primário, 12 meses", prim, "% do PIB", "k", True), tl("Nominal, 12 meses", nom, "% do PIB", "g", True)]
+
+    def serie_dict(chave):
+        return dict(f[chave]["serie"])
+    d1, d2, d3, d4 = serie_dict("dbgg"), serie_dict("dlsp"), serie_dict("primario"), serie_dict("nominal")
+    leg = lambda a, b: (f'<div class="leg"><span><i style="background:var(--eco)"></i>{a}</span>'
+                        f'<span><i style="background:var(--eco2)"></i>{b}</span></div>')
+    cm = sorted(set(d1) & set(d2))
+    g1 = grafico(B, "divida-publica", "Dívida bruta e dívida líquida (% do PIB)", "Banco Central do Brasil (SGS 13762 e 4513)",
+                 svg_linhas([{"vals": [d1[m] for m in cm], "cor": "a"}, {"vals": [d2[m] for m in cm], "cor": "b"}], [mes_curtinho(m) for m in cm],
+                            "Gráfico da dívida bruta do governo geral e da dívida líquida do setor público, em % do PIB"),
+                 ["Mês", "Dívida bruta", "Dívida líquida"], [(m, d1[m], d2[m]) for m in cm], "Contas públicas", casas=1,
+                 legenda=leg("Dívida bruta (governo geral)", "Dívida líquida (setor público)"),
+                 nota='<p class="small">A bruta soma o que o governo deve; a líquida desconta ativos do setor público, como as reservas internacionais.</p>',
+                 ultimo=f"bruta {pct(dbgg['v'], 1)} ({mes_curto(dbgg['mes'])}); líquida {pct(dlsp['v'], 1)} ({mes_curto(dlsp['mes'])})",
+                 csv_cab=["Mês", "Dívida bruta do governo geral (% do PIB)", "Dívida líquida do setor público (% do PIB)"],
+                 csv_linhas=[(m, d1.get(m), d2.get(m)) for m in sorted(set(d1) | set(d2))])
+    cr = sorted(set(d3) & set(d4))
+    g2 = grafico(B, "resultado-fiscal", "Resultado primário e nominal em 12 meses (% do PIB)", "Banco Central do Brasil (SGS 5793 e 5727)",
+                 svg_linhas([{"vals": [d3[m] for m in cr], "cor": "a"}, {"vals": [d4[m] for m in cr], "cor": "b"}], [mes_curtinho(m) for m in cr],
+                            "Gráfico do resultado primário e do resultado nominal do setor público consolidado, acumulados em 12 meses, em % do PIB", zero=True),
+                 ["Mês", "Primário", "Nominal"], [(m, d3[m], d4[m]) for m in cr], "Contas públicas",
+                 legenda=leg("Resultado primário", "Resultado nominal (com juros)"),
+                 nota='<p class="small">Soma dos últimos 12 meses, em % do PIB. Acima de zero é superávit; abaixo de zero, déficit.</p>',
+                 ultimo=f"primário {sinal(prim['v'], 2)}% e nominal {sinal(nom['v'], 2)}% ({mes_curto(prim['mes'])})",
+                 csv_cab=["Mês", "Resultado primário em 12 meses (% do PIB, negativo = déficit)", "Resultado nominal em 12 meses (% do PIB, negativo = déficit)"],
+                 csv_linhas=[(m, d3.get(m), d4.get(m)) for m in sorted(set(d3) | set(d4))])
+    rows = []
+    for rot, d in (("Dívida bruta", dbgg), ("Dívida líquida", dlsp), ("Primário, 12 meses", prim), ("Nominal, 12 meses", nom)):
+        rows.append([rot, mes_curtinho(d["mes"]), pct(d["v"], 2), f'{sinal(d["dif12"], 1)} p.p.' if d["dif12"] is not None else "–"])
+    tab = card(cab("Últimas leituras", '<span class="src">Fonte: Banco Central</span>') +
+               tabela(["Indicador", "Mês", "% do PIB", "Vs. 12m"], rows, ["l", "l", "r", "r"]) +
+               '<span class="src">Os resultados fiscais usam sinal de saldo: negativo é déficit, positivo é superávit. Dívida bruta: governo geral; dívida líquida: setor público. A última coluna é a diferença, em pontos percentuais do PIB, para o mesmo mês um ano antes.</span>')
+    foc = blocos_focus(B, FOCUS_FISCAL, "O que o mercado espera (Boletim Focus)", " Resultados fiscais: negativo é déficit. Em % do PIB.")
+    linha = f'<div class="cols">{tab}{foc}</div>' if foc else tab
+    texto = card("<h2>Como ler as contas públicas</h2>"
+                 "<p>A <strong>dívida bruta do governo geral</strong> reúne o que o governo federal, o INSS e os governos estaduais e municipais devem. "
+                 "A <strong>dívida líquida do setor público</strong> desconta desse total os ativos do setor público, como as reservas internacionais, e por isso costuma ser menor.</p>"
+                 "<p>O <strong>resultado primário</strong> é a diferença entre o que o setor público arrecada e o que gasta, sem contar os juros da dívida. "
+                 "O <strong>resultado nominal</strong> inclui os juros, e por isso mostra o quanto a dívida cresce por causa do saldo das contas. "
+                 "Os dois são somados em 12 meses e divididos pelo PIB do mesmo período, para comparar anos diferentes.</p>"
+                 "<p>Os números vêm do Banco Central, que divulga as estatísticas fiscais todo mês, com defasagem de cerca de um mês e meio a dois meses. "
+                 "Este portal mostra dados e não opina sobre a política fiscal.</p>")
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="cols">{g1}{g2}</div>{linha}{texto}'
+    return pagina(B, "/contas-publicas/", f"Contas públicas: dívida bruta de {pct(dbgg['v'], 1)} do PIB e resultado fiscal em 12 meses",
+                  f"Dívida bruta de {pct(dbgg['v'], 1)} do PIB em {mes_nome(dbgg['mes'])} e {resultado_txt(prim['v'])} no resultado primário em 12 meses. "
+                  "Dívida líquida, resultado nominal e projeções do Focus, com dados do Banco Central.",
+                  corpo, "/contas-publicas/", [(None, "Contas públicas")])
+
+
 def pg_cambio(B: Base) -> str:
     c = B.cambio_stats()
     dia = c["dia"]
@@ -836,15 +1074,22 @@ def pg_cambio(B: Base) -> str:
         if c[k] is not None:
             tiles.append(tile(rot, sinal(c[k], 2), "%", "", cor))
     s12 = c["serie12"]
-    g1 = card(cab("Dólar nos últimos 12 meses", '<span class="src">Fonte: Banco Central</span>') + '<div class="chart">' +
-              svg_linhas([{"vals": [v for _, v in s12], "cor": "a"}], [mes_curtinho(x.strftime("%Y-%m")) for x, _ in s12],
-                         "Gráfico da cotação de venda do dólar em reais nos últimos 12 meses") + "</div>"
-              f'<p class="small">Cotação de venda, em R$ por US$, a cada dia útil. Mínima em 12 meses: R$ {nf(c["min12"], 2)}; máxima: R$ {nf(c["max12"], 2)}.</p>')
+    g1 = grafico(B, "dolar-diario", "Dólar nos últimos 12 meses", F_CAMBIO,
+                 svg_linhas([{"vals": [v for _, v in s12], "cor": "a"}], [mes_curtinho(x.strftime("%Y-%m")) for x, _ in s12],
+                            "Gráfico da cotação de venda do dólar em reais nos últimos 12 meses"),
+                 ["Data", "Dólar venda (R$)"], [(x.isoformat(), v) for x, v in s12], "Câmbio",
+                 nota=f'<p class="small">Cotação de venda, em R$ por US$, a cada dia útil. Mínima em 12 meses: R$ {nf(c["min12"], 2)}; máxima: R$ {nf(c["max12"], 2)}.</p>',
+                 ultimo=f"{data_br(c['data'])}: R$ {nf(c['ult'], 2)}",
+                 csv_cab=["Data", "Dólar venda (R$ por US$)"], csv_linhas=[(a, float(v)) for a, v in B.cambio["diario"]])
     m = c["mensal"]
-    g2 = card(cab("Dólar desde 2016 (média mensal)", '<span class="src">Fonte: Banco Central</span>') + '<div class="chart">' +
-              svg_linhas([{"vals": [v for _, v in m], "cor": "b"}], [mes_curtinho(x) for x, _ in m],
-                         "Gráfico da média mensal da cotação do dólar em reais desde 2016") + "</div>"
-              '<p class="small">Média das cotações de venda de cada mês, em R$ por US$.</p>') if len(m) >= 24 else ""
+    g2 = grafico(B, "dolar-mensal", "Dólar desde 2016 (média mensal)", F_CAMBIO,
+                 svg_linhas([{"vals": [v for _, v in m], "cor": "b"}], [mes_curtinho(x) for x, _ in m],
+                            "Gráfico da média mensal da cotação do dólar em reais desde 2016"),
+                 ["Mês", "Média do mês (R$)"], m, "Câmbio",
+                 nota='<p class="small">Média das cotações de venda de cada mês, em R$ por US$.</p>',
+                 ultimo=f"{mes_nome(m[-1][0])}: R$ {nf(m[-1][1], 2)} (média)",
+                 csv_cab=["Mês", "Média do mês (R$ por US$)", "Fechamento do mês (R$ por US$)"],
+                 csv_linhas=[(a, float(b), float(f)) for a, b, f in B.cambio["mensal"]]) if len(m) >= 24 else ""
     graficos = f'<div class="cols">{g1}{g2}</div>' if g2 else g1
     rows = [[data_br(x), nf(v, 2), chg(vr, 2, "%") if vr is not None else "–"] for x, v, vr in c["linhas"]]
     tab = card(cab("Últimas cotações", '<span class="src">Fonte: Banco Central</span>') +
@@ -901,14 +1146,23 @@ def pg_atividade(B: Base) -> str:
     graf = []
     if r:
         u12 = [x for x in B.pib if x.get("qoq") is not None][-12:]
-        graf.append(card(cab("PIB: variação sobre o trimestre anterior", '<span class="src">Fonte: IBGE (Contas Nacionais Trimestrais)</span>') + '<div class="chart">' +
-                         svg_barras([x["qoq"] for x in u12], [rot_tri(x["t"]) for x in u12], "Gráfico de barras da variação trimestral do PIB, com ajuste sazonal, nos últimos 12 trimestres") + "</div>"
-                         '<p class="small">Em %, com ajuste sazonal, comparando cada trimestre com o anterior.</p>'))
+        graf.append(grafico(B, "pib-trimestral", "PIB: variação sobre o trimestre anterior", F_PIB,
+                            svg_barras([x["qoq"] for x in u12], [rot_tri(x["t"]) for x in u12], "Gráfico de barras da variação trimestral do PIB, com ajuste sazonal, nos últimos 12 trimestres"),
+                            ["Trimestre", "Vs. trim. anterior (%)"], [(rot_tri(x["t"], True), x["qoq"]) for x in u12], "Atividade",
+                            nota='<p class="small">Em %, com ajuste sazonal, comparando cada trimestre com o anterior.</p>',
+                            ultimo=f"{rot_tri(r['t'], True)}: {sinal(r['qoq'], 1)}%",
+                            csv_cab=["Trimestre", "Variação sobre o trimestre anterior, com ajuste sazonal (%)", "Variação sobre o mesmo trimestre do ano anterior (%)", "Variação acumulada em 4 trimestres (%)"],
+                            csv_linhas=[(chave_tri(x["t"]), x.get("qoq"), x.get("yoy"), x.get("a4")) for x in B.pib]))
     if i:
         s36 = i["sa"][-36:]
-        graf.append(card(cab("IBC-Br: nível da atividade", '<span class="src">Fonte: Banco Central</span>') + '<div class="chart">' +
-                         svg_linhas([{"vals": [v for _, v in s36], "cor": "a"}], [mes_curtinho(m) for m, _ in s36], "Gráfico do índice IBC-Br com ajuste sazonal nos últimos 36 meses") + "</div>"
-                         '<p class="small">Índice com ajuste sazonal, nos últimos 36 meses. O IBC-Br é uma aproximação mensal do PIB; o que importa é a direção, não o valor absoluto.</p>'))
+        nsa = {m: v for m, v in B.ibc["nsa"]}
+        graf.append(grafico(B, "ibcbr", "IBC-Br: nível da atividade", F_IBC,
+                            svg_linhas([{"vals": [v for _, v in s36], "cor": "a"}], [mes_curtinho(m) for m, _ in s36], "Gráfico do índice IBC-Br com ajuste sazonal nos últimos 36 meses"),
+                            ["Mês", "IBC-Br (índice)"], s36, "Atividade",
+                            nota='<p class="small">Índice com ajuste sazonal, nos últimos 36 meses. O IBC-Br é uma aproximação mensal do PIB; o que importa é a direção, não o valor absoluto.</p>',
+                            ultimo=f"{mes_nome(i['mes'])}: {nf(s36[-1][1], 2)}",
+                            csv_cab=["Mês", "IBC-Br com ajuste sazonal (índice)", "IBC-Br sem ajuste sazonal (índice)"],
+                            csv_linhas=[(m, float(v), float(nsa[m]) if m in nsa else None) for m, v in i["sa"]]))
     graficos = f'<div class="cols">{"".join(graf)}</div>' if len(graf) == 2 else "".join(graf)
     tabs = []
     if r:
@@ -972,12 +1226,16 @@ def pg_inflacao(B: Base) -> str:
     if ytd is not None:
         tiles.append(tile(f"Acumulado em {ref[:4]}", nf(ytd, 2), "%", "", "a"))
     tiles.append(tile("Meta de inflação", "3,00", "% ± 1,5", "", "g"))
-    g12 = card(cab("IPCA acumulado em 12 meses", '<span class="src">Fonte: IBGE</span>') + '<div class="chart">' +
-               svg_linhas([{"vals": [B.ipca_12[m] for m in ms36], "cor": "b"}], [mes_curtinho(m) for m in ms36],
-                          "Gráfico do IPCA acumulado em 12 meses nos últimos 36 meses") + "</div>")
-    gm = card(cab("IPCA mensal", '<span class="src">Fonte: IBGE</span>') + '<div class="chart">' +
-              svg_barras([B.ipca_m[m] for m in ms24 if m in B.ipca_m], [mes_curtinho(m) for m in ms24 if m in B.ipca_m],
-                         "Gráfico de barras do IPCA mensal nos últimos 24 meses") + "</div>")
+    g12 = grafico(B, "ipca-12-meses", "IPCA acumulado em 12 meses", F_IPCA,
+                  svg_linhas([{"vals": [B.ipca_12[m] for m in ms36], "cor": "b"}], [mes_curtinho(m) for m in ms36],
+                             "Gráfico do IPCA acumulado em 12 meses nos últimos 36 meses"),
+                  ["Mês", "IPCA em 12 meses (%)"], [(m, B.ipca_12[m]) for m in ms36], "Inflação",
+                  ultimo=f"{mes_nome(ref)}: {pct(B.ipca_12[ref], 2)}", csv_linhas=[(m, B.ipca_12[m]) for m in sorted(B.ipca_12)])
+    ms24v = [m for m in ms24 if m in B.ipca_m]
+    gm = grafico(B, "ipca-mensal", "IPCA mensal", F_IPCA,
+                 svg_barras([B.ipca_m[m] for m in ms24v], [mes_curtinho(m) for m in ms24v], "Gráfico de barras do IPCA mensal nos últimos 24 meses"),
+                 ["Mês", "IPCA no mês (%)"], [(m, B.ipca_m[m]) for m in ms24v], "Inflação",
+                 ultimo=f"{mes_nome(ref)}: {pct(B.ipca_m[ref], 2)}", csv_linhas=[(m, B.ipca_m[m]) for m in sorted(B.ipca_m)])
     rk = B.ranking()
     reg = ""
     if rk:
@@ -1024,9 +1282,14 @@ def pg_area(B: Base, a: dict) -> str:
         tiles.append(tile("Brasil em 12 meses", nf(br12, 2), "%", "", "g"))
     comuns = [m for m in sorted(a["acum12"]) if m in B.ipca_12][-24:]
     series = [{"vals": [a["acum12"][m] for m in comuns], "cor": "b"}, {"vals": [B.ipca_12[m] for m in comuns], "cor": "m", "tracejada": True}]
-    graf = card(cab(f"IPCA em 12 meses: {esc(a['nome'])} e Brasil", '<span class="src">Fonte: IBGE</span>') +
-                '<div class="chart">' + svg_linhas(series, [mes_curtinho(m) for m in comuns], f"Gráfico do IPCA acumulado em 12 meses em {a['nome']} e no Brasil") + "</div>"
-                f'<div class="leg"><span><i style="background:var(--eco2)"></i>{esc(a["nome"])}</span><span><i style="background:var(--muted)"></i>Brasil</span></div>')
+    todos = [m for m in sorted(a["acum12"]) if m in B.ipca_12]
+    graf = grafico(B, f"ipca-12m-{a['slug']}", f"IPCA em 12 meses: {esc(a['nome'])} e Brasil", F_IPCA_AREA,
+                   svg_linhas(series, [mes_curtinho(m) for m in comuns], f"Gráfico do IPCA acumulado em 12 meses em {a['nome']} e no Brasil"),
+                   ["Mês", a["nome"], "Brasil"], [(m, a["acum12"][m], B.ipca_12[m]) for m in comuns], "Inflação por área",
+                   legenda=f'<div class="leg"><span><i style="background:var(--eco2)"></i>{esc(a["nome"])}</span><span><i style="background:var(--muted)"></i>Brasil</span></div>',
+                   ultimo=f"{mes_nome(ref)}: {pct(v12, 2)}",
+                   csv_cab=["Mês", f"IPCA em 12 meses {a['nome']} (%)", "IPCA em 12 meses Brasil (%)"],
+                   csv_linhas=[(m, a["acum12"][m], B.ipca_12[m]) for m in todos])
     ult12 = sorted(a["mensal"])[-12:][::-1]
     tab = card(cab("Mês a mês") + tabela(["Mês", esc(a["nome"]), "Brasil", "Diferença"], _mensal_tabela(B, ult12, area=a), ["l", "r", "r", "r"]))
     outras = card(cab("Outras áreas") + lista_links([(f'/inflacao/{x["slug"]}/', f'{esc(x["nome"])} ({x["uf"]})', pct(x["acum12"][ref], 2)) for x in rk if x["slug"] != a["slug"]]) +
@@ -1074,7 +1337,10 @@ def pg_sobre(B: Base) -> str:
                  "<li><strong>PIB:</strong> IBGE, Contas Nacionais Trimestrais (SIDRA, tabela 5932).</li>"
                  "<li><strong>IBC-Br:</strong> Banco Central (séries 24363 e 24364 do SGS).</li>"
                  "<li><strong>Dólar:</strong> cotação de venda do Banco Central, série 1 do SGS (Sistema PTAX).</li>"
+                 "<li><strong>Contas públicas:</strong> Banco Central, estatísticas fiscais em % do PIB (séries 13762, 4513, 5793 e 5727 do SGS).</li>"
                  "<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego; o saldo do mês é a variação do estoque de empregos formais (série 28763 do SGS, Banco Central).</li></ul>"
+                 "<h2>Dados em CSV</h2>"
+                 '<p>Cada gráfico tem fonte, data da última atualização e um botão para baixar os números em CSV. A lista completa está em <a href="/dados/">Dados em CSV</a>.</p>'
                  "<h2>Atualização</h2>"
                  "<p>Um robô confere as fontes todos os dias e republica o site quando há dado novo. A data da última atualização aparece no alto de cada página.</p>"
                  "<h2>Importante</h2>"
@@ -1120,20 +1386,26 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
         paginas.append(("/atividade/", pg_atividade(B)))
     if B.tem_cambio:
         paginas.append(("/cambio/", pg_cambio(B)))
+    if B.tem_fiscal:
+        paginas.append(("/contas-publicas/", pg_fiscal(B)))
     for a in B.ranking():
         paginas.append((f"/inflacao/{a['slug']}/", pg_area(B, a)))
+    paginas.append(("/dados/", pg_dados(B)))  # por último: lista os CSV de todos os gráficos já montados
     for caminho, conteudo in paginas:
         escrever(saida, caminho, conteudo)
+    for slug, c in B.csvs.items():
+        (saida / "dados").mkdir(exist_ok=True)
+        (saida / "dados" / f"{slug}.csv").write_bytes(csv_texto(c["cab"], c["linhas"]).encode("utf-8"))
     escrever(saida, "/404.html", pg_404(B))
     # arquivos estáticos
     (saida / "assets").mkdir()
     v = dados["gerado_em"][:10]
-    for nome in ("estilo.css", "calc.js"):
+    for nome in ("estilo.css", "calc.js", "graficos.js"):
         shutil.copy(SITE / nome, saida / "assets" / nome)
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
     (saida / "CNAME").write_text(DOMINIO + "\n", encoding="utf-8")
     (saida / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n", encoding="utf-8")
-    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/inflacao/": "0.9", "/calculadora/": "0.8", "/sobre/": "0.3"}
+    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/contas-publicas/": "0.9", "/inflacao/": "0.9", "/calculadora/": "0.8", "/dados/": "0.5", "/sobre/": "0.3"}
     urls = "".join(f"<url><loc>{BASE}{c}</loc><lastmod>{v}</lastmod><priority>{prio.get(c, '0.6')}</priority></url>" for c, _ in paginas)
     (saida / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>\n", encoding="utf-8")
     return [c for c, _ in paginas]

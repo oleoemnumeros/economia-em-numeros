@@ -155,3 +155,20 @@ ul.list a span:last-child{color:var(--muted);font-variant-numeric:tabular-nums;w
 @media (min-width:860px){.two .chart text{font-size:14px}.cols .chart text{font-size:17px}}
 /* Alta ou queda de juros e preços não é boa nem ruim por si só: as variações usam cor neutra */
 .chg.up,.chg.down{color:var(--ink);background:var(--chip)}
+
+/* Gráficos clicáveis: fonte e data no rodapé, botão de CSV e tabela com os números */
+.chart[data-abre]{cursor:pointer;border-radius:8px}
+.chart[data-abre]:hover{background:var(--chip)}
+.chart[data-abre]:focus-visible{outline:2px solid var(--eco);outline-offset:2px}
+.gfoot{display:flex;justify-content:space-between;align-items:flex-start;gap:8px 14px;flex-wrap:wrap}
+.gfoot .src{flex:1 1 220px}
+a.csv{display:inline-block;font-size:.84rem;font-weight:600;text-decoration:none;color:var(--eco);border:1px solid var(--eco);border-radius:8px;padding:5px 12px;white-space:nowrap}
+a.csv{margin-left:0}
+a.csv::before{content:"\2193";margin-right:.4em}
+a.csv:hover{background:var(--eco);color:var(--surface)}
+details.dados{border-top:1px solid var(--line);padding-top:10px}
+details.dados summary{cursor:pointer;font-size:.88rem;font-weight:600;color:var(--eco)}
+details.dados[open] summary{margin-bottom:8px}
+details.dados .scroll{max-height:320px;overflow:auto}
+details.dados thead th{position:sticky;top:0;background:var(--surface)}
+details.dados td,details.dados th{font-variant-numeric:tabular-nums}

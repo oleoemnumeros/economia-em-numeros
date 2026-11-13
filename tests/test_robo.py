@@ -183,6 +183,23 @@ class TestAtividadeECambio(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 r.ibcbr()
 
+    def test_fiscal_quatro_series_e_trava(self):
+        faixa = {13762: 78.0, 4513: 62.0, 5793: 0.6, 5727: 7.5}
+        meses = [(dt.date(2015 + (k // 12), k % 12 + 1, 1), k) for k in range(138)]
+        with mock.patch.object(r, "sgs", lambda cod, ini: [(d, faixa[cod] + k / 100) for d, k in meses]), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            out = r.fiscal()
+        self.assertEqual(set(out), {"dbgg", "dlsp", "primario", "nominal"})
+        self.assertEqual(out["dbgg"][0][0], "2015-01")
+        self.assertEqual(len([a for a in dbg["avisos"] if a.startswith("Fiscal")]), 4)
+        # dívida em R$ bilhões (e não em % do PIB) deve ser recusada
+        with mock.patch.object(r, "sgs", lambda cod, ini: [(d, 6_000_000.0 + k) for d, k in meses]), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.fiscal()
+        # série curta demais também
+        with mock.patch.object(r, "sgs", lambda cod, ini: [(d, faixa[cod]) for d, _ in meses[:10]]), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.fiscal()
+
     def _linhas_pib(self, vars_=("6561", "6563", "6564")):
         cab = {"NC": "Nível Territorial (Código)", "NN": "Nível Territorial", "MC": "Unidade de Medida (Código)", "MN": "Unidade de Medida", "V": "Valor",
                "D1C": "Brasil (Código)", "D1N": "Brasil", "D2C": "Variável (Código)", "D2N": "Variável", "D3C": "Trimestre (Código)", "D3N": "Trimestre",

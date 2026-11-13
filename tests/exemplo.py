@@ -83,6 +83,18 @@ def pib_exemplo() -> dict:
                            for i, t in enumerate(trimestres("202301", "202602"))]}
 
 
+def fiscal_exemplo() -> dict:
+    """Convenção do Banco Central: NFSP positiva = déficit. A dívida bruta vai até set/2026; as demais, até ago/2026."""
+    ate_bruta, ate_resto = meses("2015-01", "2026-09"), meses("2015-01", "2026-08")
+    dbgg = [[m, round(58 + k * 0.18 + (k % 5) * 0.1, 2)] for k, m in enumerate(ate_bruta)]
+    dlsp = [[m, round(30 + k * 0.22 + (k % 4) * 0.1, 2)] for k, m in enumerate(ate_resto)]
+    primario = [[m, round(0.3 + ((k * 7) % 9) / 10, 2)] for k, m in enumerate(ate_resto)]
+    nominal = [[m, round(5.5 + ((k * 5) % 13) / 10, 2)] for k, m in enumerate(ate_resto)]
+    primario[-1][1], primario[-13][1] = 0.75, 0.40      # déficit primário de 0,75% do PIB em ago/2026 (0,40% um ano antes)
+    nominal[-1][1] = 8.10
+    return {"dbgg": dbgg, "dlsp": dlsp, "primario": primario, "nominal": nominal}
+
+
 def dados_exemplo() -> dict:
     ms = meses("2000-01", "2026-09")
     mensal = [[m, round(0.2 + ((i * 7) % 13) / 20, 2)] for i, m in enumerate(ms)]
@@ -105,6 +117,7 @@ def dados_exemplo() -> dict:
         "cambio": cambio_exemplo(),
         "ibc": ibc_exemplo(),
         "pib": pib_exemplo(),
+        "fiscal": fiscal_exemplo(),
         "atas": {"282": {"pdf": "https://www.bcb.gov.br/content/copom/atascopom/Copom282-not20261104282.pdf"}},
         "focus": {"data": "2026-11-10", "itens": [
             {"indicador": "Selic", "ano": 2026, "mediana": 13.5, "semana_anterior": 13.5},
@@ -114,7 +127,11 @@ def dados_exemplo() -> dict:
             {"indicador": "PIB Total", "ano": 2026, "mediana": 2.1, "semana_anterior": 2.15},
             {"indicador": "PIB Total", "ano": 2027, "mediana": 1.8, "semana_anterior": 1.8},
             {"indicador": "Câmbio", "ano": 2026, "mediana": 5.6, "semana_anterior": 5.6},
-            {"indicador": "Câmbio", "ano": 2027, "mediana": 5.7, "semana_anterior": 5.7}]},
+            {"indicador": "Câmbio", "ano": 2027, "mediana": 5.7, "semana_anterior": 5.7},
+            {"indicador": "Resultado primário", "ano": 2026, "mediana": -0.6, "semana_anterior": -0.6},
+            {"indicador": "Resultado primário", "ano": 2027, "mediana": -0.5, "semana_anterior": -0.55},
+            {"indicador": "Dívida bruta do governo geral", "ano": 2026, "mediana": 81.2, "semana_anterior": 81.0},
+            {"indicador": "Dívida bruta do governo geral", "ano": 2027, "mediana": 84.0, "semana_anterior": 84.0}]},
     }
 
 

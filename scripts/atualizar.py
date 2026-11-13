@@ -8,6 +8,7 @@ Baixa as séries públicas e grava data/dados.json:
   - Expectativas do Boletim Focus (Banco Central, Olinda)
   - Atas do Copom: confere no site do Banco Central se o PDF de cada ata já existe
   - Desocupação (PNAD Contínua, SIDRA 4099 por UF e 6381 trimestre móvel) e saldo de vagas formais (Novo Caged, SGS 28763)
+  - Contas públicas (Banco Central): dívida bruta (SGS 13762), dívida líquida (4513), resultado primário (5793) e nominal (5727), em % do PIB
 
 Roda no GitHub Actions (a rede do ambiente de desenvolvimento não alcança essas APIs).
 Se uma fonte opcional falhar, o robô mantém o dado anterior daquela fonte e segue.
@@ -144,12 +145,17 @@ def ipca_areas():
     return out
 
 
+FOCUS_IND = ("Selic", "IPCA", "PIB Total", "Câmbio", "Resultado primário", "Resultado nominal",
+             "Dívida líquida do setor público", "Dívida bruta do governo geral")
+
+
 def focus():
-    """Medianas anuais do Boletim Focus (Selic, IPCA, PIB e câmbio) e variação na semana."""
+    """Medianas anuais do Boletim Focus (Selic, IPCA, PIB, câmbio e indicadores fiscais) e variação na semana.
+    Se um indicador fiscal não existir com esse nome na API, ele só não aparece: os demais seguem."""
     url = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais"
     desde = (HOJE - dt.timedelta(days=24)).isoformat()
     linhas, falhas = [], []
-    for ind in ("Selic", "IPCA", "PIB Total", "Câmbio"):
+    for ind in FOCUS_IND:
         # Tentamos do filtro mais simples para o mais completo.
         tentativas = [
             {"$top": "600", "$format": "json", "$orderby": "Data desc", "$filter": f"Indicador eq '{ind}'"},
@@ -176,7 +182,7 @@ def focus():
     ultima = datas[0]
     anterior = next((d for d in datas if (dt.date.fromisoformat(ultima) - dt.date.fromisoformat(d)).days >= 5), None)
     itens = []
-    for ind in ("Selic", "IPCA", "PIB Total", "Câmbio"):
+    for ind in FOCUS_IND:
         for ano in sorted(anos):
             atual = next((x["Mediana"] for x in linhas if x["Indicador"] == ind and str(x["DataReferencia"]) == ano and x["Data"] == ultima), None)
             antes = next((x["Mediana"] for x in linhas if x["Indicador"] == ind and str(x["DataReferencia"]) == ano and x["Data"] == anterior), None)
@@ -340,13 +346,35 @@ def pib():
     return {"trimestral": saida}
 
 
+FISCAL = (  # chave, código SGS, faixa plausível (% do PIB), descrição
+    ("dbgg", 13762, (30, 150), "dívida bruta do governo geral, % do PIB"),
+    ("dlsp", 4513, (10, 120), "dívida líquida do setor público, % do PIB"),
+    ("primario", 5793, (-15, 15), "NFSP, resultado primário, fluxo em 12 meses, % do PIB"),
+    ("nominal", 5727, (-25, 25), "NFSP, resultado nominal, fluxo em 12 meses, % do PIB"),
+)
+
+
+def fiscal():
+    """Contas públicas (Banco Central, setor público consolidado e governo geral), séries mensais em % do PIB.
+    Os dados de NFSP vêm como 'necessidade de financiamento': o gerador do site decide o sinal exibido
+    (ver NFSP_POSITIVO_E_DEFICIT em gerar_site.py), conferindo as últimas leituras registradas no debug."""
+    out = {}
+    for chave, cod, (lo, hi), desc in FISCAL:
+        serie = sgs(cod, dt.date(2015, 1, 1))
+        if len(serie) < 36 or not all(lo <= v <= hi for _, v in serie):
+            raise RuntimeError(f"SGS {cod} ({desc}) fora do esperado ({len(serie)} meses, faixa {lo} a {hi}); últimas leituras: {[(d.isoformat(), v) for d, v in serie[-3:]]}")
+        out[chave] = [[d.strftime("%Y-%m"), v] for d, v in serie]
+        debug["avisos"].append(f"Fiscal {chave} (SGS {cod}, {desc}): últimas leituras {out[chave][-3:]}")
+    return out
+
+
 def main():
     antigo = json.loads(DADOS.read_text(encoding="utf-8")) if DADOS.exists() else {}
     novo = dict(antigo)
     essenciais_ok = True
     for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("focus", focus, False),
                              ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False),
-                             ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False)]:
+                             ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False), ("fiscal", fiscal, False)]:
         try:
             novo[nome] = fn()
             print(f"ok: {nome}")
