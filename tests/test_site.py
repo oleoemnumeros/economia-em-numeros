@@ -493,3 +493,13 @@ class TestEixos(unittest.TestCase):
             self.assertIn(">R$ por US$<", t)
             t = (d / "docs" / "contas-publicas" / "index.html").read_text(encoding="utf-8")
             self.assertIn("abaixo de zero = déficit", t)
+
+
+    def test_barras_horizontais_tem_unidade(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            g.gerar(gravar(d / "dados.json"), d / "docs")
+            for rel in ("index.html", "inflacao/index.html"):
+                t = (d / "docs" / rel).read_text(encoding="utf-8")
+                self.assertEqual(t.count('class="hbars"'), 1, rel)
+                self.assertIn('<div class="ul">IPCA acumulado em 12 meses (%)</div>', t, rel)

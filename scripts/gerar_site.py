@@ -401,8 +401,8 @@ def tabela(cabs, linhas, alinh) -> str:
     return f'<div class="scroll"><table><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>'
 
 
-def hbarras(linhas) -> str:
-    """linhas: (rótulo html, valor, valor formatado, meta html)"""
+def hbarras(linhas, unidade="") -> str:
+    """linhas: (rótulo html, valor, valor formatado, meta html). A unidade vem escrita acima das barras, como nos gráficos."""
     mx = max((abs(v) for _, v, _, _ in linhas), default=1) or 1
     out = []
     for rot, v, fmt, meta in linhas:
@@ -410,7 +410,8 @@ def hbarras(linhas) -> str:
         m = f'<span class="meta">{meta}</span>' if meta else ""
         out.append(f'<div class="hbar"><span class="t">{rot}</span><span class="v">{fmt}</span>'
                    f'<span class="track"><span style="width:{w}%;background:var(--eco)"></span></span>{m}</div>')
-    return f'<div class="hbars">{"".join(out)}</div>'
+    legenda = f'<div class="ul">{esc(unidade)}</div>' if unidade else ""
+    return f'<div class="hbars">{legenda}{"".join(out)}</div>'
 
 
 def lista_links(itens) -> str:
@@ -747,7 +748,7 @@ def pg_inicio(B: Base) -> str:
                     ultimo=f"{pct(B.selic, 2)} ao ano, em vigor desde {data_br(B.selic_desde)}", csv_linhas=[(d.isoformat(), v) for d, v in B.mud])
     rk = B.ranking()
     infl = card(cab("Inflação por região", '<a class="small" href="/inflacao/">ver as 16 áreas →</a>') +
-                hbarras([(f'<a href="/inflacao/{a["slug"]}/">{esc(a["nome"])}</a>', a["acum12"][B.ref_areas], pct(a["acum12"][B.ref_areas], 2), "") for a in rk[:8]]) +
+                hbarras([(f'<a href="/inflacao/{a["slug"]}/">{esc(a["nome"])}</a>', a["acum12"][B.ref_areas], pct(a["acum12"][B.ref_areas], 2), "") for a in rk[:8]], "IPCA acumulado em 12 meses (%)") +
                 f'<span class="src">IPCA acumulado em 12 meses até {mes_nome(B.ref_areas)}. As 8 maiores de 16 áreas. Fonte: IBGE.</span>') if rk else ""
     focus = blocos_focus(B)
     linha2 = f'<div class="cols">{infl}{focus}</div>' if infl and focus else (infl or focus)
@@ -1248,7 +1249,7 @@ def pg_inflacao(B: Base) -> str:
     if rk:
         linhas = [(f'<a href="/inflacao/{a["slug"]}/">{esc(a["nome"])} ({a["uf"]})</a>', a["acum12"][B.ref_areas], pct(a["acum12"][B.ref_areas], 2),
                    f'no mês: {pct(a["mensal"][B.ref_areas], 2)}' if B.ref_areas in a["mensal"] else "") for a in rk]
-        reg = card(cab("Por região", f'<span class="src">12 meses até {mes_nome(B.ref_areas)}</span>') + hbarras(linhas) +
+        reg = card(cab("Por região", f'<span class="src">12 meses até {mes_nome(B.ref_areas)}</span>') + hbarras(linhas, "IPCA acumulado em 12 meses (%)") +
                    '<span class="src">Áreas pesquisadas pelo IBGE: 10 regiões metropolitanas e os municípios de Brasília, Goiânia, Campo Grande, Rio Branco, São Luís e Aracaju. Fonte: IBGE.</span>')
     tab = card(cab("Últimos 12 meses") + tabela(["Mês", "No mês", "Em 12 meses"], _mensal_tabela(B, ms12), ["l", "r", "r"]))
     texto = card("<h2>Como ler o IPCA</h2>"
