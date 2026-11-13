@@ -17,7 +17,6 @@ import sys
 import time
 from pathlib import Path
 
-import requests
 
 RAIZ = Path(__file__).resolve().parent.parent
 DADOS = RAIZ / "data" / "dados.json"
@@ -41,6 +40,8 @@ debug = {"inicio": dt.datetime.now().isoformat(timespec="seconds"), "avisos": []
 
 
 def get(url, params=None, tentativas=4):
+    import requests  # importado aqui para os testes não dependerem dele
+
     ultimo = None
     for i in range(tentativas):
         try:
@@ -54,18 +55,30 @@ def get(url, params=None, tentativas=4):
     raise RuntimeError(f"{url} falhou: {ultimo}")
 
 
+def janelas(inicio: dt.date, fim: dt.date, anos: int = 9):
+    """Quebra [inicio, fim] em janelas de até `anos` anos: o SGS só aceita 10 anos por consulta em séries diárias."""
+    out, a = [], inicio
+    while a <= fim:
+        limite = dt.date(a.year + anos, a.month, min(a.day, 28)) - dt.timedelta(days=1)
+        b = min(fim, limite)
+        out.append((a, b))
+        a = b + dt.timedelta(days=1)
+    return out
+
+
 def sgs(codigo, inicio):
     """Série do SGS do Banco Central: lista de (data, valor)."""
-    r = get(f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados",
-            {"formato": "json", "dataInicial": inicio.strftime("%d/%m/%Y"), "dataFinal": HOJE.strftime("%d/%m/%Y")})
-    out = []
-    for x in r.json():
-        if x.get("valor") in (None, ""):
-            continue
-        out.append((dt.datetime.strptime(x["data"], "%d/%m/%Y").date(), float(x["valor"])))
-    if not out:
+    valores = {}
+    for a, b in janelas(inicio, HOJE):
+        r = get(f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados",
+                {"formato": "json", "dataInicial": a.strftime("%d/%m/%Y"), "dataFinal": b.strftime("%d/%m/%Y")})
+        for x in r.json():
+            if x.get("valor") in (None, ""):
+                continue
+            valores[dt.datetime.strptime(x["data"], "%d/%m/%Y").date()] = float(x["valor"])
+    if not valores:
         raise RuntimeError(f"SGS {codigo} veio vazia")
-    return sorted(out)
+    return sorted(valores.items())
 
 
 def selic():
@@ -124,10 +137,13 @@ def focus():
     """Medianas anuais do Boletim Focus (Selic, IPCA, PIB e câmbio) e variação na semana."""
     url = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais"
     desde = (HOJE - dt.timedelta(days=24)).isoformat()
-    filtro = (f"Data ge '{desde}' and baseCalculo eq 0 and "
-              "(Indicador eq 'IPCA' or Indicador eq 'Selic' or Indicador eq 'PIB Total' or Indicador eq 'Câmbio')")
-    r = get(url, {"$top": "3000", "$format": "json", "$filter": filtro, "$orderby": "Data desc"})
-    linhas = r.json().get("value", [])
+    linhas = []
+    for ind in ("Selic", "IPCA", "PIB Total", "Câmbio"):
+        r = get(url, {"$top": "1000", "$format": "json", "$orderby": "Data desc",
+                      "$filter": f"Indicador eq '{ind}' and Data ge '{desde}'"})
+        linhas += r.json().get("value", [])
+    base0 = [x for x in linhas if x.get("baseCalculo") in (0, "0", False)]  # base: últimos 30 dias
+    linhas = base0 or linhas
     anos = {str(HOJE.year), str(HOJE.year + 1)}
     linhas = [x for x in linhas if str(x.get("DataReferencia")) in anos and x.get("Mediana") is not None]
     if not linhas:
