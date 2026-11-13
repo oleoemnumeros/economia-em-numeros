@@ -153,3 +153,5 @@ ul.list a span:last-child{color:var(--muted);font-variant-numeric:tabular-nums;w
 /* No celular o gráfico (640 px de largura) é reduzido pela metade: aumenta as letras para continuarem legíveis */
 @media (max-width:600px){.chart text{font-size:21px}}
 @media (min-width:860px){.two .chart text{font-size:14px}.cols .chart text{font-size:17px}}
+/* Alta ou queda de juros e preços não é boa nem ruim por si só: as variações usam cor neutra */
+.chg.up,.chg.down{color:var(--ink);background:var(--chip)}

@@ -288,7 +288,7 @@ def svg_barras(vals, rotulos, aria) -> str:
     g = _grade(lo, hi, marcas, d) + _rotulos_x(rotulos, x)
     for k, v in enumerate(vals):
         y0, y1 = y(max(v, 0)), y(min(v, 0))
-        cor = "var(--down)" if v < 0 else "var(--eco)"
+        cor = "var(--eco2)" if v < 0 else "var(--eco)"
         g += f'<rect x="{PL + bw * k + bw * 0.15:.1f}" y="{y0:.1f}" width="{bw * 0.7:.1f}" height="{max(1.0, y1 - y0):.1f}" rx="2" style="fill:{cor}"/>'
     return f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>'
 
