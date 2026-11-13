@@ -513,7 +513,12 @@ def bf_baixa_mes(ym):
     while True:
         r = get(BF_URL, {"q": "*", "fq": [f"anomes_s:{ym.replace('-', '')}", "tipo_s:mes_mu"], "wt": "json", "omitHeader": "true",
                          "fl": BF_CAMPOS, "rows": str(BF_LINHAS), "start": str(inicio), "sort": "codigo_ibge asc"}, tentativas=3, timeout=120)
-        resp = (r.json() or {}).get("response") or {}
+        try:
+            corpo = r.json()
+        except ValueError:
+            raise RuntimeError(f"MI Social não devolveu JSON (HTTP {r.status_code}, {r.headers.get('content-type')}, {len(r.content)} bytes, "
+                               f"endereço final {r.url[:300]}): {r.text[:300]!r}") from None
+        resp = (corpo or {}).get("response") or {}
         docs = resp.get("docs") or []
         total = resp.get("numFound", len(docs)) if total is None else total
         for d in docs:
