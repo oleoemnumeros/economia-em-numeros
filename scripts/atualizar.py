@@ -28,6 +28,7 @@ DEBUG = RAIZ / "data" / "debug.json"
 CALENDARIO = RAIZ / "data" / "copom_calendario.json"
 ATAS_URL = "https://www.bcb.gov.br/content/copom/atascopom/"
 NUM_PRIMEIRA_REUNIAO = 260  # 30–31/01/2024; conferido com as atas 266 (06/11/2024), 268, 274, 276 a 281
+ORCAMENTO_S = 480  # depois disso, as fontes não essenciais que faltam são puladas e o site sai com o dado anterior
 UA = {"User-Agent": "EconomiaEmNumeros/1.0 (+https://economiaemnumeros.com.br)"}
 HOJE = dt.date.today()
 
@@ -46,13 +47,13 @@ AREAS = {
 debug = {"inicio": dt.datetime.now().isoformat(timespec="seconds"), "avisos": [], "erros": []}
 
 
-def get(url, params=None, tentativas=4):
+def get(url, params=None, tentativas=4, timeout=90):
     import requests  # importado aqui para os testes não dependerem dele
 
     ultimo = None
     for i in range(tentativas):
         try:
-            r = requests.get(url, params=params, headers=UA, timeout=90)
+            r = requests.get(url, params=params, headers=UA, timeout=timeout)
             if r.status_code == 200:
                 return r
             ultimo = f"HTTP {r.status_code}: {r.text[:200]}"
@@ -406,7 +407,7 @@ def sidra_tabela(tabela, ultimos, quero):
     Devolve linhas {dims: nomes (variável e categorias), unid, per: 'AAAAMM', v}."""
     classes = ""
     try:
-        meta = get(f"https://servicodados.ibge.gov.br/api/v3/agregados/{tabela}/metadados").json()
+        meta = get(f"https://servicodados.ibge.gov.br/api/v3/agregados/{tabela}/metadados", tentativas=2, timeout=45).json()
         for c in meta.get("classificacoes", []):
             ids = [str(k["id"]) for k in c.get("categorias", []) if quero(k.get("nome", ""))]
             classes += f"/c{c['id']}/" + (",".join(ids) if ids else "all")
@@ -414,8 +415,10 @@ def sidra_tabela(tabela, ultimos, quero):
                                f"classificações {[(c['id'], c['nome'], len(c.get('categorias', []))) for c in meta.get('classificacoes', [])]}; consulta{classes}")
     except Exception as e:  # noqa: BLE001
         debug["avisos"].append(f"SIDRA {tabela}: metadados indisponíveis ({e!r}); usando as categorias padrão")
-    linhas = get(f"https://apisidra.ibge.gov.br/values/t/{tabela}/n1/all/v/all/p/last%20{ultimos}{classes}").json()
+    url = f"https://apisidra.ibge.gov.br/values/t/{tabela}/n1/all/v/all/p/last%20{ultimos}{classes}"
+    linhas = get(url, tentativas=2, timeout=60).json()
     cab, dados = linhas[0], linhas[1:]
+    debug["avisos"].append(f"SIDRA {tabela}: {len(dados)} linhas em {url}; amostra {dados[:2]}")
     chaves = [k for k in cab if k.startswith("D") and k.endswith("C")]
     k_per = next((k for k in chaves if str(cab[k]).lower().startswith("mês")), None)
     k_ter = next((k for k in chaves if any(t in str(cab[k]) for t in ("Brasil", "Territ"))), None)
@@ -430,7 +433,7 @@ def sidra_tabela(tabela, ultimos, quero):
         out.append({"dims": [str(x.get(k[:-1] + "N", x.get(k, ""))) for k in chaves if k not in (k_per, k_ter)],
                     "unid": str(x.get("MN", "")), "per": str(x[k_per]), "v": v})
     if not out:
-        raise RuntimeError(f"SIDRA {tabela}: nenhuma linha numérica; cabeçalho: {cab}")
+        raise RuntimeError(f"SIDRA {tabela}: nenhuma linha numérica ({len(dados)} linhas); amostra {dados[:3]}; cabeçalho: {cab}")
     return out
 
 
@@ -537,18 +540,26 @@ def main():
     antigo = json.loads(DADOS.read_text(encoding="utf-8")) if DADOS.exists() else {}
     novo = dict(antigo)
     essenciais_ok = True
+    t0 = time.time()
     for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("focus", focus, False),
                              ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False),
                              ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False), ("fiscal", fiscal, False),
                              ("credito", credito, False), ("industria", producao_industrial, False), ("varejo", varejo, False)]:
+        if not essencial and time.time() - t0 > ORCAMENTO_S:
+            debug["erros"].append(f"{nome}: pulada, o robô já passou de {ORCAMENTO_S // 60} minutos (mantém o dado anterior)")
+            print(f"PULADA {nome}: orçamento de tempo esgotado", file=sys.stderr, flush=True)
+            continue
+        t1 = time.time()
         try:
             novo[nome] = fn()
-            print(f"ok: {nome}")
+            print(f"ok: {nome} ({time.time() - t1:.0f}s)", flush=True)
         except Exception as e:  # noqa: BLE001 - queremos registrar qualquer falha e seguir
             debug["erros"].append(f"{nome}: {e}")
-            print(f"FALHA em {nome}: {e}", file=sys.stderr)
+            print(f"FALHA em {nome} ({time.time() - t1:.0f}s): {e}", file=sys.stderr, flush=True)
             if essencial and nome not in antigo:
                 essenciais_ok = False
+        debug.setdefault("tempos", {})[nome] = round(time.time() - t1, 1)
+        DEBUG.write_text(json.dumps(debug, ensure_ascii=False, indent=1), encoding="utf-8")  # já grava aqui: se algo travar, o diagnóstico fica
     DEBUG.write_text(json.dumps(debug, ensure_ascii=False, indent=1), encoding="utf-8")
     if not essenciais_ok:
         print("Fonte essencial indisponível e sem dado anterior: nada foi gravado.", file=sys.stderr)
