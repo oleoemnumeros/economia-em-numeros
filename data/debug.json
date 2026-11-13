@@ -1,5 +1,5 @@
 {
- "inicio": "2026-11-13T18:49:03",
+ "inicio": "2026-11-13T19:02:26",
  "avisos": [
   "Desocupação: último trimestre ['202602', '2º trimestre 2026', 5.4]; último trimestre móvel ['202609', 'jul-ago-set 2026', 5.2]",
   "Caged SGS 28763 (estoque): últimas leituras [('2026-07-01', 48077210.0), ('2026-08-01', 48238272.0), ('2026-09-01', 48359577.0)]",
@@ -39,27 +39,27 @@
   "Balança: saldo do balanço de pagamentos (SGS 22707) menos saldo MDIC, soma de 11 meses: -8367 US$ milhões",
   "População: 5571 municípios, soma 214211951, ano 2026",
   "Bolsa Família 2026-11: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208259 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
-  "Bolsa Família 2026-10: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208253 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
+  "Bolsa Família 2026-10: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208259 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
   "Bolsa Família: o MDS está com o MI Social fora do ar (redireciona para gov.br/mds/pt-br/avisos); nada foi atualizado nesta execução"
  ],
  "erros": [],
  "tempos": {
-  "selic": 7.9,
-  "ipca": 5.1,
-  "areas": 4.6,
-  "focus": 9.3,
+  "selic": 2.5,
+  "ipca": 4.0,
+  "areas": 1.5,
+  "focus": 10.6,
   "atas": 0.0,
   "desocupacao": 0.7,
-  "caged": 1.2,
-  "cambio": 5.6,
-  "ibc": 1.8,
+  "caged": 1.0,
+  "cambio": 2.0,
+  "ibc": 1.5,
   "pib": 0.3,
-  "fiscal": 7.8,
-  "credito": 11.8,
-  "industria": 1.4,
-  "varejo": 1.3,
-  "externo": 12.9,
-  "balanca": 3.4,
-  "bolsa_familia": 4.9
+  "fiscal": 6.1,
+  "credito": 7.8,
+  "industria": 1.3,
+  "varejo": 1.2,
+  "externo": 13.3,
+  "balanca": 1.4,
+  "bolsa_familia": 6.3
  }
 }
