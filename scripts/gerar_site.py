@@ -30,7 +30,9 @@ FAMILIA = [
     ("Voo em Números", "Pontualidade aérea", "https://vooemnumeros.com.br/", "#7C5CE0"),
     ("Economia em Números", "Juros, preços e emprego", "https://economiaemnumeros.com.br/", "var(--eco)"),
 ]
-NAV = [("/juros/", "Juros e Copom"), ("/inflacao/", "Inflação"), ("/calculadora/", "Calculadora"), ("/sobre/", "Sobre")]
+# Ordem de leitura do analista (menu, rodapé, início, /dados/ e fontes seguem a mesma lógica):
+# atividade → trabalho → preços → juros → crédito → câmbio → setor externo → fiscal → social.
+NAV_FIM = [("/calculadora/", "Calculadora"), ("/sobre/", "Sobre")]
 
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 MES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
@@ -385,13 +387,14 @@ class Base:
         return out
 
     def nav(self) -> list:
-        itens = [NAV[0]]
-        if self.tem_emprego:
-            itens.append(("/emprego/", "Emprego"))
+        itens = []
         if self.tem_atividade:
             itens.append(("/atividade/", "Atividade"))
         if self.tem_ibge:
             itens.append(("/industria-e-varejo/", "Indústria e varejo"))
+        if self.tem_emprego:
+            itens.append(("/emprego/", "Emprego"))
+        itens += [("/inflacao/", "Inflação"), ("/juros/", "Juros e Copom")]
         if self.tem_credito:
             itens.append(("/credito/", "Crédito"))
         if self.tem_cambio:
@@ -402,7 +405,7 @@ class Base:
             itens.append(("/contas-publicas/", "Contas públicas"))
         if self.tem_bf:
             itens.append(("/bolsa-familia/", "Bolsa Família"))
-        return itens + NAV[1:]
+        return itens + NAV_FIM
 
     # Câmbio ---------------------------------------------------------------
     def cambio_stats(self) -> dict:
@@ -709,7 +712,7 @@ def grafico(B, slug, titulo, fonte, svg, cabecalho, linhas, grupo, nota="", lege
 
 
 def pg_dados(B: Base) -> str:
-    ordem = ["Juros e Copom", "Inflação", "Inflação por área", "Emprego", "Emprego por estado", "Atividade", "Indústria e varejo", "Crédito", "Câmbio", "Setor externo", "Contas públicas", "Bolsa Família"]
+    ordem = ["Atividade", "Indústria e varejo", "Emprego", "Emprego por estado", "Inflação", "Inflação por área", "Juros e Copom", "Crédito", "Câmbio", "Setor externo", "Contas públicas", "Bolsa Família", "Bolsa Família por estado"]
     grupos = {}
     for slug, c in B.csvs.items():
         grupos.setdefault(c["grupo"], []).append((slug, c))
@@ -893,7 +896,7 @@ def pg_inicio(B: Base) -> str:
     calc = card('<span class="eyebrow">Ferramenta</span><h2>Calculadora de correção pelo IPCA</h2>'
                 '<p class="small">Quanto R$ 1.000 de alguns anos atrás valem hoje? Corrija qualquer valor pela inflação oficial, mês a mês, desde 2000.</p>'
                 '<p><a href="/calculadora/">Abrir a calculadora →</a></p>')
-    mais = [x for x in (card_emprego_inicio(B), card_atividade_inicio(B), card_ibge_inicio(B), card_credito_inicio(B), card_cambio_inicio(B), card_externo_inicio(B), card_fiscal_inicio(B), card_bf_inicio(B)) if x]
+    mais = [x for x in (card_atividade_inicio(B), card_ibge_inicio(B), card_emprego_inicio(B), card_credito_inicio(B), card_cambio_inicio(B), card_externo_inicio(B), card_fiscal_inicio(B), card_bf_inicio(B)) if x]
     mais_html = "".join(f'<div class="cols">{"".join(mais[k:k + 2])}</div>' if len(mais[k:k + 2]) == 2 else mais[k] for k in range(0, len(mais), 2))
     corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{mais_html}{calc}'
     return pagina(B, "/", "Economia em Números: Selic, inflação (IPCA) e Copom em dados oficiais",
@@ -2112,22 +2115,22 @@ def pg_sobre(B: Base) -> str:
     corpo = card("<h1>Como funciona o Economia em Números</h1>"
                  '<p class="lede">Um portal independente que reúne dados abertos da economia brasileira e os organiza para consulta. Não tem ligação com o governo nem com instituições financeiras.</p>'
                  "<h2>De onde vêm os números</h2>"
-                 '<ul class="plain"><li><strong>Meta da Selic, decisões e calendário do Copom:</strong> Banco Central do Brasil (série 432 do SGS e calendário oficial).</li>'
-                 "<li><strong>IPCA do Brasil:</strong> IBGE, pelas séries 433 e 13522 do Banco Central.</li>"
-                 "<li><strong>IPCA por região:</strong> IBGE, Sistema IBGE de Recuperação Automática (SIDRA), tabela 7060.</li>"
-                 "<li><strong>Expectativas de mercado:</strong> Boletim Focus, do Banco Central.</li>"
-                 "<li><strong>Atas do Copom:</strong> documentos oficiais do Banco Central; os resumos são nossos.</li>"
-                 "<li><strong>Taxa de desocupação:</strong> IBGE, PNAD Contínua (SIDRA, tabelas 4099 e 6381).</li>"
-                 "<li><strong>PIB:</strong> IBGE, Contas Nacionais Trimestrais (SIDRA, tabela 5932).</li>"
-                 "<li><strong>IBC-Br:</strong> Banco Central (séries 24363 e 24364 do SGS).</li>"
-                 "<li><strong>Produção industrial:</strong> IBGE, Pesquisa Industrial Mensal - Produção Física (SIDRA, tabela 8888).</li>"
-                 "<li><strong>Vendas no varejo:</strong> IBGE, Pesquisa Mensal de Comércio (SIDRA, tabelas 8880 e 8881, esta para o varejo ampliado).</li>"
-                 "<li><strong>Crédito e inadimplência das famílias:</strong> Banco Central, estatísticas de crédito e endividamento das famílias (séries 20716, 20740, 21084, 21112, 29034 e 29037 do SGS).</li>"
-                 "<li><strong>Dólar:</strong> cotação de venda do Banco Central, série 1 do SGS (Sistema PTAX).</li>"
-                 "<li><strong>Contas externas:</strong> Banco Central, balanço de pagamentos (séries 22701, 24419, 23079 e 22885 do SGS) e reservas internacionais (série 13621); balança comercial da Secex/MDIC, pelo Comex em Números.</li>"
-                 "<li><strong>Bolsa Família por município:</strong> Ministério do Desenvolvimento e Assistência Social (MDS), Matriz de Informação Social (MI Social); população estimada pelo IBGE (SIDRA, tabela 6579).</li>"
-                 "<li><strong>Contas públicas:</strong> Banco Central, estatísticas fiscais em % do PIB (séries 13762, 4513, 5793 e 5727 do SGS).</li>"
-                 "<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego; o saldo do mês é a variação do estoque de empregos formais (série 28763 do SGS, Banco Central).</li></ul>"
+                 '<ul class="plain"><li><strong>PIB:</strong> IBGE, Contas Nacionais Trimestrais (SIDRA, tabela 5932).</li>'
+                 '<li><strong>IBC-Br:</strong> Banco Central (séries 24363 e 24364 do SGS).</li>'
+                 '<li><strong>Produção industrial:</strong> IBGE, Pesquisa Industrial Mensal - Produção Física (SIDRA, tabela 8888).</li>'
+                 '<li><strong>Vendas no varejo:</strong> IBGE, Pesquisa Mensal de Comércio (SIDRA, tabelas 8880 e 8881, esta para o varejo ampliado).</li>'
+                 '<li><strong>Taxa de desocupação:</strong> IBGE, PNAD Contínua (SIDRA, tabelas 4099 e 6381).</li>'
+                 '<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego; o saldo do mês é a variação do estoque de empregos formais (série 28763 do SGS, Banco Central).</li>'
+                 '<li><strong>IPCA do Brasil:</strong> IBGE, pelas séries 433 e 13522 do Banco Central.</li>'
+                 '<li><strong>IPCA por região:</strong> IBGE, Sistema IBGE de Recuperação Automática (SIDRA), tabela 7060.</li>'
+                 '<li><strong>Meta da Selic, decisões e calendário do Copom:</strong> Banco Central do Brasil (série 432 do SGS e calendário oficial).</li>'
+                 '<li><strong>Atas do Copom:</strong> documentos oficiais do Banco Central; os resumos são nossos.</li>'
+                 '<li><strong>Expectativas de mercado:</strong> Boletim Focus, do Banco Central.</li>'
+                 '<li><strong>Crédito e inadimplência das famílias:</strong> Banco Central, estatísticas de crédito e endividamento das famílias (séries 20716, 20740, 21084, 21112, 29034 e 29037 do SGS).</li>'
+                 '<li><strong>Dólar:</strong> cotação de venda do Banco Central, série 1 do SGS (Sistema PTAX).</li>'
+                 '<li><strong>Contas externas:</strong> Banco Central, balanço de pagamentos (séries 22701, 24419, 23079 e 22885 do SGS) e reservas internacionais (série 13621); balança comercial da Secex/MDIC, pelo Comex em Números.</li>'
+                 '<li><strong>Contas públicas:</strong> Banco Central, estatísticas fiscais em % do PIB (séries 13762, 4513, 5793 e 5727 do SGS).</li>'
+                 '<li><strong>Bolsa Família por município:</strong> Ministério do Desenvolvimento e Assistência Social (MDS), Matriz de Informação Social (MI Social); população estimada pelo IBGE (SIDRA, tabela 6579).</li></ul>'
                  "<h2>Dados em CSV</h2>"
                  '<p>Cada gráfico tem fonte, data da última atualização e um botão para baixar os números em CSV. A lista completa está em <a href="/dados/">Dados em CSV</a>.</p>'
                  "<h2>Atualização</h2>"

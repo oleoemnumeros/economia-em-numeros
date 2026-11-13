@@ -365,6 +365,25 @@ class TestCreditoEIndustriaVarejo(unittest.TestCase):
         self.assertLess(t.index("<h2>Indústria e varejo</h2>"), t.index("<h2>Crédito</h2>"))
         self.assertLess(t.index("<h2>Crédito</h2>"), t.index("<h2>Câmbio</h2>"))
 
+    def test_menu_e_dados_seguem_a_ordem_de_leitura_do_analista(self):
+        ordem = ["/atividade/", "/industria-e-varejo/", "/emprego/", "/inflacao/", "/juros/", "/credito/", "/cambio/",
+                 "/setor-externo/", "/contas-publicas/", "/calculadora/", "/sobre/"]
+        topo = self.ler("index.html")
+        topo = topo[topo.index("<nav"):topo.index("</nav>")]
+        hrefs = re.findall(r'<a href="([^"]+)"', topo)
+        self.assertEqual([h for h in ordem if h in hrefs], [h for h in hrefs if h in ordem])
+        self.assertEqual(hrefs[-2:], ["/calculadora/", "/sobre/"])
+        d = self.ler("dados/index.html")
+        titulos = [t for t in ("Atividade", "Indústria e varejo", "Emprego", "Inflação", "Juros e Copom", "Crédito", "Câmbio", "Setor externo", "Contas públicas")
+                   if f"<h2>{t}</h2>" in d]
+        pos = [d.index(f"<h2>{t}</h2>") for t in titulos]
+        self.assertEqual(pos, sorted(pos))
+        s = self.ler("sobre/index.html")
+        self.assertLess(s.index("<strong>PIB:"), s.index("<strong>Taxa de desocupação:"))
+        self.assertLess(s.index("<strong>Taxa de desocupação:"), s.index("<strong>IPCA do Brasil:"))
+        self.assertLess(s.index("<strong>IPCA do Brasil:"), s.index("<strong>Meta da Selic"))
+        self.assertLess(s.index("<strong>Meta da Selic"), s.index("<strong>Contas públicas:"))
+
     def test_home_e_atividade_levam_as_novas_paginas(self):
         h = self.ler("index.html")
         self.assertIn("Os dados mensais que saem antes do PIB", h)
