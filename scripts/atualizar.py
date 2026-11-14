@@ -937,6 +937,352 @@ def varejo():
     return out
 
 
+# ------------------------------------------------------------------ Municípios: PIB, população, contas da prefeitura e sites irmãos
+MUN_ARQ = RAIZ / "data" / "municipios.json"
+MUN_ORCAMENTO_S = 420        # tempo máximo da coleta das contas das prefeituras; o que faltar entra na próxima execução
+MUN_POP_MIN = 50_000         # cidades com ficha: capitais, 50 mil habitantes ou mais, e as que têm página no Comex ou no Óleo em Números
+SICONFI_DCA = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt/dca"
+CAPITAIS = {"1100205", "1200401", "1302603", "1400100", "1501402", "1600303", "1721000", "2111300", "2211001", "2304400", "2408102", "2507507", "2611606",
+            "2704302", "2800308", "2927408", "3106200", "3205309", "3304557", "3550308", "4106902", "4205407", "4314902", "5002704", "5103403", "5208707", "5300108"}
+UF_SLUG = {"11": "rondonia", "12": "acre", "13": "amazonas", "14": "roraima", "15": "para", "16": "amapa", "17": "tocantins", "21": "maranhao", "22": "piaui",
+           "23": "ceara", "24": "rio-grande-do-norte", "25": "paraiba", "26": "pernambuco", "27": "alagoas", "28": "sergipe", "29": "bahia", "31": "minas-gerais",
+           "32": "espirito-santo", "33": "rio-de-janeiro", "35": "sao-paulo", "41": "parana", "42": "santa-catarina", "43": "rio-grande-do-sul",
+           "50": "mato-grosso-do-sul", "51": "mato-grosso", "52": "goias", "53": "distrito-federal"}
+SITES_IRMAOS = {"comex": "https://comexemnumeros.com.br", "oleo": "https://oleoemnumeros.com.br"}
+
+
+def _norm(t):
+    import unicodedata
+    return unicodedata.normalize("NFKD", str(t)).encode("ascii", "ignore").decode().lower()
+
+
+def _slug(t, n=60):
+    """Mesmo endereço que o Comex e o Óleo em Números montam a partir do nome."""
+    s = re.sub(r"[^a-z0-9]+", "-", _norm(t)).strip("-")
+    return (s[:n].rstrip("-")) or "item"
+
+
+def mun_populacao(periodo="last%201"):
+    """População residente estimada por município (IBGE, SIDRA 6579): ({ibge de 7 dígitos: [nome, UF]}, {ibge: população}, ano)."""
+    linhas = get(f"https://apisidra.ibge.gov.br/values/t/6579/n6/all/v/9324/p/{periodo}", tentativas=3, timeout=120).json()
+    nomes, pop, anos = {}, {}, set()
+    for x in linhas[1:]:
+        try:
+            v = int(float(x.get("V")))
+        except (TypeError, ValueError):
+            continue
+        cod = str(x.get("D1C", ""))
+        nome, _, uf = str(x.get("D1N", "")).rpartition(" - ")
+        if len(cod) != 7 or not cod.isdigit() or not nome or len(uf) != 2:
+            continue
+        nomes[cod], pop[cod] = [nome.strip(), uf], v
+        anos.add(str(x.get("D3C", "")))
+    return nomes, pop, (max(anos) if anos else "")
+
+
+def _pib_campo(nome):
+    n = _norm(nome)
+    if "per capita" in n or "participacao" in n:
+        return None
+    if n.startswith("produto interno bruto"):
+        return "pib"
+    if n.startswith("impostos"):
+        return "imp"
+    if "valor adicionado bruto" in n:
+        if "exclusive" in n:
+            return "serv"
+        if "administracao" in n:
+            return "adm"
+        if "agropecuaria" in n:
+            return "agro"
+        if "industria" in n:
+            return "ind"
+        if "servicos" in n:
+            return "serv"
+        if "total" in n:
+            return "va"
+    return None
+
+
+def mun_pib():
+    """PIB dos Municípios (IBGE, SIDRA 5938, mil reais): ({ibge: {pib, imp, va, agro, ind, serv, adm}}, ano). Uma consulta por estado (o SIDRA limita a 100 mil valores)."""
+    pib, anos, vistas = {}, set(), {}
+    for u2 in UF_SLUG:
+        linhas = get(f"https://apisidra.ibge.gov.br/values/t/5938/n6/in%20n3%20{u2}/v/all/p/last%201", tentativas=3, timeout=120).json()
+        for x in linhas[1:]:
+            campo = _pib_campo(x.get("D2N", ""))
+            vistas[str(x.get("D2N", ""))] = campo
+            try:
+                v = float(x.get("V"))
+            except (TypeError, ValueError):
+                continue
+            cod = str(x.get("D1C", ""))
+            if campo and len(cod) == 7:
+                pib.setdefault(cod, {})[campo] = v
+                anos.add(str(x.get("D3C", "")))
+    debug["avisos"].append(f"PIB dos Municípios (5938): variáveis lidas {vistas}")
+    pib = {c: d for c, d in pib.items() if d.get("pib")}
+    total = sum(d["pib"] for d in pib.values())
+    if len(pib) < 5400 or not 4e9 <= total <= 3e10 or len(anos) != 1:
+        raise RuntimeError(f"PIB dos Municípios (5938): {len(pib)} municípios, soma {total:,.0f} mil reais, anos {sorted(anos)}")
+    # os setores só valem se somarem o valor adicionado; senão fica só o PIB
+    bons = ruins = 0
+    for d in pib.values():
+        if all(k in d for k in ("agro", "ind", "serv", "adm", "va")):
+            if abs(d["agro"] + d["ind"] + d["serv"] + d["adm"] - d["va"]) <= 0.02 * d["va"] + 1:
+                bons += 1
+            else:
+                ruins += 1
+    if bons < 0.9 * len(pib):
+        debug["avisos"].append(f"PIB dos Municípios: setores não somam o valor adicionado ({bons} ok, {ruins} fora); só o PIB será publicado")
+        pib = {c: {"pib": d["pib"]} for c, d in pib.items()}
+    debug["avisos"].append(f"PIB dos Municípios: {len(pib)} municípios, ano {next(iter(anos))}, soma R$ {total * 1000 / 1e12:.2f} tri; setores ok em {bons}")
+    return pib, next(iter(anos))
+
+
+def _sitemap_urls(base):
+    txt = get(base + "/sitemap.xml", tentativas=2, timeout=60).text
+    locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", txt)
+    if "<sitemapindex" in txt:
+        todos = []
+        for sub in locs:
+            todos += re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", get(sub, tentativas=2, timeout=60).text)
+        locs = todos
+    return [u[len(base):] if u.startswith(base) else u for u in locs]
+
+
+def mun_irmaos(nomes):
+    """Liga cada município às páginas que ele tem no Comex e no Óleo em Números, lendo o mapa do site (sitemap.xml) de cada um."""
+    comex = set()
+    oleo = set()
+    for u in _sitemap_urls(SITES_IRMAOS["comex"]):
+        m = re.fullmatch(r"/municipio/([a-z0-9-]+)/", u)
+        if m:
+            comex.add(m.group(1))
+    for u in _sitemap_urls(SITES_IRMAOS["oleo"]):
+        m = re.fullmatch(r"/royalties/([a-z0-9-]+)/([a-z0-9-]+)/", u)
+        if m:
+            oleo.add((m.group(1), m.group(2)))
+    links = {}
+    for cod, (nome, uf) in nomes.items():
+        d = {}
+        sc = _slug(f"{nome} - {uf}")
+        if sc in comex:
+            d["comex"] = f"/municipio/{sc}/"
+        so = (UF_SLUG.get(cod[:2]), _slug(nome))
+        if so in oleo:
+            d["oleo"] = f"/royalties/{so[0]}/{so[1]}/"
+        if d:
+            links[cod] = d
+    debug["avisos"].append(f"Sites irmãos: Comex {len(comex)} municípios no mapa, {sum('comex' in d for d in links.values())} casados; "
+                           f"Óleo {len(oleo)} no mapa, {sum('oleo' in d for d in links.values())} casados")
+    return links
+
+
+def _siconfi(ente, anexo, ano):
+    itens, off = [], 0
+    while True:
+        r = get(consulta(SICONFI_DCA, {"an_exercicio": ano, "no_anexo": anexo, "id_ente": ente, "offset": off}), tentativas=2, timeout=60).json()
+        itens += r.get("items") or []
+        if not r.get("hasMore") or off > 50000:
+            return itens
+        off += int(r.get("limit") or len(r.get("items") or []) or 5000)
+
+
+def _coluna(itens, preferidas):
+    """Escolhe a coluna do anexo (ex.: receitas brutas realizadas): a primeira das `preferidas` que existe."""
+    cols = {}
+    for it in itens:
+        cols.setdefault(_norm(it.get("coluna", "")), 0)
+    for p in preferidas:
+        for c in cols:
+            if p in c:
+                return c
+    return None
+
+
+RECEITA_GRUPOS = {"1.1": "Impostos, taxas e contribuições de melhoria", "1.2": "Contribuições", "1.3": "Receita patrimonial", "1.4": "Receita agropecuária",
+                  "1.5": "Receita industrial", "1.6": "Receita de serviços", "1.7": "Transferências correntes", "1.9": "Outras receitas correntes",
+                  "2.1": "Operações de crédito", "2.2": "Venda de bens", "2.3": "Amortização de empréstimos", "2.4": "Transferências de capital", "2.5": "Outras receitas de capital"}
+RECEITA_DESTAQUES = (("iptu", "IPTU", "propriedade predial e territorial urbana"), ("iss", "ISS", "servicos de qualquer natureza"),
+                     ("itbi", "ITBI", "transmissao inter vivos"), ("fpm", "Fundo de Participação dos Municípios", "fundo de participacao dos municipios"),
+                     ("icms", "Cota-parte do ICMS", "cota-parte do icms"))
+
+
+def _cod_conta(it):
+    for campo in ("cod_conta", "conta"):
+        m = re.search(r"\d(?:\.\d+){3,}", str(it.get(campo, "")))
+        if m:
+            return m.group(0)
+    return ""
+
+
+def parse_receitas(itens):
+    """Anexo I-C da DCA (balanço orçamentário, receitas) -> {'total', 'grupos': {código: valor}, 'destaques': {chave: valor}} ou None."""
+    col = _coluna(itens, ("brutas realizadas", "realizadas", "realizad"))
+    if not col:
+        return None
+    grupos, destaques = {}, {}
+    for it in itens:
+        if _norm(it.get("coluna", "")) != col:
+            continue
+        try:
+            v = float(it.get("valor"))
+        except (TypeError, ValueError):
+            continue
+        cod = _cod_conta(it)
+        m = re.fullmatch(r"([12])\.(\d)\.0\.0\.0+\.0\.0", cod)
+        if m and f"{m.group(1)}.{m.group(2)}" in RECEITA_GRUPOS:
+            g = f"{m.group(1)}.{m.group(2)}"
+            grupos[g] = max(grupos.get(g, 0.0), v)
+        nome = _norm(it.get("conta", ""))
+        if cod.startswith("1."):
+            for chave, _, kw in RECEITA_DESTAQUES:
+                if kw in nome and v > 0:
+                    destaques[chave] = max(destaques.get(chave, 0.0), v)
+    total = sum(grupos.values())
+    if total <= 0:
+        return None
+    destaques = {k: v for k, v in destaques.items() if v <= total}
+    return {"total": total, "grupos": {k: v for k, v in sorted(grupos.items()) if v > 0}, "destaques": destaques}
+
+
+def parse_despesas(itens):
+    """Anexo I-E da DCA (despesas por função) -> {'total', 'funcoes': {nome: valor}} ou None. Usa a despesa liquidada (ou a empenhada)."""
+    col = _coluna(itens, ("liquidad", "empenhad"))
+    if not col:
+        return None
+    funcoes = {}
+    for it in itens:
+        if _norm(it.get("coluna", "")) != col:
+            continue
+        try:
+            v = float(it.get("valor"))
+        except (TypeError, ValueError):
+            continue
+        conta = str(it.get("conta", "")).strip()
+        if re.match(r"\d{2}\.\d", conta):        # subfunção ("10.301 - Atenção Básica"): já está dentro da função
+            continue
+        m = re.fullmatch(r"(\d{2})\s*-\s*(.+)", conta)
+        if m:
+            nome = m.group(2).strip()
+        elif re.fullmatch(r"FU\d{2}", str(it.get("cod_conta", ""))):
+            nome = re.sub(r"^\D*\d*\s*-?\s*", "", conta) or conta
+        else:
+            continue
+        if v > 0:
+            funcoes[nome] = max(funcoes.get(nome, 0.0), v)
+    total = sum(funcoes.values())
+    return {"total": total, "funcoes": dict(sorted(funcoes.items(), key=lambda kv: -kv[1]))} if total > 0 else None
+
+
+def mun_contas_de(cod, ano, amostra=False):
+    """Receitas e despesas de uma prefeitura no exercício `ano`. None se a prefeitura não entregou ou se os números não fecham."""
+    ir = _siconfi(cod, "DCA-Anexo I-C", ano)
+    ie = _siconfi(cod, "DCA-Anexo I-E", ano)
+    if amostra:
+        for rot, itens in (("I-C", ir), ("I-E", ie)):
+            cols = sorted({(str(i.get("rotulo")), str(i.get("coluna"))) for i in itens})
+            debug["avisos"].append(f"Siconfi {cod} {ano} {rot}: {len(itens)} linhas; colunas {cols[:8]}; contas {[(i.get('cod_conta'), i.get('conta')) for i in itens[:14]]}")
+    rec, des = parse_receitas(ir), parse_despesas(ie)
+    if not rec or not des:
+        return None
+    if not 0.3 <= des["total"] / rec["total"] <= 3:
+        debug["avisos"].append(f"Siconfi {cod} {ano}: despesa {des['total']:,.0f} e receita {rec['total']:,.0f} não batem; ficha sem contas")
+        return None
+    return {"ano": ano, "rec": rec, "des": des}
+
+
+def mun_ano_contas():
+    """Último exercício que a Siconfi já tem para uma capital grande."""
+    for ano in (HOJE.year - 1, HOJE.year - 2, HOJE.year - 3):
+        try:
+            if _siconfi("2927408", "DCA-Anexo I-C", ano):
+                return ano
+        except Exception as e:  # noqa: BLE001
+            debug["avisos"].append(f"Siconfi: sondagem de {ano} falhou ({e})")
+    raise RuntimeError("Siconfi: nenhum exercício recente encontrado")
+
+
+def municipios():
+    """Dados municipais (data/municipios.json): população, PIB e setores (IBGE), contas das prefeituras (Tesouro, Siconfi) e links para o Comex e o Óleo.
+    O arquivo é determinístico; as contas entram aos poucos (maiores cidades primeiro), dentro de um orçamento de tempo por execução."""
+    from concurrent.futures import ThreadPoolExecutor
+    antigo = json.loads(MUN_ARQ.read_text(encoding="utf-8")) if MUN_ARQ.exists() else {}
+    nomes, pop, pop_ano = mun_populacao()
+    if len(pop) < 5400 or not 190e6 <= sum(pop.values()) <= 260e6:
+        raise RuntimeError(f"Municípios: população com {len(pop)} municípios, soma {sum(pop.values())}")
+    try:
+        pib, pib_ano = mun_pib()
+    except Exception as e:  # noqa: BLE001
+        if not antigo.get("pib"):
+            raise
+        debug["avisos"].append(f"PIB dos Municípios falhou ({e}); mantém o dado anterior")
+        pib, pib_ano = antigo["pib"], antigo.get("pib_ano", "")
+    pop_pib = antigo.get("pop_pib") if antigo.get("pib_ano") == pib_ano and antigo.get("pop_pib") else None
+    if not pop_pib:
+        try:
+            _, pop_pib, _ = mun_populacao(pib_ano)
+        except Exception as e:  # noqa: BLE001
+            debug["avisos"].append(f"População de {pib_ano} indisponível ({e}); o PIB per capita usa a população mais recente")
+        if not pop_pib or len(pop_pib) < 5400:
+            pop_pib = pop
+    try:
+        links = mun_irmaos(nomes)
+    except Exception as e:  # noqa: BLE001
+        debug["avisos"].append(f"Sites irmãos: falhou ({e}); mantém os links anteriores")
+        links = antigo.get("links") or {}
+    sel = sorted((c for c in nomes if c in CAPITAIS or pop[c] >= MUN_POP_MIN or c in links), key=lambda c: -pop[c])
+    contas = {c: v for c, v in (antigo.get("contas") or {}).items() if c in nomes}
+    ano_alvo = None
+    try:
+        ano_alvo = mun_ano_contas()
+    except Exception as e:  # noqa: BLE001
+        debug["avisos"].append(f"Contas das prefeituras: {e}; mantém o que já estava guardado")
+    novas = vazias = 0
+    if ano_alvo:
+        def pendente(c):
+            v = contas.get(c)
+            if not v:
+                return True
+            return (v["sem"] if v.get("sem") else v.get("ano", 0)) < ano_alvo
+        faltam = [c for c in sel if pendente(c)]
+        t0 = time.time()
+        amostrou = [False]
+
+        def um(c):
+            if time.time() - t0 > MUN_ORCAMENTO_S:
+                return c, "adiado"
+            try:
+                primeira = not amostrou[0]
+                amostrou[0] = True
+                return c, mun_contas_de(c, ano_alvo, amostra=primeira)
+            except Exception as e:  # noqa: BLE001
+                return c, f"erro: {e}"
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            resultados = list(ex.map(um, faltam))
+        erros = [r for c, r in resultados if isinstance(r, str) and r.startswith("erro")]
+        for c, r in resultados:
+            if isinstance(r, dict):
+                contas[c] = r
+                novas += 1
+            elif r is None:
+                vazias += 1
+                if not (contas.get(c) or {}).get("rec"):
+                    contas[c] = {"ano": 0, "sem": ano_alvo}      # entregou fora do padrão ou ainda não entregou: tenta de novo só no próximo exercício
+        adiados = sum(1 for c, r in resultados if r == "adiado")
+        debug["avisos"].append(f"Contas das prefeituras {ano_alvo}: {len(faltam)} na fila, {novas} novas, {vazias} sem dado utilizável, {adiados} adiadas, {len(erros)} erros; amostra de erro {erros[:2]}")
+        if erros and novas == 0 and vazias == 0 and len(erros) >= len(faltam) - adiados:
+            debug["erros"].append(f"Contas das prefeituras: todas as consultas falharam, por exemplo {erros[0]}")
+    com_contas = sum(1 for v in contas.values() if v.get("rec"))
+    saida = {"fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579); Tesouro Nacional (Siconfi, DCA)", "pop_ano": pop_ano, "pib_ano": pib_ano,
+             "contas_ano": ano_alvo or antigo.get("contas_ano"), "nomes": nomes, "pop": pop, "pop_pib": pop_pib, "pib": pib, "sel": sel, "links": links,
+             "contas": {c: v for c, v in sorted(contas.items())}}
+    MUN_ARQ.write_text(json.dumps(saida, ensure_ascii=False, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+    debug["avisos"].append(f"Municípios: {len(nomes)} no Brasil, {len(sel)} com ficha, {com_contas} com contas, {len(links)} ligados ao Comex ou ao Óleo")
+    return {"fichas": len(sel), "com_contas": com_contas}
+
+
 def main():
     antigo = json.loads(DADOS.read_text(encoding="utf-8")) if DADOS.exists() else {}
     novo = dict(antigo)
@@ -970,6 +1316,14 @@ def main():
         debug["erros"].append(f"bolsa_familia: {e}")
         print(f"FALHA em bolsa_familia ({time.time() - t1:.0f}s): {e}", file=sys.stderr, flush=True)
     debug.setdefault("tempos", {})["bolsa_familia"] = round(time.time() - t1, 1)
+    t1 = time.time()
+    try:  # Municípios (PIB, população, contas das prefeituras) também fica em arquivo próprio
+        municipios()
+        print(f"ok: municipios ({time.time() - t1:.0f}s)", flush=True)
+    except Exception as e:  # noqa: BLE001
+        debug["erros"].append(f"municipios: {e}")
+        print(f"FALHA em municipios ({time.time() - t1:.0f}s): {e}", file=sys.stderr, flush=True)
+    debug.setdefault("tempos", {})["municipios"] = round(time.time() - t1, 1)
     DEBUG.write_text(json.dumps(debug, ensure_ascii=False, indent=1), encoding="utf-8")
     if not essenciais_ok:
         print("Fonte essencial indisponível e sem dado anterior: nada foi gravado.", file=sys.stderr)

@@ -1,4 +1,4 @@
-/* Busca de municípios (Bolsa Família): carrega o índice na primeira vez que a pessoa usa o campo e filtra sem acento. */
+/* Busca de municípios (Bolsa Família e fichas municipais): carrega o índice na primeira vez que a pessoa usa o campo e filtra sem acento. */
 (function () {
   var campo = document.getElementById("bf-busca");
   var lista = document.getElementById("bf-res");
@@ -44,7 +44,7 @@
       a.textContent = m.nome + " (" + m.uf + ")";
       var s = document.createElement("span");
       s.className = "small";
-      s.textContent = " · " + fmt(m.f) + " famílias" + (m.c !== null && m.c !== undefined ? ", " + String(m.c).replace(".", ",") + "% da população" : "");
+      s.textContent = typeof m.f === "string" ? " · " + m.f : " · " + fmt(m.f) + " famílias" + (m.c !== null && m.c !== undefined ? ", " + String(m.c).replace(".", ",") + "% da população" : "");
       li.appendChild(a);
       li.appendChild(s);
       lista.appendChild(li);

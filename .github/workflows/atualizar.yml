@@ -29,7 +29,7 @@ concurrency:
 jobs:
   atualizar:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     # O site é publicado direto pelo Actions; as páginas (docs/) não ficam no repositório.
     environment:
       name: github-pages

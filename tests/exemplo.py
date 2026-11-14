@@ -213,6 +213,53 @@ def composicao_exemplo(ate: str = "2026-09") -> dict:
     return {"mes": ms[-1], "meses": ms, "geral": {"v": [cats["0"]["63"][m] for m in ms], "acum12": 4.5}, "grupos": grupos, "subitens": subs}
 
 
+# ---------------------------------------------------------------- municípios
+UF_COD_MUN = {"BA": "29", "SP": "35", "MG": "31"}
+CIDADES_EX = [  # código, nome, UF, população
+    ("2927408", "Salvador", "BA", 2_417_000), ("2919207", "Lauro de Freitas", "BA", 203_000), ("2910800", "Feira de Santana", "BA", 616_000),
+    ("2913606", "Esplanada", "BA", 36_000), ("2903201", "Barreiras", "BA", 160_000), ("2900702", "Alagoinhas", "BA", 160_000),
+    ("3550308", "São Paulo", "SP", 11_900_000), ("3509502", "Campinas", "SP", 1_140_000), ("3548500", "Santos", "SP", 418_000),
+    ("3106200", "Belo Horizonte", "MG", 2_300_000), ("3170206", "Uberlândia", "MG", 713_000), ("3118601", "Contagem", "MG", 621_000),
+]
+
+
+def contas_exemplo(pop, escala=1.0):
+    rec = {"1.1": 0.22, "1.2": 0.03, "1.3": 0.01, "1.7": 0.60, "1.9": 0.04, "2.1": 0.02, "2.4": 0.08}
+    total = pop * 5200 * escala
+    r = {k: round(total * v, 2) for k, v in rec.items()}
+    des = {"Saúde": 0.27, "Educação": 0.26, "Administração": 0.14, "Urbanismo": 0.09, "Assistência social": 0.05, "Previdência social": 0.06,
+           "Encargos especiais": 0.03, "Transporte": 0.04, "Outras funções": 0.06}
+    dt_ = total * 0.97
+    return {"ano": 2025, "rec": {"total": sum(r.values()), "grupos": r, "destaques": {"iptu": total * 0.07, "iss": total * 0.09, "fpm": total * 0.12}},
+            "des": {"total": dt_, "funcoes": {k: round(dt_ * v, 2) for k, v in sorted(des.items(), key=lambda kv: -kv[1])}}}
+
+
+def municipios_exemplo() -> dict:
+    """Arquivo data/municipios.json em miniatura: 12 cidades com ficha, mais um pequeno município fora da lista, e as contas de quase todas."""
+    nomes, pop, pop_pib, pib, sel, contas = {}, {}, {}, {}, [], {}
+    for i, (cod, nome, uf, p) in enumerate(CIDADES_EX):
+        nomes[cod], pop[cod], pop_pib[cod] = [nome, uf], p, int(p * 0.97)
+        v = p * 42_000 * (1 + (i % 4) * 0.25) / 1000          # mil reais
+        imp = v * 0.14
+        sets = {"agro": v * 0.02 * (1 + i % 3), "adm": v * 0.20}
+        sets["ind"] = v * 0.18
+        va = v - imp
+        sets["serv"] = va - sets["agro"] - sets["adm"] - sets["ind"]
+        pib[cod] = {"pib": v, "imp": imp, "va": va, **sets}
+        sel.append(cod)
+        if cod != "2900702":                                   # Alagoinhas: prefeitura sem dado utilizável
+            contas[cod] = contas_exemplo(p)
+        else:
+            contas[cod] = {"ano": 0, "sem": 2025}
+    cod = "2900108"                                            # município pequeno, sem ficha
+    nomes[cod], pop[cod], pop_pib[cod], pib[cod] = ["Abaíra", "BA"], 8_400, 8_300, {"pib": 150_000.0, "imp": 10_000.0, "va": 140_000.0,
+                                                                                    "agro": 40_000.0, "ind": 10_000.0, "serv": 50_000.0, "adm": 40_000.0}
+    return {"fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579); Tesouro Nacional (Siconfi, DCA)", "pop_ano": "2025", "pib_ano": "2023",
+            "contas_ano": 2025, "nomes": nomes, "pop": pop, "pop_pib": pop_pib, "pib": pib, "sel": sel, "contas": contas,
+            "links": {"2927408": {"comex": "/municipio/salvador-ba/", "oleo": "/royalties/bahia/salvador/"}, "2913606": {"oleo": "/royalties/bahia/esplanada/"},
+                      "3548500": {"comex": "/municipio/santos-sp/"}}}
+
+
 def dados_exemplo() -> dict:
     ms = meses("2000-01", "2026-09")
     mensal = [[m, round(0.2 + ((i * 7) % 13) / 20, 2)] for i, m in enumerate(ms)]
@@ -266,4 +313,9 @@ def gravar(caminho: Path) -> Path:
 
 def gravar_bf(caminho: Path) -> Path:
     caminho.write_text(json.dumps(bf_exemplo(), ensure_ascii=False), encoding="utf-8")
+    return caminho
+
+
+def gravar_mun(caminho: Path) -> Path:
+    caminho.write_text(json.dumps(municipios_exemplo(), ensure_ascii=False), encoding="utf-8")
     return caminho

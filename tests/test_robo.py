@@ -726,5 +726,151 @@ class TestComposicaoIPCA(unittest.TestCase):
         self.assertEqual(r._mes_seguinte("2026-10"), "2026-11")
 
 
+# ---------------------------------------------------------------- municípios
+def _brasil_sintetico():
+    """5.562 municípios sintéticos (código de 7 dígitos, estado, população)."""
+    out = []
+    for u2 in r.UF_SLUG:
+        for k in range(1, 207):
+            out.append((f"{u2}{k:05d}", f"Cidade {u2}-{k}", u2, 33_000 + k * 100))
+    return out
+
+
+class TestMunicipiosRobo(unittest.TestCase):
+    def test_campos_do_pib_pelo_nome_da_variavel(self):
+        c = r._pib_campo
+        self.assertEqual(c("Produto Interno Bruto a preços correntes"), "pib")
+        self.assertIsNone(c("Produto Interno Bruto per capita"))
+        self.assertIsNone(c("Participação do valor adicionado bruto da indústria no total"))
+        self.assertEqual(c("Valor adicionado bruto a preços correntes da agropecuária"), "agro")
+        self.assertEqual(c("Valor adicionado bruto a preços correntes da indústria"), "ind")
+        self.assertEqual(c("Valor adicionado bruto a preços correntes dos serviços, exclusive administração, defesa, educação e saúde públicas e seguridade social"), "serv")
+        self.assertEqual(c("Valor adicionado bruto a preços correntes da administração, defesa, educação e saúde públicas e seguridade social"), "adm")
+        self.assertEqual(c("Valor adicionado bruto a preços correntes total"), "va")
+        self.assertEqual(c("Impostos, líquidos de subsídios, sobre produtos a preços correntes"), "imp")
+
+    def test_slug_igual_ao_do_comex_e_do_oleo(self):
+        self.assertEqual(r._slug("Luís Eduardo Magalhães - BA"), "luis-eduardo-magalhaes-ba")
+        self.assertEqual(r._slug("Santa Bárbara d'Oeste - SP"), "santa-barbara-d-oeste-sp")
+        self.assertEqual(r._slug("São Francisco do Conde"), "sao-francisco-do-conde")
+
+    def test_receitas_do_anexo_i_c(self):
+        itens = []
+        for cod, conta, v in (("1.0.0.0.00.0.0", "Receitas Correntes", 900.0), ("1.1.0.0.00.0.0", "Impostos, Taxas e Contribuições de Melhoria", 200.0),
+                              ("1.7.0.0.00.0.0", "Transferências Correntes", 600.0), ("1.1.1.2.02.0.0", "Imposto sobre a Propriedade Predial e Territorial Urbana", 80.0),
+                              ("1.1.1.2.02.1.0", "IPTU - Principal", 70.0), ("2.4.0.0.00.0.0", "Transferências de Capital", 100.0),
+                              ("7.1.0.0.00.0.0", "Receitas Intra-Orçamentárias", 50.0)):
+            itens.append({"cod_conta": "RO" + cod, "conta": f"{cod} - {conta}", "coluna": "Receitas Brutas Realizadas", "valor": v})
+            itens.append({"cod_conta": "RO" + cod, "conta": f"{cod} - {conta}", "coluna": "Previsão Inicial", "valor": v * 5})
+        out = r.parse_receitas(itens)
+        self.assertEqual(out["grupos"], {"1.1": 200.0, "1.7": 600.0, "2.4": 100.0})        # sem receita intra-orçamentária nem totais
+        self.assertEqual(out["total"], 900.0)
+        self.assertEqual(out["destaques"], {"iptu": 80.0})                                   # a linha-mãe, não o "IPTU - Principal"
+        self.assertIsNone(r.parse_receitas([]))
+
+    def test_despesas_do_anexo_i_e(self):
+        itens = []
+        for conta, emp, liq in (("10 - Saúde", 500.0, 450.0), ("12 - Educação", 400.0, 380.0), ("10.301 - Atenção Básica", 300.0, 250.0), ("Total das Despesas", 900.0, 830.0)):
+            itens.append({"cod_conta": "FU" + conta[:2], "conta": conta, "coluna": "Despesas Empenhadas", "valor": emp})
+            itens.append({"cod_conta": "FU" + conta[:2], "conta": conta, "coluna": "Despesas Liquidadas", "valor": liq})
+        out = r.parse_despesas(itens)
+        self.assertEqual(out["funcoes"], {"Saúde": 450.0, "Educação": 380.0})                # liquidadas, só funções (não subfunções nem total)
+        self.assertEqual(out["total"], 830.0)
+
+    def test_contas_que_nao_fecham_sao_recusadas(self):
+        rec = [{"cod_conta": "RO1.7.0.0.00.0.0", "conta": "1.7.0.0.00.0.0 - Transferências Correntes", "coluna": "Receitas Brutas Realizadas", "valor": 1000.0}]
+        des = [{"cod_conta": "FU10", "conta": "10 - Saúde", "coluna": "Despesas Liquidadas", "valor": 9000.0}]
+
+        def falso(url, *a, **k):
+            return FakeResp({"items": rec if "I-C" in url.replace("%20", " ") else des, "hasMore": False})
+        with mock.patch.object(r, "get", falso), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            self.assertIsNone(r.mun_contas_de("2927408", 2025))
+
+    def roda_tudo(self, siconfi_vazio=False, irmaos_falham=False, pib_quebrado=False):
+        cidades = _brasil_sintetico()
+        nomes_var = [("Produto Interno Bruto a preços correntes", "pib"), ("Produto Interno Bruto per capita", None),
+                     ("Impostos, líquidos de subsídios, sobre produtos a preços correntes", "imp"), ("Valor adicionado bruto a preços correntes total", "va"),
+                     ("Valor adicionado bruto a preços correntes da agropecuária", "agro"), ("Valor adicionado bruto a preços correntes da indústria", "ind"),
+                     ("Valor adicionado bruto a preços correntes dos serviços, exclusive administração, defesa, educação e saúde públicas e seguridade social", "serv"),
+                     ("Valor adicionado bruto a preços correntes da administração, defesa, educação e saúde públicas e seguridade social", "adm")]
+
+        def falso(url, *a, **k):
+            u = url.replace("%20", " ")
+            if "/t/6579/" in u:
+                ano = "2022" if "/p/2023" in u else "2025"
+                return FakeResp([{"V": "Valor"}] + [{"D1C": c, "D1N": f"{n} - BA", "D3C": ano, "V": str(p)} for c, n, u2, p in cidades])
+            if "/t/5938/" in u:
+                u2 = u.split("n3 ")[1].split("/")[0]
+                linhas = [{"V": "Valor"}]
+                for c, n, u_, p in cidades:
+                    if u_ != u2:
+                        continue
+                    pib = p * 40.0
+                    comp = {"pib": pib, "imp": pib * 0.1, "va": pib * 0.9, "agro": pib * 0.09, "ind": pib * 0.2, "serv": pib * 0.4, "adm": pib * 0.21}
+                    if pib_quebrado:
+                        comp["serv"] = 0.0
+                    for nome, campo in nomes_var:
+                        linhas.append({"D1C": c, "D1N": n, "D2N": nome, "D3C": "2023", "V": str(comp[campo] if campo else 1.0)})
+                return FakeResp(linhas)
+            if "sitemap" in u:
+                if irmaos_falham:
+                    raise RuntimeError("sem rede")
+                if "comexemnumeros" in u:
+                    return mock.Mock(text="<urlset><url><loc>https://comexemnumeros.com.br/municipio/cidade-29-1-ba/</loc></url></urlset>")
+                return mock.Mock(text="<urlset><url><loc>https://oleoemnumeros.com.br/royalties/bahia/cidade-29-2/</loc></url></urlset>")
+            if "apidatalake" in u:
+                if siconfi_vazio:
+                    return FakeResp({"items": [], "hasMore": False})
+                if "I-C" in u:
+                    its = [{"cod_conta": f"RO{c}", "conta": f"{c} - X", "coluna": "Receitas Brutas Realizadas", "valor": v}
+                           for c, v in (("1.1.0.0.00.0.0", 300.0), ("1.7.0.0.00.0.0", 700.0))]
+                else:
+                    its = [{"cod_conta": f"FU{c}", "conta": f"{c} - {n}", "coluna": "Despesas Liquidadas", "valor": v} for c, n, v in (("10", "Saúde", 400.0), ("12", "Educação", 500.0))]
+                return FakeResp({"items": its, "hasMore": False})
+            raise AssertionError(url)
+        return falso
+
+    def executa(self, **kw):
+        falso = self.roda_tudo(**kw)
+        with tempfile.TemporaryDirectory() as tmp:
+            arq = Path(tmp) / "municipios.json"
+            with mock.patch.object(r, "get", falso), mock.patch.object(r, "MUN_ARQ", arq), mock.patch.object(r, "HOJE", dt.date(2026, 11, 14)), \
+                    mock.patch.object(r, "MUN_ORCAMENTO_S", 60), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+                out = r.municipios()
+                return out, json.loads(arq.read_text(encoding="utf-8")), dbg
+
+    def test_monta_o_arquivo_de_municipios(self):
+        out, d, dbg = self.executa()
+        self.assertEqual(len(d["nomes"]), 5562)
+        self.assertEqual(d["pib_ano"], "2023")
+        self.assertEqual(d["contas_ano"], 2025)
+        self.assertGreater(len(d["sel"]), 100)
+        self.assertEqual(d["sel"], sorted(d["sel"], key=lambda c: -d["pop"][c]))                 # as maiores primeiro
+        self.assertTrue(all(d["pop"][c] >= r.MUN_POP_MIN or c in r.CAPITAIS or c in d["links"] for c in d["sel"]))
+        c0 = d["sel"][0]
+        self.assertEqual(d["contas"][c0]["ano"], 2025)
+        self.assertEqual(d["contas"][c0]["rec"]["total"], 1000.0)
+        self.assertEqual(list(d["contas"][c0]["des"]["funcoes"]), ["Educação", "Saúde"])
+        self.assertEqual(out["com_contas"], len(d["sel"]))
+        self.assertEqual(dbg["erros"], [])
+
+    def test_sem_dado_na_siconfi_a_ficha_nao_quebra_e_nao_marca_erro(self):
+        out, d, dbg = self.executa(siconfi_vazio=True)
+        self.assertEqual(out["com_contas"], 0)
+        self.assertEqual(dbg["erros"], [])
+        self.assertTrue(d["pib"])
+
+    def test_sitemaps_fora_do_ar_mantem_o_resto(self):
+        out, d, dbg = self.executa(irmaos_falham=True)
+        self.assertEqual(d["links"], {})
+        self.assertTrue(any("Sites irmãos" in a for a in dbg["avisos"]))
+
+    def test_pib_com_setores_que_nao_somam_publica_so_o_total(self):
+        out, d, dbg = self.executa(pib_quebrado=True)
+        c = next(iter(d["pib"]))
+        self.assertEqual(list(d["pib"][c]), ["pib"])
+        self.assertTrue(any("só o PIB" in a for a in dbg["avisos"]))
+
+
 if __name__ == "__main__":
     unittest.main()

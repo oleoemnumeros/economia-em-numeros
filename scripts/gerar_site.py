@@ -192,7 +192,7 @@ def saldo_txt(v: float) -> str:
 
 # ------------------------------------------------------------------ dados
 class Base:
-    def __init__(self, dados: dict, calendario: dict, hoje: dt.date, resumos: dict | None = None, bf: dict | None = None):
+    def __init__(self, dados: dict, calendario: dict, hoje: dt.date, resumos: dict | None = None, bf: dict | None = None, mun: dict | None = None):
         self.d = dados
         self.hoje = hoje
         self.mud = [(dt.date.fromisoformat(a), float(v)) for a, v in dados["selic"]["meta"]]
@@ -227,6 +227,7 @@ class Base:
         self.externo = dados.get("externo") or None
         self.balanca = dados.get("balanca") or None
         self.bf = bf_prepara(bf) if bf else None
+        self.mun = mun_prepara(mun) if mun else None
         self.csvs = {}  # slug -> dados de cada gráfico (viram os arquivos /dados/<slug>.csv)
 
     # Atas, emprego ----------------------------------------------------------
@@ -328,6 +329,10 @@ class Base:
     @property
     def tem_bf(self) -> bool:
         return bool(self.bf)
+
+    @property
+    def tem_mun(self) -> bool:
+        return bool(self.mun)
 
     def ext_stats(self) -> dict:
         """Última leitura do setor externo: reservas (US$ bi), conta corrente em 12 meses (US$ bi e % do PIB), investimento direto em 12 meses e balança comercial."""
@@ -436,6 +441,8 @@ class Base:
             itens.append(("/setor-externo/", "Setor externo"))
         if self.tem_fiscal:
             itens.append(("/contas-publicas/", "Contas públicas"))
+        if self.tem_mun:
+            itens.append(("/municipios/", "Municípios"))
         return itens + NAV_FIM
 
     # Câmbio ---------------------------------------------------------------
@@ -760,7 +767,7 @@ def grafico(B, slug, titulo, fonte, svg, cabecalho, linhas, grupo, nota="", lege
 
 
 def pg_dados(B: Base) -> str:
-    ordem = ["Atividade", "Indústria e varejo", "Emprego", "Emprego por estado", "Bolsa Família", "Bolsa Família por estado", "Inflação", "Inflação por área", "Juros e Copom", "Crédito", "Câmbio", "Setor externo", "Contas públicas"]
+    ordem = ["Atividade", "Indústria e varejo", "Emprego", "Emprego por estado", "Bolsa Família", "Bolsa Família por estado", "Inflação", "Inflação por área", "Juros e Copom", "Crédito", "Câmbio", "Setor externo", "Contas públicas", "Municípios"]
     grupos = {}
     for slug, c in B.csvs.items():
         grupos.setdefault(c["grupo"], []).append((slug, c))
@@ -996,7 +1003,7 @@ def pg_inicio(B: Base) -> str:
     calc = card('<span class="eyebrow">Ferramenta</span><h2>Calculadora de correção pelo IPCA</h2>'
                 '<p class="small">Quanto R$ 1.000 de alguns anos atrás valem hoje? Corrija qualquer valor pela inflação oficial, mês a mês, desde 2000.</p>'
                 '<p><a href="/calculadora/">Abrir a calculadora →</a></p>')
-    mais = [x for x in (card_comp_inicio(B), card_atividade_inicio(B), card_ibge_inicio(B), card_emprego_inicio(B), card_bf_inicio(B), card_credito_inicio(B), card_cambio_inicio(B), card_externo_inicio(B), card_fiscal_inicio(B)) if x]
+    mais = [x for x in (card_comp_inicio(B), card_atividade_inicio(B), card_ibge_inicio(B), card_emprego_inicio(B), card_bf_inicio(B), card_credito_inicio(B), card_cambio_inicio(B), card_externo_inicio(B), card_fiscal_inicio(B), card_mun_inicio(B)) if x]
     mais_html = "".join(f'<div class="cols">{"".join(mais[k:k + 2])}</div>' if len(mais[k:k + 2]) == 2 else mais[k] for k in range(0, len(mais), 2))
     corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{mais_html}{calc}'
     return pagina(B, "/", "Economia em Números: Selic, inflação (IPCA) e Copom em dados oficiais",
@@ -2384,6 +2391,7 @@ def pg_sobre(B: Base) -> str:
                  '<li><strong>Taxa de desocupação:</strong> IBGE, PNAD Contínua (SIDRA, tabelas 4099 e 6381).</li>'
                  '<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego; o saldo do mês é a variação do estoque de empregos formais (série 28763 do SGS, Banco Central).</li>'
                  '<li><strong>Bolsa Família por município:</strong> Ministério do Desenvolvimento e Assistência Social (MDS), Matriz de Informação Social (MI Social); população estimada pelo IBGE (SIDRA, tabela 6579).</li>'
+                 '<li><strong>Municípios:</strong> IBGE, PIB dos Municípios (SIDRA, tabela 5938) e população estimada (tabela 6579); contas das prefeituras do Tesouro Nacional, Declaração de Contas Anuais (Siconfi).</li>'
                  '<li><strong>IPCA do Brasil:</strong> IBGE, pelas séries 433 e 13522 do Banco Central.</li>'
                  '<li><strong>IPCA por região:</strong> IBGE, Sistema IBGE de Recuperação Automática (SIDRA), tabela 7060.</li>'
                  '<li><strong>Composição do IPCA:</strong> IBGE, SIDRA, tabela 7060 (variação e peso mensal de cada grupo e item); a contribuição de cada um é o peso vezes a variação.</li>'
@@ -2424,14 +2432,324 @@ def escrever(saida: Path, caminho: str, conteudo: str):
     destino.write_text(conteudo, encoding="utf-8")
 
 
+# ------------------------------------------------------------------ Municípios: PIB, população e contas da prefeitura
+F_MUN = "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579) e Tesouro Nacional (Siconfi, DCA)"
+SETORES_MUN = (("serv", "Serviços (menos administração pública)"), ("adm", "Administração pública, saúde e educação públicas"),
+               ("ind", "Indústria"), ("agro", "Agropecuária"), ("imp", "Impostos sobre produtos"))
+RECEITA_ROTULOS = {"1.1": "Impostos, taxas e contribuições de melhoria", "1.2": "Contribuições (inclui iluminação pública)", "1.3": "Receita patrimonial",
+                   "1.4": "Receita agropecuária", "1.5": "Receita industrial", "1.6": "Receita de serviços", "1.7": "Transferências correntes (FPM, ICMS, SUS, Fundeb...)",
+                   "1.9": "Outras receitas correntes", "2.1": "Operações de crédito", "2.2": "Venda de bens", "2.3": "Amortização de empréstimos",
+                   "2.4": "Transferências de capital", "2.5": "Outras receitas de capital"}
+RECEITA_TRANSF = ("1.7", "2.4")
+RECEITA_CREDITO = ("2.1", "2.2", "2.3", "2.5")
+DESTAQUES_MUN = (("iptu", "IPTU (imposto sobre imóveis urbanos)"), ("iss", "ISS (imposto sobre serviços)"), ("itbi", "ITBI (imposto sobre compra de imóveis)"),
+                 ("fpm", "Fundo de Participação dos Municípios (FPM)"), ("icms", "Cota-parte do ICMS"))
+MUN_TEXTO = ("<h2>Como ler a ficha do município</h2>"
+             "<p>O <strong>PIB</strong> é o valor de tudo o que se produziu no município no ano, a preços correntes. O IBGE divulga o PIB dos municípios com cerca de dois anos de atraso, "
+             "por isso o ano do PIB é anterior ao da população. O <strong>PIB per capita</strong> divide o PIB pela população estimada do mesmo ano. Em cidades com uma grande indústria, "
+             "um porto ou um campo de petróleo, ele pode ficar alto sem que a renda média da população seja alta.</p>"
+             "<p>As <strong>contas da prefeitura</strong> vêm da Declaração de Contas Anuais enviada ao Tesouro Nacional (Siconfi). A <strong>receita</strong> é o que a prefeitura arrecadou no ano. "
+             "As <strong>transferências</strong> são repasses de outros governos, como o Fundo de Participação dos Municípios e a cota do ICMS. A <strong>despesa por área</strong> é o gasto liquidado em cada função "
+             "de governo. Nem toda prefeitura entrega as contas no prazo, e algumas entregam fora do padrão; nesses casos a ficha mostra só o PIB e a população.</p>"
+             "<p>O portal mostra números e não avalia a gestão de nenhuma prefeitura.</p>")
+
+
+def mun_prepara(d: dict | None):
+    """Organiza data/municipios.json em municípios, estados e Brasil, com posições no estado e no país. None se faltar dado."""
+    if not d or not d.get("pib") or not d.get("nomes"):
+        return None
+    nomes, pop, pop_pib, pib = d["nomes"], d.get("pop") or {}, d.get("pop_pib") or {}, d["pib"]
+    sel, contas, links = set(d.get("sel") or []), d.get("contas") or {}, d.get("links") or {}
+    mun, usados = {}, {}
+    for cod in sorted(nomes):
+        if cod[:2] not in UFS or cod not in pib or not pop.get(cod):
+            continue
+        nome, sigla = nomes[cod]
+        s = slugify(nome) or cod
+        if (cod[:2], s) in usados:      # nomes repetidos no mesmo estado ganham o código no endereço
+            s = f"{s}-{cod}"
+        usados[(cod[:2], s)] = cod
+        p = pib[cod]
+        pp = pop_pib.get(cod) or pop[cod]
+        c = contas.get(cod) or {}
+        mun[cod] = {"cod": cod, "nome": nome, "sigla": sigla, "uf2": cod[:2], "uf_slug": UFS[cod[:2]][0], "slug": s, "pop": pop[cod], "pop_pib": pp,
+                    "pib": p["pib"] * 1000.0, "set": {k: p[k] * 1000.0 for k, _ in SETORES_MUN if k in p} if all(k in p for k, _ in SETORES_MUN) else None,
+                    "pc": p["pib"] * 1000.0 / pp, "ficha": cod in sel, "links": links.get(cod) or {}, "contas": c if c.get("rec") and c.get("des") else None}
+    if len(mun) < 10:
+        return None
+
+    def agrega(codigos):
+        pibs = sum(mun[c]["pib"] for c in codigos)
+        pops = sum(mun[c]["pop_pib"] for c in codigos)
+        com_set = [c for c in codigos if mun[c]["set"]]
+        s = None
+        if len(com_set) == len(codigos):
+            tot = sum(mun[c]["pib"] for c in com_set)
+            s = {k: sum(mun[c]["set"][k] for c in com_set) / tot * 100 for k, _ in SETORES_MUN} if tot else None
+        return {"pop": sum(mun[c]["pop"] for c in codigos), "pib": pibs, "pc": pibs / pops if pops else 0.0, "n": len(codigos), "pct": s}
+    ufs = {}
+    for cod, m in mun.items():
+        ufs.setdefault(m["uf2"], []).append(cod)
+    uf = {}
+    for u2, cods in ufs.items():
+        slug, nome, sigla = UFS[u2]
+        uf[u2] = {"cod": u2, "slug": slug, "nome": nome, "sigla": sigla, "mun": cods, **agrega(cods)}
+        for chave, rev in (("pib", True), ("pc", True), ("pop", True)):
+            for pos, c in enumerate(sorted(cods, key=lambda c: -mun[c][chave]), 1):
+                mun[c][f"pos_{chave}"] = pos
+        uf[u2]["fichas"] = sorted((c for c in cods if mun[c]["ficha"]), key=lambda c: -mun[c]["pib"])
+    for pos, c in enumerate(sorted(mun, key=lambda c: -mun[c]["pib"]), 1):
+        mun[c]["pos_pib_br"] = pos
+    br = {**agrega(list(mun)), "mun": list(mun)}
+    return {"mun": mun, "uf": uf, "br": br, "pib_ano": d.get("pib_ano") or "", "pop_ano": d.get("pop_ano") or "", "contas_ano": d.get("contas_ano") or "",
+            "fonte": d.get("fonte") or F_MUN, "fichas": sorted((c for c in mun if mun[c]["ficha"]), key=lambda c: -mun[c]["pib"])}
+
+
+def mun_url(m: dict) -> str:
+    return f"/municipios/{m['uf_slug']}/{m['slug']}/"
+
+
+def mun_busca_html(B: Base, rotulo="Busque uma cidade") -> str:
+    return card(f'<span class="eyebrow">Busca</span><h2>{rotulo}</h2>'
+                '<label class="small" for="bf-busca">Digite o nome da cidade (sem precisar de acento)</label>'
+                '<div class="search"><input id="bf-busca" type="search" autocomplete="off" placeholder="Ex.: Salvador, Campinas, Uberlândia" data-indice="/municipios/busca.json" aria-controls="bf-res"></div>'
+                '<ul id="bf-res" class="busca-res" aria-live="polite"></ul>'
+                f'<script src="/assets/busca.js?v={B.d["gerado_em"][:10]}" defer></script>')
+
+
+def mun_indice(B: Base) -> str:
+    itens = [[m["nome"], m["sigla"], mun_url(m), f'{nf(m["pop"], 0)} habitantes · PIB de {brl_abrev(m["pib"])}']
+             for m in (B.mun["mun"][c] for c in B.mun["fichas"])]
+    return json.dumps(itens, ensure_ascii=False, separators=(",", ":"))
+
+
+def _link_mun(m: dict) -> str:
+    return f'<a href="{mun_url(m)}">{esc(m["nome"])}</a>' if m["ficha"] else esc(m["nome"])
+
+
+def card_mun_inicio(B: Base) -> str:
+    if not B.tem_mun:
+        return ""
+    x = B.mun
+    return card('<span class="eyebrow">Municípios</span><h2>PIB, população e contas da prefeitura da sua cidade</h2>'
+                f'<p>Fichas de <strong>{nf(len(x["fichas"]), 0)} cidades</strong>: quanto produzem, quantos habitantes têm, de onde vem o dinheiro da prefeitura e para onde ele vai. '
+                f'Os dados são oficiais, do IBGE e do Tesouro Nacional.</p>'
+                '<p><a href="/municipios/">Buscar uma cidade →</a></p>')
+
+
+def _bloco_receita(grupos: dict) -> dict:
+    t = sum(grupos.values())
+    transf = sum(v for k, v in grupos.items() if k in RECEITA_TRANSF)
+    cred = sum(v for k, v in grupos.items() if k in RECEITA_CREDITO)
+    return {"total": t, "transf": transf, "cred": cred, "propria": t - transf - cred}
+
+
+def mun_receita_card(B: Base, m: dict) -> str:
+    c = m["contas"]
+    rec = c["rec"]
+    gr = rec["grupos"]
+    blocos = _bloco_receita(gr)
+    t = blocos["total"]
+    linhas = [(RECEITA_ROTULOS.get(k, k), v) for k, v in sorted(gr.items(), key=lambda kv: -kv[1])]
+    barras = hbarras([(esc(r), v, f"{nf(v / t * 100, 1)}%", f"{brl_abrev(v)} · R$ {nf(v / m['pop'], 0)} por habitante") for r, v in linhas], f"% da receita de {c['ano']}")
+    nota = (f'<p class="small">Em {c["ano"]}, a prefeitura arrecadou <strong>{brl_abrev(t)}</strong> (R$ {nf(t / m["pop"], 0)} por habitante). '
+            f'Arrecadação própria: {nf(blocos["propria"] / t * 100, 0)}%. Transferências de outros governos: {nf(blocos["transf"] / t * 100, 0)}%'
+            + (f'. Crédito e venda de bens: {nf(blocos["cred"] / t * 100, 0)}%' if blocos["cred"] / t >= 0.005 else "") + ".</p>")
+    return grafico(B, f"mun-receita-{m['cod']}", f"De onde vem o dinheiro da prefeitura de {m['nome']}", "Tesouro Nacional, Siconfi (DCA, anexo I-C)", barras,
+                   ["Origem", "Receita (R$)", "Parte (%)"], [(r, v, v / t * 100) for r, v in linhas], "Municípios", casas=1, nota=nota,
+                   ultimo=f"exercício de {c['ano']}", csv_href="/dados/municipios-contas.csv", csv_rotulo="Baixar CSV das contas de todas as cidades")
+
+
+def mun_despesa_card(B: Base, m: dict) -> str:
+    c = m["contas"]
+    fun = list(c["des"]["funcoes"].items())
+    t = c["des"]["total"]
+    topo, resto = fun[:8], sum(v for _, v in fun[8:])
+    linhas = topo + ([("Demais áreas", resto)] if resto > 0 else [])
+    barras = hbarras([(esc(n), v, f"{nf(v / t * 100, 1)}%", f"{brl_abrev(v)} · R$ {nf(v / m['pop'], 0)} por habitante") for n, v in linhas], f"% da despesa de {c['ano']}")
+    nota = (f'<p class="small">Despesa liquidada em {c["ano"]}: <strong>{brl_abrev(t)}</strong> (R$ {nf(t / m["pop"], 0)} por habitante), '
+            f'por área de governo (função). Quem mais recebeu: {esc(fun[0][0])} ({nf(fun[0][1] / t * 100, 0)}%).</p>')
+    return grafico(B, f"mun-despesa-{m['cod']}", f"Para onde vai o dinheiro da prefeitura de {m['nome']}", "Tesouro Nacional, Siconfi (DCA, anexo I-E)", barras,
+                   ["Área", "Despesa liquidada (R$)", "Parte (%)"], [(n, v, v / t * 100) for n, v in linhas], "Municípios", casas=1, nota=nota,
+                   ultimo=f"exercício de {c['ano']}", csv_href="/dados/municipios-contas.csv", csv_rotulo="Baixar CSV das contas de todas as cidades")
+
+
+def mun_setores_card(B: Base, m: dict) -> str:
+    x = B.mun
+    s = m["set"]
+    linhas = [(rot, s[k], s[k] / m["pib"] * 100) for k, rot in SETORES_MUN]
+    linhas.sort(key=lambda r: -r[1])
+    barras = hbarras([(esc(r), v, f"{nf(p, 1)}%", brl_abrev(v)) for r, v, p in linhas], f"% do PIB de {x['pib_ano']}")
+    maior = linhas[0]
+    nota = f'<p class="small">A maior fatia do PIB de {esc(m["nome"])} vem de <strong>{esc(maior[0].lower())}</strong> ({nf(maior[2], 0)}%). Administração pública inclui o funcionalismo, a saúde e a educação públicas.</p>'
+    return grafico(B, f"mun-setores-{m['cod']}", f"De onde vem o PIB de {m['nome']}", "IBGE, PIB dos Municípios (SIDRA 5938)", barras,
+                   ["Setor", "Valor (R$)", "Parte do PIB (%)"], linhas, "Municípios", casas=1, nota=nota, ultimo=f"PIB de {x['pib_ano']}",
+                   csv_href="/dados/municipios-pib.csv", csv_rotulo="Baixar CSV do PIB de todos os municípios")
+
+
+def mun_comparacao(B: Base, m: dict) -> str:
+    x = B.mun
+    uf, br = x["uf"][m["uf2"]], x["br"]
+    nome_uf = uf["nome"]
+    linhas = [["PIB per capita (R$)", nf(m["pc"], 0), nf(uf["pc"], 0), nf(br["pc"], 0)]]
+    if m["set"] and uf["pct"] and br["pct"]:
+        for k, rot in SETORES_MUN:
+            linhas.append([f"{esc(rot)} (% do PIB)", nf(m["set"][k] / m["pib"] * 100, 1), nf(uf["pct"][k], 1), nf(br["pct"][k], 1)])
+    return tabela(["", esc(m["nome"]), esc(nome_uf), "Brasil"], linhas, ["l", "r", "r", "r"])
+
+
+def mun_links_irmaos(B: Base, m: dict) -> str:
+    itens = []
+    if m["links"].get("comex"):
+        itens.append(f'<li><a href="https://comexemnumeros.com.br{m["links"]["comex"]}">O que {esc(m["nome"])} exporta e importa</a> <span class="small">· Comex em Números</span></li>')
+    if m["links"].get("oleo"):
+        itens.append(f'<li><a href="https://oleoemnumeros.com.br{m["links"]["oleo"]}">Royalties de petróleo e gás que {esc(m["nome"])} recebe</a> <span class="small">· Óleo em Números</span></li>')
+    if B.tem_bf:
+        bfm = B.bf["mun"].get(m["cod"][:6])
+        if bfm:
+            itens.append(f'<li><a href="/bolsa-familia/{bfm["uf_slug"]}/{bfm["slug"]}/">Bolsa Família em {esc(m["nome"])}</a> <span class="small">· neste portal</span></li>')
+    if not itens:
+        return ""
+    return card('<h2>Mais sobre ' + esc(m["nome"]) + '</h2><ul class="plain">' + "".join(itens) + "</ul>"
+                '<p class="small">Os outros portais da Família em Números têm páginas por cidade quando há dado: comércio exterior, royalties e outros.</p>')
+
+
+def pg_mun(B: Base, m: dict) -> str:
+    x = B.mun
+    uf = x["uf"][m["uf2"]]
+    nome = f'{m["nome"]} ({m["sigla"]})'
+    lede = (f'{esc(m["nome"])} tem <strong>{nf(m["pop"], 0)} habitantes</strong> (estimativa do IBGE para {esc(x["pop_ano"])}) e um PIB de <strong>{brl_abrev(m["pib"])}</strong> em {esc(x["pib_ano"])}, '
+            f'{"o maior" if m["pos_pib"] == 1 else "o " + str(m["pos_pib"]) + "º maior"} {uf_de(m["uf2"], esc(uf["nome"]))} entre {uf["n"]} municípios. O PIB per capita é de <strong>R$ {nf(m["pc"], 0)}</strong>.')
+    c = m["contas"]
+    if c:
+        t = c["rec"]["total"]
+        bl = _bloco_receita(c["rec"]["grupos"])
+        fun0 = next(iter(c["des"]["funcoes"]))
+        lede += (f' Em {c["ano"]}, a prefeitura arrecadou {brl_abrev(t)}, dos quais {nf(bl["transf"] / t * 100, 0)}% vieram de transferências de outros governos, '
+                 f'e a área em que mais gastou foi {esc(fun0)}.')
+    hero = card(f'<span class="eyebrow">Município · {esc(uf["nome"])}</span><h1>{esc(m["nome"])} ({m["sigla"]}): PIB, população e contas da prefeitura</h1><p class="lede">{lede}</p>')
+    pcv = (m["pc"] / x["br"]["pc"] - 1) * 100
+    tiles = [tile("População", nf(m["pop"], 0), "habitantes", f'<span class="chg flat">● {m["pos_pop"]}º {uf_de(m["uf2"], esc(uf["nome"]))}</span>', "a"),
+             tile(f'PIB de {x["pib_ano"]}', *brl_partes(m["pib"]), f'<span class="chg flat">● {m["pos_pib"]}º {uf_de(m["uf2"], esc(uf["nome"]))} · {m["pos_pib_br"]}º do Brasil</span>', "b"),
+             tile("PIB per capita", nf(m["pc"], 0), "R$ por habitante", chg(pcv, 0, "%", " frente à média do Brasil"), "k")]
+    if c:
+        t = c["rec"]["total"]
+        tiles.append(tile(f'Receita da prefeitura · {c["ano"]}', *brl_partes(t), f'<span class="chg flat">● R$ {nf(t / m["pop"], 0)} por habitante</span>', "g"))
+    graf = []
+    if m["set"]:
+        graf.append(mun_setores_card(B, m))
+    if c:
+        graf += [mun_receita_card(B, m), mun_despesa_card(B, m)]
+    comp = card(cab("Comparação") + mun_comparacao(B, m) +
+                f'<span class="src">PIB per capita e setores de {esc(x["pib_ano"])}; para o Brasil e o estado, a soma dos municípios. {m["pos_pc"]}º maior PIB per capita {uf_de(m["uf2"], esc(uf["nome"]))} (entre {uf["n"]} municípios).</span>')
+    dest = ""
+    if c and c["rec"].get("destaques"):
+        t = c["rec"]["total"]
+        rows = [[esc(rot), brl_abrev(c["rec"]["destaques"][k]), nf(c["rec"]["destaques"][k] / t * 100, 1) + "%", f'R$ {nf(c["rec"]["destaques"][k] / m["pop"], 0)}']
+                for k, rot in DESTAQUES_MUN if k in c["rec"]["destaques"]]
+        if rows:
+            dest = card(cab("Principais tributos e repasses", f'<span class="src">{c["ano"]}</span>') +
+                        tabela(["Item", "Valor", "% da receita", "Por habitante"], rows, ["l", "r", "r", "r"]) +
+                        '<span class="src">Valores informados pela prefeitura ao Tesouro; cada linha é uma parte da receita total, não uma soma completa.</span>')
+    if not c:
+        aviso = card('<h2>Contas da prefeitura</h2><p>A prefeitura ainda não tem as contas anuais utilizáveis no Tesouro Nacional, ou entregou fora do padrão. '
+                     'Assim que houver dado, a ficha mostra de onde vem e para onde vai o dinheiro.</p>')
+        dest = aviso
+    corpo = (f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B, "Busque outra cidade")}'
+             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{mun_links_irmaos(B, m)}'
+             + card(MUN_TEXTO + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
+    desc = (f"{nome}: {nf(m['pop'], 0)} habitantes, PIB de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
+            + (f", receita da prefeitura de {brl_abrev(c['rec']['total'])} e gastos por área" if c else "") + ". Dados oficiais do IBGE e do Tesouro Nacional.")
+    return pagina(B, mun_url(m), f"{nome}: PIB de {brl_abrev(m['pib'])}, população e contas da prefeitura", desc, corpo, "/municipios/",
+                  [("/municipios/", "Municípios"), (f"/municipios/{uf['slug']}/", uf["nome"]), (None, m["nome"])])
+
+
+def pg_mun_uf(B: Base, a: dict) -> str:
+    x = B.mun
+    fichas = a["fichas"]
+    lede = (f'{esc(a["nome"])} tem <strong>{nf(a["pop"], 0)} habitantes</strong> e um PIB de <strong>{brl_abrev(a["pib"])}</strong> em {esc(x["pib_ano"])}, '
+            f'ou R$ {nf(a["pc"], 0)} por habitante. Veja as {len(fichas)} cidades com ficha, em ordem de PIB.')
+    hero = card(f'<span class="eyebrow">Municípios · {esc(a["sigla"])}</span><h1>Cidades {uf_de(a["cod"], esc(a["nome"]))}: PIB, população e contas da prefeitura</h1><p class="lede">{lede}</p>')
+    tiles = [tile("População", nf(a["pop"], 0), "habitantes", "", "a"), tile(f'PIB de {x["pib_ano"]}', *brl_partes(a["pib"]), "", "b"),
+             tile("PIB per capita", nf(a["pc"], 0), "R$ por habitante", chg((a["pc"] / x["br"]["pc"] - 1) * 100, 0, "%", " frente à média do Brasil"), "k"),
+             tile("Cidades com ficha", nf(len(fichas), 0), f'de {a["n"]} municípios', "", "g")]
+    linhas = []
+    for c in fichas:
+        m = x["mun"][c]
+        cc = m["contas"]
+        linhas.append([f'<a href="{mun_url(m)}">{esc(m["nome"])}</a>', nf(m["pop"], 0), brl_abrev(m["pib"]), nf(m["pc"], 0),
+                       (f'R$ {nf(cc["rec"]["total"] / m["pop"], 0)}' if cc else "–")])
+    tab = card(cab(f'Cidades {uf_de(a["cod"], esc(a["nome"]))} com ficha', f'<span class="src">PIB de {esc(x["pib_ano"])}</span>') +
+               tabela(["Cidade", "Habitantes", "PIB", "PIB per capita (R$)", "Receita da prefeitura por habitante"], linhas, ["l", "r", "r", "r", "r"]) +
+               f'<span class="src">Em ordem de PIB. Fonte: {esc(x["fonte"])}.</span>')
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B, "Busque uma cidade")}{tab}{card(MUN_TEXTO + "<p class=small><a href=/municipios/>Voltar aos municípios do Brasil</a></p>")}'
+    return pagina(B, f"/municipios/{a['slug']}/", f"Cidades {uf_de(a['cod'], a['nome'])}: PIB, população e contas das prefeituras",
+                  f"{nf(a['pop'], 0)} habitantes e PIB de {brl_abrev(a['pib'])} {uf_de(a['cod'], a['nome'])}. Fichas de {len(fichas)} cidades com PIB, população e contas da prefeitura, com dados do IBGE e do Tesouro Nacional.",
+                  corpo, "/municipios/", [("/municipios/", "Municípios"), (None, a["nome"])])
+
+
+def pg_mun_hub(B: Base) -> str:
+    x = B.mun
+    br = x["br"]
+    n_contas = sum(1 for c in x["fichas"] if x["mun"][c]["contas"])
+    lede = (f'O Brasil tem {nf(br["n"], 0)} municípios, com <strong>{milh(br["pop"] / 1e6, 1)} de habitantes</strong> e um PIB de <strong>{brl_abrev(br["pib"])}</strong> em {esc(x["pib_ano"])}. '
+            f'Aqui estão as fichas de {nf(len(x["fichas"]), 0)} cidades: quanto produzem, quantos habitantes têm, de onde vem o dinheiro da prefeitura e para onde ele vai.')
+    hero = card(f'<span class="eyebrow">Municípios</span><h1>Municípios do Brasil: PIB, população e contas da prefeitura</h1><p class="lede">{lede}</p>')
+    tiles = [tile("Cidades com ficha", nf(len(x["fichas"]), 0), "", "", "a"), tile("População do país", milh(br["pop"] / 1e6, 1), "", "", "g"),
+             tile(f'PIB do Brasil · {x["pib_ano"]}', *brl_partes(br["pib"]), "", "b"), tile("Prefeituras com contas", nf(n_contas, 0), "cidades", "", "k")]
+    top = sorted((x["mun"][c] for c in x["mun"]), key=lambda m: -m["pib"])[:15]
+    t1 = card(cab("Os 15 maiores PIBs do país", f'<span class="src">{esc(x["pib_ano"])}</span>') +
+              tabela(["#", "Município", "PIB", "Habitantes"], [[str(i), f'{_link_mun(m)} <span class="small">{m["sigla"]}</span>', brl_abrev(m["pib"]), nf(m["pop"], 0)] for i, m in enumerate(top, 1)], ["l", "l", "r", "r"]) +
+              '<span class="src">O PIB soma o valor de tudo o que o município produz; cidades grandes e com indústria, porto ou petróleo lideram.</span>')
+    pcs = sorted((x["mun"][c] for c in x["fichas"] if x["mun"][c]["pop"] >= 50_000), key=lambda m: -m["pc"])[:15]
+    t2 = card(cab("Maior PIB per capita entre as cidades com 50 mil habitantes ou mais") +
+              tabela(["#", "Município", "PIB per capita (R$)", "PIB"], [[str(i), f'{_link_mun(m)} <span class="small">{m["sigla"]}</span>', nf(m["pc"], 0), brl_abrev(m["pib"])] for i, m in enumerate(pcs, 1)], ["l", "l", "r", "r"]) +
+              '<span class="src">PIB dividido pela população. Em cidades com um grande campo de petróleo ou uma fábrica, ele sobe sem refletir a renda das famílias.</span>')
+    ufs = sorted(x["uf"].values(), key=lambda a: a["nome"])
+    por_uf = card(cab("Cidades por estado") + '<ul class="list">' + "".join(
+        f'<li><a href="/municipios/{a["slug"]}/"><span>{esc(a["nome"])}</span><span>{len(a["fichas"])} cidades</span></a></li>' for a in ufs if a["fichas"]) + "</ul>")
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B)}{colunas([t1, t2])}{por_uf}{card(MUN_TEXTO)}'
+    return pagina(B, "/municipios/", f"Municípios do Brasil: PIB, população e contas das prefeituras ({len(x['fichas'])} cidades)",
+                  f"PIB, PIB per capita, população, receitas e despesas das prefeituras de {len(x['fichas'])} cidades brasileiras, com dados oficiais do IBGE e do Tesouro Nacional.",
+                  corpo, "/municipios/", [(None, "Municípios")])
+
+
+def mun_csvs(B: Base):
+    x = B.mun
+    pib_linhas = []
+    for c in sorted(x["mun"]):
+        m = x["mun"][c]
+        s = m["set"] or {}
+        pib_linhas.append((c, m["nome"], m["sigla"], m["pop"], m["pib"], m["pc"], s.get("agro"), s.get("ind"), s.get("serv"), s.get("adm"), s.get("imp")))
+    B.csvs["municipios-pib"] = {"titulo": "PIB, PIB per capita e setores de todos os municípios", "fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579)",
+                                "ultimo": f'PIB de {x["pib_ano"]}', "grupo": "Municípios",
+                                "cab": ["Código IBGE", "Município", "UF", "População", "PIB (R$)", "PIB per capita (R$)", "Agropecuária (R$)", "Indústria (R$)",
+                                        "Serviços, exceto administração pública (R$)", "Administração pública (R$)", "Impostos sobre produtos (R$)"], "linhas": pib_linhas}
+    ct = []
+    for c in sorted(x["mun"]):
+        m = x["mun"][c]
+        cc = m["contas"]
+        if not cc:
+            continue
+        for k, v in sorted(cc["rec"]["grupos"].items()):
+            ct.append((c, m["nome"], m["sigla"], cc["ano"], "Receita", RECEITA_ROTULOS.get(k, k), v))
+        for n, v in cc["des"]["funcoes"].items():
+            ct.append((c, m["nome"], m["sigla"], cc["ano"], "Despesa", n, v))
+    if ct:
+        B.csvs["municipios-contas"] = {"titulo": "Receitas e despesas das prefeituras (cidades com ficha)", "fonte": "Tesouro Nacional, Siconfi (DCA, anexos I-C e I-E)",
+                                       "ultimo": f'exercício de {x["contas_ano"]}', "grupo": "Municípios",
+                                       "cab": ["Código IBGE", "Município", "UF", "Exercício", "Tipo", "Item", "Valor (R$)"], "linhas": ct}
+
+
 def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None,
-          resumos_path: Path = RAIZ / "data" / "copom_resumos.json", bf_path: Path | None = None) -> list:
+          resumos_path: Path = RAIZ / "data" / "copom_resumos.json", bf_path: Path | None = None, mun_path: Path | None = None) -> list:
     dados = json.loads(dados_path.read_text(encoding="utf-8"))
     cal = json.loads(calendario_path.read_text(encoding="utf-8"))
     resumos = json.loads(resumos_path.read_text(encoding="utf-8")) if resumos_path.exists() else {}
     hoje = hoje or dt.datetime.fromisoformat(dados["gerado_em"]).date()
     bf = json.loads(Path(bf_path).read_text(encoding="utf-8")) if bf_path and Path(bf_path).exists() else None
-    B = Base(dados, cal, hoje, resumos, bf)
+    mun = json.loads(Path(mun_path).read_text(encoding="utf-8")) if mun_path and Path(mun_path).exists() else None
+    B = Base(dados, cal, hoje, resumos, bf, mun)
     if saida.exists():
         shutil.rmtree(saida)
     saida.mkdir(parents=True)
@@ -2465,6 +2783,17 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
         B.csvs["bolsa-familia-municipios"] = {"titulo": "Bolsa Família por município e mês (famílias, pessoas e valor repassado)", "fonte": B.bf["fonte"], "ultimo": mes_curto(B.bf["ult"]),
                                               "grupo": "Bolsa Família", "cab": ["Código IBGE", "Município", "UF", "Mês", "Famílias beneficiárias", "Pessoas beneficiárias", "Valor repassado (R$)"],
                                               "linhas": bf_painel_csv(B)}
+    if B.tem_mun:
+        paginas.append(("/municipios/", pg_mun_hub(B)))
+        for a in sorted(B.mun["uf"].values(), key=lambda a: a["nome"]):
+            if a["fichas"]:
+                paginas.append((f"/municipios/{a['slug']}/", pg_mun_uf(B, a)))
+        for c in B.mun["fichas"]:
+            m = B.mun["mun"][c]
+            escrever(saida, mun_url(m), pg_mun(B, m))
+            extras.append(mun_url(m))
+        escrever(saida, "/municipios/busca.json", mun_indice(B))
+        mun_csvs(B)
     for a in B.ranking():
         paginas.append((f"/inflacao/{a['slug']}/", pg_area(B, a)))
     paginas.append(("/dados/", pg_dados(B)))  # por último: lista os CSV de todos os gráficos já montados
@@ -2485,7 +2814,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     (saida / "CNAME").write_text(DOMINIO + "\n", encoding="utf-8")
     (saida / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n", encoding="utf-8")
     extras_set = set(extras)
-    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/contas-publicas/": "0.9", "/credito/": "0.9", "/industria-e-varejo/": "0.9", "/setor-externo/": "0.9", "/bolsa-familia/": "0.9", "/inflacao/": "0.9", "/calculadora/": "0.8", "/dados/": "0.5", "/sobre/": "0.3", "/sugestoes/": "0.2"}
+    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/contas-publicas/": "0.9", "/credito/": "0.9", "/industria-e-varejo/": "0.9", "/setor-externo/": "0.9", "/bolsa-familia/": "0.9", "/municipios/": "0.8", "/inflacao/": "0.9", "/calculadora/": "0.8", "/dados/": "0.5", "/sobre/": "0.3", "/sugestoes/": "0.2"}
     todos = [c for c, _ in paginas] + extras
     urls = "".join(f"<url><loc>{BASE}{c}</loc><lastmod>{v}</lastmod><priority>{prio.get(c, '0.4' if c in extras_set else '0.6')}</priority></url>" for c in todos)
     (saida / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>\n", encoding="utf-8")
@@ -2498,8 +2827,9 @@ def main():
     ap.add_argument("--saida", default=str(RAIZ / "docs"))
     ap.add_argument("--calendario", default=str(RAIZ / "data" / "copom_calendario.json"))
     ap.add_argument("--bolsa-familia", default=str(RAIZ / "data" / "bolsa_familia.json"))
+    ap.add_argument("--municipios", default=str(RAIZ / "data" / "municipios.json"))
     a = ap.parse_args()
-    caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario), bf_path=Path(a.bolsa_familia))
+    caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario), bf_path=Path(a.bolsa_familia), mun_path=Path(a.municipios))
     print(f"{len(caminhos)} páginas geradas em {a.saida}")
 
 

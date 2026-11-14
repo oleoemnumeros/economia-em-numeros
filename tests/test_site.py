@@ -11,7 +11,7 @@ sys.path.insert(0, str(RAIZ / "scripts"))
 sys.path.insert(0, str(RAIZ / "tests"))
 
 import gerar_site as g  # noqa: E402
-from exemplo import AREAS, balanca_exemplo, bf_exemplo, externo_exemplo, gravar, gravar_bf  # noqa: E402
+from exemplo import AREAS, balanca_exemplo, bf_exemplo, externo_exemplo, gravar, gravar_bf, gravar_mun, municipios_exemplo  # noqa: E402
 
 
 def sem_dados(t: str) -> str:
@@ -1070,6 +1070,184 @@ class TestComposicaoIPCA(unittest.TestCase):
         for ruim in (r"\bNone\b", r"\bnan\b", r"\bundefined\b"):
             self.assertIsNone(re.search(ruim, sec), ruim)
         self.assertNotRegex(sec, r"\d-\d")                                   # nada de hífen como sinal em número
+
+
+class TestMunicipios(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.d = Path(cls.tmp.name)
+        cls.dados = gravar(cls.d / "dados.json")
+        cls.munp = gravar_mun(cls.d / "mun.json")
+        cls.saida = cls.d / "docs"
+        cls.caminhos = g.gerar(cls.dados, cls.saida, mun_path=cls.munp)
+        cls.mun = municipios_exemplo()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def ler(self, rel):
+        return (self.saida / rel).read_text(encoding="utf-8")
+
+    def gerar_outro(self, nome, mexe=None, **kw):
+        """Gera o site em outra pasta, com o arquivo de municípios alterado por `mexe` (ou sem ele)."""
+        d = json.loads(self.munp.read_text(encoding="utf-8"))
+        if mexe:
+            mexe(d)
+        p = self.d / f"{nome}.json"
+        p.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        saida = self.d / nome
+        return g.gerar(self.dados, saida, mun_path=p, **kw), saida
+
+    def test_paginas_geradas(self):
+        fichas = [c for c in self.caminhos if c.startswith("/municipios/") and c.count("/") == 4]
+        self.assertEqual(len(fichas), 12)                                     # só as cidades da lista 'sel'
+        for c in ("/municipios/", "/municipios/bahia/", "/municipios/sao-paulo/", "/municipios/minas-gerais/", "/municipios/bahia/salvador/"):
+            self.assertIn(c, self.caminhos)
+        self.assertNotIn("/municipios/bahia/abaira/", self.caminhos)          # município pequeno: entra nos totais, mas sem ficha
+        self.assertEqual(len(self.caminhos), len(set(self.caminhos)))
+        for c in self.caminhos:
+            if c.startswith("/municipios/"):
+                self.assertTrue((self.saida / c.strip("/") / "index.html").exists(), c)
+
+    def test_menu_inicio_sobre_e_sitemap(self):
+        topo = self.ler("index.html")
+        hrefs = re.findall(r'<a href="([^"]+)"', topo[topo.index("<nav"):topo.index("</nav>")])
+        self.assertIn("/municipios/", hrefs)
+        self.assertEqual(hrefs[hrefs.index("/contas-publicas/") + 1], "/municipios/")
+        self.assertIn("Buscar uma cidade", topo)
+        self.assertIn("Fichas de <strong>12 cidades</strong>", topo)
+        self.assertIn("Siconfi", self.ler("sobre/index.html"))
+        sm = self.ler("sitemap.xml")
+        self.assertIn("/municipios/bahia/salvador/", sm)
+        self.assertNotIn("/municipios/bahia/abaira/", sm)
+        self.assertEqual(sm.count("/municipios/"), 16)
+
+    def test_ficha_com_contas(self):
+        h = self.ler("municipios/bahia/salvador/index.html")
+        self.assertIn("<h1>Salvador (BA): PIB, população e contas da prefeitura</h1>", h)
+        self.assertIn("2.417.000 habitantes", h)
+        for sec in ("De onde vem o PIB de Salvador", "De onde vem o dinheiro da prefeitura de Salvador", "Para onde vai o dinheiro da prefeitura de Salvador", "Principais tributos e repasses"):
+            self.assertIn(sec, h)
+        pib = self.mun["pib"]["2927408"]["pib"] * 1000.0
+        pc = pib / self.mun["pop_pib"]["2927408"]
+        self.assertIn(g.nf(pc, 0), h)                                          # PIB per capita = PIB do ano / população do mesmo ano
+        self.assertIn(g.brl_abrev(pib), h)
+        self.assertIn("Saúde", h)
+        self.assertIn("Transferências correntes", h)
+
+    def test_ficha_sem_contas_mostra_aviso_e_continua_com_pib(self):
+        h = self.ler("municipios/bahia/alagoinhas/index.html")
+        self.assertIn("A prefeitura ainda não tem as contas anuais utilizáveis", h)
+        self.assertNotIn("De onde vem o dinheiro da prefeitura", h)
+        self.assertNotIn("Receita da prefeitura ·", h)
+        self.assertIn("De onde vem o PIB de Alagoinhas", h)
+        self.assertIn("160.000 habitantes", h)
+
+    def test_links_para_sites_irmaos_so_quando_a_pagina_existe(self):
+        def links(rel):
+            h = self.ler(rel)
+            return re.findall(r'href="(https://(?:comex|oleo)emnumeros\.com\.br/[^"]+)"', h)
+        sal = links("municipios/bahia/salvador/index.html")
+        self.assertIn("https://comexemnumeros.com.br/municipio/salvador-ba/", sal)
+        self.assertIn("https://oleoemnumeros.com.br/royalties/bahia/salvador/", sal)
+        esp = links("municipios/bahia/esplanada/index.html")
+        self.assertIn("https://oleoemnumeros.com.br/royalties/bahia/esplanada/", esp)
+        self.assertFalse([x for x in esp if "/municipio/" in x])               # Esplanada não tem página no Comex
+        san = links("municipios/sao-paulo/santos/index.html")
+        self.assertIn("https://comexemnumeros.com.br/municipio/santos-sp/", san)
+        self.assertFalse([x for x in san if "/royalties/" in x])
+        ala = self.ler("municipios/bahia/alagoinhas/index.html")
+        self.assertNotIn("Mais sobre Alagoinhas", ala)                         # sem nenhum link, o bloco nem aparece
+        self.assertFalse([x for x in links("municipios/bahia/alagoinhas/index.html") if "/municipio/" in x or "/royalties/" in x])
+
+    def test_link_do_bolsa_familia_so_quando_ha_dado_do_municipio(self):
+        self.assertNotIn("/bolsa-familia/", self.ler("municipios/bahia/salvador/index.html").replace('href="/bolsa-familia/"', ""))   # sem BF no site
+        bf = bf_exemplo()
+        bf["nomes"]["292740"] = ["Salvador", "BA"]                              # o BF usa o código de 6 dígitos
+        bf["pop"]["292740"] = 2_417_000
+        for mes in bf["meses"].values():
+            mes["292740"] = [90_000, 230_000, 61_000_000.0]
+        bfp = self.d / "bf_salvador.json"
+        bfp.write_text(json.dumps(bf, ensure_ascii=False), encoding="utf-8")
+        _, saida = self.gerar_outro("com_bf", bf_path=bfp)
+        sal = (saida / "municipios/bahia/salvador/index.html").read_text(encoding="utf-8")
+        bfm = g.bf_prepara(bf)["mun"]["292740"]                                 # o fixture já tem outra "Salvador" no BF, então o endereço leva o código
+        self.assertIn(f'href="/bolsa-familia/{bfm["uf_slug"]}/{bfm["slug"]}/"', sal)
+        self.assertIn("Bolsa Família em Salvador", sal)
+        lau = (saida / "municipios/bahia/lauro-de-freitas/index.html").read_text(encoding="utf-8")
+        self.assertNotIn("Bolsa Família em Lauro de Freitas", lau)             # essa cidade não está nos dados do BF
+
+    def test_posicoes_no_estado_e_no_pais(self):
+        B = g.Base(json.loads(self.dados.read_text(encoding="utf-8")), json.loads((RAIZ / "data" / "copom_calendario.json").read_text(encoding="utf-8")),
+                   dt.date(2026, 11, 13), mun=self.mun)
+        x = B.mun
+        ba = [c for c, v in self.mun["nomes"].items() if v[1] == "BA"]
+        ordem = sorted(ba, key=lambda c: -self.mun["pib"][c]["pib"])
+        self.assertEqual(x["mun"][ordem[0]]["pos_pib"], 1)
+        self.assertEqual(x["mun"][ordem[-1]]["pos_pib"], len(ba))
+        self.assertEqual(x["uf"]["29"]["n"], len(ba))                           # inclui o município sem ficha
+        self.assertEqual(x["br"]["n"], len(self.mun["nomes"]))
+        self.assertEqual(sorted(x["mun"][c]["pos_pib_br"] for c in x["mun"]), list(range(1, len(x["mun"]) + 1)))
+        self.assertEqual(len(x["fichas"]), 12)
+        self.assertAlmostEqual(x["br"]["pib"], sum(v["pib"] for v in x["mun"].values()), places=0)
+
+    def test_busca_json(self):
+        idx = json.loads(self.ler("municipios/busca.json"))
+        self.assertEqual(len(idx), 12)
+        nomes = {i[0] for i in idx}
+        self.assertIn("Salvador", nomes)
+        self.assertNotIn("Abaíra", nomes)
+        sal = next(i for i in idx if i[0] == "Salvador")
+        self.assertEqual(sal[1:3], ["BA", "/municipios/bahia/salvador/"])
+        self.assertIn("habitantes", sal[3])
+        self.assertIn('data-indice="/municipios/busca.json"', self.ler("municipios/index.html"))
+
+    def test_csv_de_pib_e_de_contas(self):
+        pib = self.ler("dados/municipios-pib.csv").lstrip("\ufeff").splitlines()
+        self.assertEqual(len(pib), 1 + len(self.mun["nomes"]))                  # todos os municípios, com ou sem ficha
+        self.assertTrue(any(l.startswith("2900108;Abaíra;BA;") for l in pib))
+        contas = self.ler("dados/municipios-contas.csv").lstrip("\ufeff").splitlines()
+        self.assertTrue(any(";Receita;" in l and l.startswith("2927408;Salvador;") for l in contas))
+        self.assertTrue(any(";Despesa;Saúde;" in l and l.startswith("2927408;") for l in contas))
+        self.assertFalse(any(l.startswith("2900702;") for l in contas))         # prefeitura sem contas utilizáveis
+        d = self.ler("dados/index.html")
+        self.assertIn("municipios-pib.csv", d)
+        self.assertIn("municipios-contas.csv", d)
+
+    def test_nada_de_numero_negativo_com_hifen_nem_nan(self):
+        for c in self.caminhos:
+            if c.startswith("/municipios/"):
+                h = self.ler(c.strip("/") + "/index.html")
+                self.assertNotIn("nan", re.sub(r"[^a-z]", " ", sem_dados(h).lower()).split(), c)
+                self.assertNotIn("R$ -", h, c)
+                self.assertNotIn("None", sem_dados(h), c)
+
+    def test_sem_arquivo_ou_com_poucos_municipios_nao_aparece_nada(self):
+        caminhos, saida = self.gerar_outro("sem_mun", lambda d: d.update({"pib": {}}))
+        self.assertFalse([c for c in caminhos if c.startswith("/municipios")])
+        self.assertFalse((saida / "municipios").exists())
+        topo = (saida / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("/municipios/", topo)
+        self.assertNotIn("municipios-pib", (saida / "dados/index.html").read_text(encoding="utf-8"))
+        outro = g.gerar(self.dados, self.d / "sem_arq")
+        self.assertFalse([c for c in outro if c.startswith("/municipios")])
+        pouco, _ = self.gerar_outro("poucos", lambda d: [d["pib"].pop(c) for c in list(d["pib"])[3:]])
+        self.assertFalse([c for c in pouco if c.startswith("/municipios")])
+
+    def test_municipio_sem_setores_ou_sem_contas_degrada(self):
+        def mexe(d):
+            for k in ("agro", "ind"):
+                d["pib"]["2927408"].pop(k)                                      # sem a abertura por setor
+            d["contas"].pop("3550308")                                          # São Paulo sem contas
+        caminhos, saida = self.gerar_outro("degrada", mexe)
+        sal = (saida / "municipios/bahia/salvador/index.html").read_text(encoding="utf-8")
+        self.assertNotIn("De onde vem o PIB de Salvador", sal)
+        self.assertIn("De onde vem o dinheiro da prefeitura de Salvador", sal)
+        sp = (saida / "municipios/sao-paulo/sao-paulo/index.html").read_text(encoding="utf-8")
+        self.assertIn("A prefeitura ainda não tem as contas anuais utilizáveis", sp)
+        self.assertIn("/municipios/bahia/salvador/", caminhos)
 
 
 class TestImagemDePrevia(unittest.TestCase):
