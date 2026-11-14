@@ -954,7 +954,7 @@ UF_SLUG = {"11": "rondonia", "12": "acre", "13": "amazonas", "14": "roraima", "1
            "23": "ceara", "24": "rio-grande-do-norte", "25": "paraiba", "26": "pernambuco", "27": "alagoas", "28": "sergipe", "29": "bahia", "31": "minas-gerais",
            "32": "espirito-santo", "33": "rio-de-janeiro", "35": "sao-paulo", "41": "parana", "42": "santa-catarina", "43": "rio-grande-do-sul",
            "50": "mato-grosso-do-sul", "51": "mato-grosso", "52": "goias", "53": "distrito-federal"}
-SITES_IRMAOS = {"comex": "https://comexemnumeros.com.br", "oleo": "https://oleoemnumeros.com.br"}
+SITES_IRMAOS = {"comex": "https://comexemnumeros.com.br", "oleo": "https://oleoemnumeros.com.br", "voo": "https://vooemnumeros.com.br"}
 
 
 def _norm(t):
@@ -1112,10 +1112,19 @@ def mun_irmaos(nomes):
         m = re.fullmatch(r"/royalties/([a-z0-9-]+)/([a-z0-9-]+)/", u)
         if m:
             oleo.add((m.group(1), m.group(2)))
+    # Voo em Números: índice das cidades com aeroporto. Falha aqui não pode derrubar os links do Comex e do Óleo.
+    voo = {}
+    try:
+        for it in json.loads(get(SITES_IRMAOS["voo"] + "/aeroportos/indice.json", tentativas=2, timeout=60).text):
+            voo.setdefault(_slug(f"{it[0]} - {it[1]}"), str(it[2]))
+    except Exception as e:  # noqa: BLE001
+        debug["avisos"].append(f"Sites irmãos: índice de aeroportos do Voo indisponível ({e}); sem links de aeroporto nesta rodada")
     links = {}
     for cod, (nome, uf) in nomes.items():
         d = {}
         sc = _slug(f"{nome} - {uf}")
+        if sc in voo:
+            d["voo"] = voo[sc]
         if sc in comex:
             d["comex"] = f"/municipio/{sc}/"
         so = (UF_SLUG.get(cod[:2]), _slug(nome))
@@ -1124,7 +1133,8 @@ def mun_irmaos(nomes):
         if d:
             links[cod] = d
     debug["avisos"].append(f"Sites irmãos: Comex {len(comex)} municípios no mapa, {sum('comex' in d for d in links.values())} casados; "
-                           f"Óleo {len(oleo)} no mapa, {sum('oleo' in d for d in links.values())} casados")
+                           f"Óleo {len(oleo)} no mapa, {sum('oleo' in d for d in links.values())} casados; "
+                           f"Voo {len(voo)} cidades com aeroporto, {sum('voo' in d for d in links.values())} casadas")
     return links
 
 

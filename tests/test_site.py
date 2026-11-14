@@ -1205,6 +1205,22 @@ class TestMunicipios(unittest.TestCase):
         self.assertNotIn("Mais sobre Alagoinhas", ala)                         # sem nenhum link, o bloco nem aparece
         self.assertFalse([x for x in links("municipios/bahia/alagoinhas/index.html") if "/municipio/" in x or "/royalties/" in x])
 
+    def test_continue_explorando_na_ficha_so_com_paginas_que_existem(self):
+        sal = self.ler("municipios/bahia/salvador/index.html")
+        i = sal.index('class="continue"')
+        bloco = sal[i:sal.index("</section>", i)]
+        self.assertIn("https://vooemnumeros.com.br/aeroportos/ssa/", bloco)
+        self.assertIn("https://comexemnumeros.com.br/municipio/salvador-ba/", bloco)
+        self.assertIn('data-goatcounter-click="continue/economia-voo"', bloco)
+        # cidade sem página nos outros portais: nada de índice geral de outro site na ficha
+        ala = self.ler("municipios/bahia/alagoinhas/index.html")
+        j = ala.index('class="continue"')
+        self.assertNotRegex(ala[j:ala.index("</section>", j)], r"https://(?:comex|oleo|voo)emnumeros")
+        self.assertIn("https://oleoemnumeros.com.br/precos/", self.ler_raiz("inflacao/index.html"))
+
+    def ler_raiz(self, rel):
+        return (self.saida / rel).read_text(encoding="utf-8")
+
     def test_link_do_bolsa_familia_so_quando_ha_dado_do_municipio(self):
         self.assertNotIn("/bolsa-familia/", self.ler("municipios/bahia/salvador/index.html").replace('href="/bolsa-familia/"', ""))   # sem BF no site
         bf = bf_exemplo()

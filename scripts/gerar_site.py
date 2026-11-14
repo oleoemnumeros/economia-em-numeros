@@ -846,7 +846,88 @@ def familia_html(atual="Economia em Números") -> str:
             f'<ul>{"".join(itens)}</ul></div>')
 
 
-def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, noindex=False) -> str:
+# ---------------------------------------------------------------- Continue explorando (entre os portais)
+# Para incluir um novo portal, acrescente uma linha aqui e em FAMILIA.
+PORTAIS = {
+    "oleo": ("Óleo em Números", "https://oleoemnumeros.com.br", "#B45309"),
+    "comex": ("Comex em Números", "https://comexemnumeros.com.br", "#0b7a68"),
+    "voo": ("Voo em Números", "https://vooemnumeros.com.br", "#7C5CE0"),
+    "economia": ("Economia em Números", BASE, "#2a5bc4"),
+}
+ESTE = "economia"
+# páginas do próprio site: caminho -> (título, descrição); só entram se a página existe (ver B.nav())
+NO_SITE = {
+    "/atividade/": ("PIB e atividade econômica", "O PIB trimestral e o IBC-Br, mês a mês"),
+    "/industria-e-varejo/": ("Indústria e varejo", "Produção industrial e vendas do comércio"),
+    "/emprego/": ("Emprego e desemprego", "Taxa de desocupação e vagas formais"),
+    "/inflacao/": ("Inflação: IPCA", "No Brasil e em 16 áreas do IBGE, com o peso de cada grupo"),
+    "/juros/": ("Selic, Copom e Boletim Focus", "Calendário, atas e o que o mercado espera"),
+    "/credito/": ("Crédito e inadimplência", "Juros, endividamento e comprometimento da renda das famílias"),
+    "/cambio/": ("Dólar", "A cotação, o histórico e as projeções do mercado"),
+    "/setor-externo/": ("Setor externo", "Balança comercial, reservas e contas externas"),
+    "/contas-publicas/": ("Contas públicas", "Resultado fiscal e dívida do governo"),
+    "/municipios/": ("PIB e contas da sua cidade", "População, PIB e de onde vem o dinheiro da prefeitura"),
+    "/calculadora/": ("Calculadora do IPCA", "Corrija um valor pela inflação, mês a mês"),
+}
+# assunto da página -> páginas do próprio site e de outros portais que continuam a leitura
+CONTINUA = {
+    "/": [("comex", "/", "Para onde vai o que o Brasil vende", "Exportações e importações por produto, país e estado"),
+          ("oleo", "/royalties/", "Quanto cada cidade recebe de royalties", "Petróleo e gás que viram receita das prefeituras"),
+          "/municipios/", "/calculadora/"],
+    "/atividade/": ["/industria-e-varejo/", "/emprego/", ("comex", "/produtos/", "O que o Brasil vende ao mundo", "Os produtos mais exportados e importados"), "/setor-externo/"],
+    "/industria-e-varejo/": ["/atividade/", ("oleo", "/", "Produção de petróleo e gás", "A indústria extrativa, campo a campo"),
+                             ("comex", "/produtos/", "O que o Brasil vende ao mundo", "Os produtos mais exportados e importados"), "/emprego/"],
+    "/emprego/": ["/atividade/", "/municipios/", ("comex", "/estados/", "Comércio exterior por estado", "O que cada estado vende e compra do exterior"), "/inflacao/"],
+    "/inflacao/": ["/juros/", "/calculadora/", ("oleo", "/precos/", "Preço da gasolina e do diesel", "Preços nos postos, por estado e município"), "/cambio/"],
+    "/juros/": ["/inflacao/", "/credito/", "/calculadora/", ("comex", "/", "O comércio exterior do Brasil", "Quanto o país exporta e importa, mês a mês")],
+    "/credito/": ["/juros/", "/inflacao/", "/emprego/", ("voo", "/", "Voos no horário?", "Pontualidade e cancelamentos por companhia e aeroporto")],
+    "/cambio/": [("comex", "/exportacao/", "O que o Brasil exporta", "Os produtos que rendem dólares ao país"), "/setor-externo/", "/inflacao/", "/juros/"],
+    "/setor-externo/": [("comex", "/", "Exportações e importações em detalhe", "Por produto, país, estado e porto, mês a mês"),
+                        ("comex", "/paises/", "Para quais países o Brasil vende", "Principais destinos e origens do comércio"), "/cambio/", "/contas-publicas/"],
+    "/contas-publicas/": ["/juros/", "/setor-externo/", ("oleo", "/royalties/", "Royalties que viram receita pública", "Quanto estados e municípios recebem do petróleo"), "/municipios/"],
+    "/municipios/": [("oleo", "/royalties/", "Royalties de petróleo por cidade", "Quanto cada município recebe da produção de petróleo e gás"),
+                     ("comex", "/municipios/", "Comércio exterior por cidade", "O que cada município exporta e importa"),
+                     ("voo", "/aeroportos/", "Aeroportos e voos por cidade", "Atrasos e cancelamentos no aeroporto de cada cidade"), "/emprego/"],
+    "/calculadora/": ["/inflacao/", "/juros/", ("comex", "/", "O comércio exterior do Brasil", "Quanto o país exporta e importa, mês a mês"),
+                      ("voo", "/", "Voos no horário?", "Pontualidade e cancelamentos por companhia e aeroporto")],
+    "/bolsa-familia/": ["/municipios/", "/emprego/", "/inflacao/", ("comex", "/", "O comércio exterior do Brasil", "Quanto o país exporta e importa, mês a mês")],
+}
+
+
+def continue_html(B: Base, caminho: str, extra=None) -> str:
+    """Cartões no fim da página. Cada clique é contado no GoatCounter como evento continue/<origem>-<destino>."""
+    existentes = {h for h, _ in B.nav()}
+    chave = "/" if caminho == "/" else "/" + caminho.strip("/").split("/")[0] + "/"
+    base = CONTINUA.get(chave, [])
+    if re.fullmatch(r"/municipios/[^/]+/[^/]+/", caminho):
+        # ficha de cidade: só links de outros portais que têm página dessa cidade (vêm em `extra`), nunca os índices gerais
+        base = ["/municipios/", "/emprego/", "/inflacao/", "/cambio/"]
+    itens = list(extra or []) + list(base)
+    cartoes, vistos = [], {caminho}
+    for it in itens:
+        if isinstance(it, str):
+            if it not in existentes or it not in NO_SITE:
+                continue
+            portal, cam, titulo, desc = ESTE, it, *NO_SITE[it]
+        else:
+            portal, cam, titulo, desc = it
+        nome, base, cor = PORTAIS[portal]
+        href = cam if portal == ESTE else base + cam
+        if href in vistos:
+            continue
+        vistos.add(href)
+        cartoes.append(f'<li><a href="{esc(href)}" data-goatcounter-click="continue/{ESTE}-{portal}" '
+                       f'data-goatcounter-title="Continue explorando: {esc(titulo)}"><span class="cont-tag"><i style="background:{cor}"></i>{nome}</span>'
+                       f'<b>{esc(titulo)}</b><span class="cont-d">{esc(desc)}</span></a></li>')
+        if len(cartoes) == 4:
+            break
+    if not cartoes:
+        return ""
+    return ('<section class="continue" aria-labelledby="continue-t"><h2 id="continue-t">Continue explorando</h2>'
+            f'<ul class="cont-grid">{"".join(cartoes)}</ul></section>')
+
+
+def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, noindex=False, continuar=None) -> str:
     url = BASE + caminho
     nav = "".join(f'<a href="{h}"' + (' aria-current="page"' if h == ativo else "") + f">{t}</a>" for h, t in B.nav())
     bc = ""
@@ -897,6 +978,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <main>
 {bc}
 {corpo}
+{continue_html(B, caminho, continuar) if not noindex else ""}
 </main>
 <footer><div>
 <span><strong>Economia em Números</strong> · versão beta</span>
@@ -2625,6 +2707,8 @@ def mun_links_irmaos(B: Base, m: dict) -> str:
     itens = []
     if m["links"].get("comex"):
         itens.append(f'<li><a href="https://comexemnumeros.com.br{m["links"]["comex"]}">O que {esc(m["nome"])} exporta e importa</a> <span class="small">· Comex em Números</span></li>')
+    if m["links"].get("voo"):
+        itens.append(f'<li><a href="https://vooemnumeros.com.br{m["links"]["voo"]}">Voos de {esc(m["nome"])}: atrasos e cancelamentos</a> <span class="small">· Voo em Números</span></li>')
     if m["links"].get("oleo"):
         itens.append(f'<li><a href="https://oleoemnumeros.com.br{m["links"]["oleo"]}">Royalties de petróleo e gás que {esc(m["nome"])} recebe</a> <span class="small">· Óleo em Números</span></li>')
     if B.tem_bf:
@@ -2683,8 +2767,15 @@ def pg_mun(B: Base, m: dict) -> str:
              + card(mun_texto(B) + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
     desc = (f"{nome}: {nf(m['pop'], 0)} habitantes, PIB de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
             + (f", receita da prefeitura de {brl_abrev(c['rec']['total'])} e gastos por área" if c else "") + ". Dados oficiais do IBGE e do Tesouro Nacional.")
+    cidade = []
+    if m["links"].get("voo"):
+        cidade.append(("voo", m["links"]["voo"], f"Voos de {m['nome']}", "Atrasos e cancelamentos no aeroporto da cidade"))
+    if m["links"].get("comex"):
+        cidade.append(("comex", m["links"]["comex"], f"O que {m['nome']} exporta e importa", "Produtos e países do comércio exterior da cidade"))
+    if m["links"].get("oleo"):
+        cidade.append(("oleo", m["links"]["oleo"], f"Royalties de petróleo em {m['nome']}", "Quanto a prefeitura recebe de royalties e participação especial"))
     return pagina(B, mun_url(m), f"{nome}: PIB de {brl_abrev(m['pib'])}, população e contas da prefeitura", desc, corpo, "/municipios/",
-                  [("/municipios/", "Municípios"), (f"/municipios/{uf['slug']}/", uf["nome"]), (None, m["nome"])])
+                  [("/municipios/", "Municípios"), (f"/municipios/{uf['slug']}/", uf["nome"]), (None, m["nome"])], continuar=cidade)
 
 
 def pg_mun_uf(B: Base, a: dict) -> str:
