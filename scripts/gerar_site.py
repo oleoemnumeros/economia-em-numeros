@@ -1623,10 +1623,30 @@ def pg_atividade(B: Base) -> str:
     graficos = f'<div class="cols">{"".join(graf)}</div>' if len(graf) == 2 else "".join(graf)
     tabs = []
     if r:
-        rows = [[rot_tri(x["t"], True), pct_sinal(x.get("qoq")), pct_sinal(x.get("yoy")), pct_sinal(x.get("a4"))] for x in [y for y in B.pib if y.get("qoq") is not None][-8:][::-1]]
+        def cel(v, forte=False):
+            if v is None:
+                return "–"
+            c = chg(v, 1, "%")
+            return f"<strong>{c}</strong>" if forte else c
+        ult8 = [y for y in B.pib if y.get("qoq") is not None][-8:][::-1]
+        rows = [[(f"<strong>{rot_tri(x['t'])}</strong>" if k == 0 else rot_tri(x["t"])),
+                 cel(x.get("qoq"), k == 0), cel(x.get("yoy"), k == 0), cel(x.get("a4"), k == 0)] for k, x in enumerate(ult8)]
+        ano_ant = int(r["t"][:4]) - 1
+        q = int(r["t"][4:])
+        ex = (f'<p class="small">Exemplo com o dado mais recente, o {rot_tri(r["t"], True)}: o PIB <strong>{verbo_var(r["qoq"], 1)}</strong> '
+              f'em relação ao {q - 1 if q > 1 else 4}º trimestre de {r["t"][:4] if q > 1 else ano_ant}')
+        if r.get("yoy") is not None:
+            ex += f', {verbo_var(r["yoy"], 1, "avançou", "recuou")} em relação ao {q}º trimestre de {ano_ant}'
+        if r.get("a4") is not None:
+            ex += f' e, somados os últimos 4 trimestres, {verbo_var(r["a4"], 1, "subiu", "caiu")} frente aos 4 anteriores'
+        ex += ".</p>"
+        legenda = ('<ul class="plain small"><li><strong>Contra o trimestre anterior:</strong> mostra o ritmo mais recente. Usa série com ajuste sazonal, que tira o efeito de épocas do ano (como o Natal na produção e nas vendas).</li>'
+                   '<li><strong>Contra o mesmo trimestre do ano passado:</strong> compara com a mesma época de um ano atrás, por isso não sofre efeito de estação.</li>'
+                   '<li><strong>Acumulado em 4 trimestres:</strong> soma o último ano inteiro frente ao ano anterior. É o número usado quando se diz "a economia cresceu X% no ano".</li></ul>')
         tabs.append(card(cab("PIB por trimestre", '<span class="src">Fonte: IBGE</span>') +
-                         tabela(["Trimestre", "Vs. trim. anterior", "Vs. mesmo trim.", "4 trimestres"], rows, ["l", "r", "r", "r"]) +
-                         '<span class="src">Variações do PIB em volume. A primeira coluna usa série com ajuste sazonal; as demais, comparações com o mesmo período do ano anterior.</span>'))
+                         tabela(["Trimestre", "Contra o trimestre anterior", "Contra o mesmo trimestre do ano passado", "Acumulado em 4 trimestres"], rows, ["l", "r", "r", "r"]).replace("<table>", '<table class="tab-comp">', 1) +
+                         legenda + ex +
+                         '<span class="src">Variações do PIB em volume (descontada a inflação). Setas só indicam o sentido da variação.</span>'))
     if i:
         rows = [[mes_nome(m), nf(v, 1), pct_sinal(vr)] for m, v, vr in i["linhas"]]
         tabs.append(card(cab("IBC-Br mês a mês", '<span class="src">Fonte: Banco Central</span>') +

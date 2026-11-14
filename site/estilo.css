@@ -203,3 +203,10 @@ details.dados td,details.dados th{font-variant-numeric:tabular-nums}
 .hbar .track.div span{position:absolute;top:0;height:100%;border-radius:0}
 .hbar .track.div .zero{width:1px;background:var(--muted);z-index:1}
 .comp{display:grid;gap:20px}
+
+/* tabelas com cabeçalho em frase (comparações do PIB) */
+.tab-comp th{text-transform:none;letter-spacing:0;font-size:.78rem;line-height:1.25;vertical-align:bottom;font-weight:600}
+.tab-comp th,.tab-comp td{padding-left:6px;padding-right:6px}
+.tab-comp td:first-child{white-space:nowrap}
+@media (max-width:640px){.tab-comp .chg{padding:2px 5px;font-size:.78rem}}
+.tab-comp th.r{white-space:normal}
