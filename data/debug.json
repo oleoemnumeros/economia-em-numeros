@@ -1,5 +1,5 @@
 {
- "inicio": "2026-11-13T21:23:42",
+ "inicio": "2026-11-14T00:01:49",
  "avisos": [
   "IPCA composição (63,66): 11882 linhas, 457 categorias; ignoradas []; amostra [{'NC': '1', 'NN': 'Brasil', 'MC': '2', 'MN': '%', 'V': '0.09', 'D1C': '1', 'D1N': 'Brasil', 'D2C': '63', 'D2N': 'IPCA - Variação mensal', 'D3C': '202510', 'D3N': 'outubro 2025', 'D4C': '7169', 'D4N': 'Índice geral'}]",
   "IPCA composição 2026-10: índice geral 0.14; soma dos grupos 0.144; soma dos 377 subitens 0.144; maior diferença mensal dos grupos 0.005",
@@ -41,31 +41,29 @@
   "Balança (MDIC): 142 meses; último 2026-10: exportação 37807.2, importação 28489.7",
   "Balança: saldo do balanço de pagamentos (SGS 22707) menos saldo MDIC, soma de 11 meses: -8367 US$ milhões",
   "População: 5571 municípios, soma 214211951, ano 2026",
-  "Bolsa Família 2026-11: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208253 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
+  "Bolsa Família 2026-11: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208259 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
   "Bolsa Família 2026-10: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208259 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
   "Bolsa Família: o MDS está com o MI Social fora do ar (redireciona para gov.br/mds/pt-br/avisos); nada foi atualizado nesta execução"
  ],
- "erros": [
-  "selic: Expecting value: line 1 column 1 (char 0)"
- ],
+ "erros": [],
  "tempos": {
-  "selic": 30.5,
-  "ipca": 4.5,
-  "areas": 1.2,
-  "composicao": 2.3,
-  "focus": 6.6,
+  "selic": 7.9,
+  "ipca": 5.9,
+  "areas": 1.7,
+  "composicao": 1.8,
+  "focus": 11.4,
   "atas": 0.0,
-  "desocupacao": 0.6,
-  "caged": 0.6,
-  "cambio": 29.3,
-  "ibc": 2.0,
-  "pib": 0.2,
-  "fiscal": 5.4,
-  "credito": 9.0,
-  "industria": 1.1,
-  "varejo": 1.4,
-  "externo": 13.1,
-  "balanca": 2.4,
-  "bolsa_familia": 5.6
+  "desocupacao": 0.7,
+  "caged": 0.9,
+  "cambio": 5.8,
+  "ibc": 1.8,
+  "pib": 0.3,
+  "fiscal": 7.5,
+  "credito": 10.3,
+  "industria": 1.3,
+  "varejo": 1.8,
+  "externo": 14.2,
+  "balanca": 1.8,
+  "bolsa_familia": 4.7
  }
 }
