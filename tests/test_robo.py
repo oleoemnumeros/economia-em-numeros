@@ -786,7 +786,7 @@ class TestMunicipiosRobo(unittest.TestCase):
         with mock.patch.object(r, "get", falso), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
             self.assertIsNone(r.mun_contas_de("2927408", 2025))
 
-    def roda_tudo(self, siconfi_vazio=False, irmaos_falham=False, pib_quebrado=False):
+    def roda_tudo(self, siconfi_vazio=False, irmaos_falham=False, pib_quebrado=False, setores_so_no_ano_anterior=False):
         cidades = _brasil_sintetico()
         nomes_var = [("Produto Interno Bruto a preços correntes", "pib"), ("Produto Interno Bruto per capita", None),
                      ("Impostos, líquidos de subsídios, sobre produtos a preços correntes", "imp"), ("Valor adicionado bruto a preços correntes total", "va"),
@@ -809,8 +809,12 @@ class TestMunicipiosRobo(unittest.TestCase):
                     comp = {"pib": pib, "imp": pib * 0.1, "va": pib * 0.9, "agro": pib * 0.09, "ind": pib * 0.2, "serv": pib * 0.4, "adm": pib * 0.21}
                     if pib_quebrado:
                         comp["serv"] = 0.0
+                    ano = "2022" if "/p/2022" in u else "2023"
                     for nome, campo in nomes_var:
-                        linhas.append({"D1C": c, "D1N": n, "D2N": nome, "D3C": "2023", "V": str(comp[campo] if campo else 1.0)})
+                        if setores_so_no_ano_anterior and ano == "2023" and campo not in (None, "pib"):
+                            linhas.append({"D1C": c, "D1N": n, "D2N": nome, "D3C": ano, "V": "..."})        # o IBGE ainda não abriu o PIB mais novo por setor
+                        else:
+                            linhas.append({"D1C": c, "D1N": n, "D2N": nome, "D3C": ano, "V": str(comp[campo] if campo else 1.0)})
                 return FakeResp(linhas)
             if "sitemap" in u:
                 if irmaos_falham:
@@ -871,7 +875,37 @@ class TestMunicipiosRobo(unittest.TestCase):
         out, d, dbg = self.executa(pib_quebrado=True)
         c = next(iter(d["pib"]))
         self.assertEqual(list(d["pib"][c]), ["pib"])
+        self.assertEqual(d["setores"], {})
+        self.assertEqual(d["setores_ano"], "")
         self.assertTrue(any("só o PIB" in a for a in dbg["avisos"]))
+
+    def test_setores_normais_ficam_em_campo_proprio_com_o_ano_do_pib(self):
+        out, d, dbg = self.executa()
+        c = d["sel"][0]
+        self.assertEqual(list(d["pib"][c]), ["pib"])
+        self.assertEqual(sorted(d["setores"][c]), ["adm", "agro", "imp", "ind", "serv"])
+        self.assertEqual(d["setores_ano"], "2023")
+
+    def test_pib_novo_sem_setores_usa_os_setores_do_ano_anterior(self):
+        out, d, dbg = self.executa(setores_so_no_ano_anterior=True)
+        c = d["sel"][0]
+        self.assertEqual(d["pib_ano"], "2023")
+        self.assertEqual(d["setores_ano"], "2022")
+        self.assertEqual(sorted(d["setores"][c]), ["adm", "agro", "imp", "ind", "serv"])
+        self.assertTrue(any("setores de 2022 para" in a for a in dbg["avisos"]))
+        self.assertEqual(dbg["erros"], [])
+
+    def test_http_429_espera_mais_antes_de_tentar_de_novo(self):
+        class Resp:
+            def __init__(self, status, headers=None):
+                self.status_code, self.text, self.headers = status, "limite", headers or {}
+        respostas = iter([Resp(429), Resp(429, {"Retry-After": "40"}), Resp(200)])
+        esperas = []
+        with mock.patch("requests.get", lambda *a, **k: next(respostas)), mock.patch.object(r.time, "sleep", esperas.append):
+            self.assertEqual(r.get("https://exemplo.test/x").status_code, 200)
+        self.assertEqual(len(esperas), 2)
+        self.assertGreaterEqual(esperas[0], 15)
+        self.assertEqual(esperas[1], 40)
 
     def test_populacao_do_pib_vem_da_estimativa_do_mesmo_ano_quando_existe(self):
         out, d, dbg = self.executa()

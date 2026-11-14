@@ -55,14 +55,20 @@ def get(url, params=None, tentativas=4, timeout=90):
 
     ultimo = None
     for i in range(tentativas):
+        espera = 3 * (i + 1)
         try:
             r = requests.get(url, params=params, headers=UA, timeout=timeout)
             if r.status_code == 200:
                 return r
             ultimo = f"HTTP {r.status_code}: {r.text[:200]}"
+            if r.status_code == 429:      # limite de ritmo da API (Tesouro): espera mais, respeitando o Retry-After quando vem
+                try:
+                    espera = max(espera, min(60, int(r.headers.get("Retry-After", 0))), 15 * (i + 1))
+                except (TypeError, ValueError):
+                    espera = max(espera, 15 * (i + 1))
         except requests.RequestException as e:
             ultimo = repr(e)
-        time.sleep(3 * (i + 1))
+        time.sleep(espera)
     raise RuntimeError(f"{url} falhou: {ultimo}")
 
 
@@ -1004,13 +1010,14 @@ def _pib_campo(nome):
     return None
 
 
-def mun_pib():
-    """PIB dos Municípios (IBGE, SIDRA 5938, mil reais): ({ibge: {pib, imp, va, agro, ind, serv, adm}}, ano). Uma consulta por estado (o SIDRA limita a 100 mil valores)."""
-    from collections import Counter
-    pib, anos, vistas = {}, set(), {}
-    contagem_campos, nao_num = Counter(), Counter()
+SETOR_CAMPOS = ("agro", "ind", "serv", "adm")
+
+
+def _pib_consulta(periodo, vistas, contagem_campos, nao_num):
+    """Uma consulta por estado (o SIDRA limita a 100 mil valores): ({ibge: {campo: mil reais}}, anos vistos)."""
+    dados, anos = {}, set()
     for u2 in UF_SLUG:
-        linhas = get(f"https://apisidra.ibge.gov.br/values/t/5938/n6/in%20n3%20{u2}/v/all/p/last%201", tentativas=3, timeout=120).json()
+        linhas = get(f"https://apisidra.ibge.gov.br/values/t/5938/n6/in%20n3%20{u2}/v/all/p/{periodo}", tentativas=3, timeout=120).json()
         for x in linhas[1:]:
             campo = _pib_campo(x.get("D2N", ""))
             vistas[str(x.get("D2N", ""))] = campo
@@ -1022,28 +1029,57 @@ def mun_pib():
                 continue
             cod = str(x.get("D1C", ""))
             if campo and len(cod) == 7:
-                pib.setdefault(cod, {})[campo] = v
+                dados.setdefault(cod, {})[campo] = v
                 contagem_campos[campo] += 1
                 anos.add(str(x.get("D3C", "")))
-    debug["avisos"].append(f"PIB dos Municípios (5938): variáveis lidas {vistas}")
-    debug["avisos"].append(f"PIB dos Municípios: campos com valor numérico {dict(contagem_campos)}; valores não numéricos {dict(list(nao_num.most_common(6)))}")
-    pib = {c: d for c, d in pib.items() if d.get("pib")}
-    total = sum(d["pib"] for d in pib.values())
-    if len(pib) < 5400 or not 4e9 <= total <= 3e10 or len(anos) != 1:
-        raise RuntimeError(f"PIB dos Municípios (5938): {len(pib)} municípios, soma {total:,.0f} mil reais, anos {sorted(anos)}")
-    # os setores só valem se somarem o valor adicionado; senão fica só o PIB
+    return dados, anos
+
+
+def _setores_validos(dados):
+    """Municípios cujos quatro setores somam o valor adicionado bruto: (bons, fora)."""
     bons = ruins = 0
-    for d in pib.values():
-        if all(k in d for k in ("agro", "ind", "serv", "adm", "va")):
-            if abs(d["agro"] + d["ind"] + d["serv"] + d["adm"] - d["va"]) <= 0.02 * d["va"] + 1:
+    for d in dados.values():
+        if all(k in d for k in (*SETOR_CAMPOS, "va", "imp", "pib")):
+            if abs(sum(d[k] for k in SETOR_CAMPOS) - d["va"]) <= 0.02 * d["va"] + 1:
                 bons += 1
             else:
                 ruins += 1
-    if bons < 0.9 * len(pib):
-        debug["avisos"].append(f"PIB dos Municípios: setores não somam o valor adicionado ({bons} ok, {ruins} fora); só o PIB será publicado")
-        pib = {c: {"pib": d["pib"]} for c, d in pib.items()}
-    debug["avisos"].append(f"PIB dos Municípios: {len(pib)} municípios, ano {next(iter(anos))}, soma R$ {total * 1000 / 1e12:.2f} tri; setores ok em {bons}")
-    return pib, next(iter(anos))
+    return bons, ruins
+
+
+def mun_pib():
+    """PIB dos Municípios (IBGE, SIDRA 5938, mil reais): ({ibge: {pib}}, ano do PIB, {ibge: {imp, agro, ind, serv, adm}}, ano dos setores).
+    O IBGE às vezes divulga o PIB do ano mais novo antes da abertura por setor; nesse caso os setores vêm do último ano em que existem."""
+    from collections import Counter
+    vistas, contagem_campos, nao_num = {}, Counter(), Counter()
+    todos, anos = _pib_consulta("last%201", vistas, contagem_campos, nao_num)
+    debug["avisos"].append(f"PIB dos Municípios (5938): variáveis lidas {vistas}")
+    debug["avisos"].append(f"PIB dos Municípios: campos com valor numérico {dict(contagem_campos)}; valores não numéricos {dict(list(nao_num.most_common(6)))}")
+    pib = {c: d for c, d in todos.items() if d.get("pib")}
+    total = sum(d["pib"] for d in pib.values())
+    if len(pib) < 5400 or not 4e9 <= total <= 3e10 or len(anos) != 1:
+        raise RuntimeError(f"PIB dos Municípios (5938): {len(pib)} municípios, soma {total:,.0f} mil reais, anos {sorted(anos)}")
+    ano_pib = next(iter(anos))
+    fonte_set, ano_set = None, ""
+    candidatos = [(todos, ano_pib)]
+    for k in (1, 2):
+        candidatos.append((None, str(int(ano_pib) - k)))
+    for dados, ano in candidatos:
+        if dados is None:
+            try:
+                dados, _ = _pib_consulta(ano, vistas, contagem_campos, nao_num)
+            except Exception as e:  # noqa: BLE001
+                debug["avisos"].append(f"PIB dos Municípios: setores de {ano} indisponíveis ({e})")
+                continue
+        bons, ruins = _setores_validos(dados)
+        if bons >= 0.9 * len(pib):
+            fonte_set, ano_set = dados, ano
+            break
+        debug["avisos"].append(f"PIB dos Municípios: setores de {ano} não servem ({bons} ok, {ruins} fora de {len(dados)})")
+    setores = {c: {k: fonte_set[c][k] for k in ("imp", *SETOR_CAMPOS)} for c in pib if fonte_set and c in fonte_set and all(k in fonte_set[c] for k in ("imp", *SETOR_CAMPOS))}
+    debug["avisos"].append(f"PIB dos Municípios: {len(pib)} municípios, ano {ano_pib}, soma R$ {total * 1000 / 1e12:.2f} tri; "
+                           + (f"setores de {ano_set} para {len(setores)}" if setores else "sem setores utilizáveis, só o PIB será publicado"))
+    return {c: {"pib": d["pib"]} for c, d in pib.items()}, ano_pib, setores, ano_set
 
 
 def _sitemap_urls(base):
@@ -1219,12 +1255,13 @@ def municipios():
     if len(pop) < 5400 or not 190e6 <= sum(pop.values()) <= 260e6:
         raise RuntimeError(f"Municípios: população com {len(pop)} municípios, soma {sum(pop.values())}")
     try:
-        pib, pib_ano = mun_pib()
+        pib, pib_ano, setores, setores_ano = mun_pib()
     except Exception as e:  # noqa: BLE001
         if not antigo.get("pib"):
             raise
         debug["avisos"].append(f"PIB dos Municípios falhou ({e}); mantém o dado anterior")
         pib, pib_ano = antigo["pib"], antigo.get("pib_ano", "")
+        setores, setores_ano = antigo.get("setores") or {}, antigo.get("setores_ano", "")
     pop_pib, pop_pib_ano = None, ""
     if antigo.get("pib_ano") == pib_ano and antigo.get("pop_pib") and antigo.get("pop_pib_ano"):
         pop_pib, pop_pib_ano = antigo["pop_pib"], antigo["pop_pib_ano"]
@@ -1293,7 +1330,7 @@ def municipios():
             debug["erros"].append(f"Contas das prefeituras: todas as consultas falharam, por exemplo {erros[0]}")
     com_contas = sum(1 for v in contas.values() if v.get("rec"))
     saida = {"fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579); Tesouro Nacional (Siconfi, DCA)", "pop_ano": pop_ano, "pib_ano": pib_ano, "pop_pib_ano": pop_pib_ano,
-             "contas_ano": ano_alvo or antigo.get("contas_ano"), "nomes": nomes, "pop": pop, "pop_pib": pop_pib, "pib": pib, "sel": sel, "links": links,
+             "setores": setores, "setores_ano": setores_ano, "contas_ano": ano_alvo or antigo.get("contas_ano"), "nomes": nomes, "pop": pop, "pop_pib": pop_pib, "pib": pib, "sel": sel, "links": links,
              "contas": {c: v for c, v in sorted(contas.items())}}
     MUN_ARQ.write_text(json.dumps(saida, ensure_ascii=False, separators=(",", ":"), sort_keys=True), encoding="utf-8")
     debug["avisos"].append(f"Municípios: {len(nomes)} no Brasil, {len(sel)} com ficha, {com_contas} com contas, {len(links)} ligados ao Comex ou ao Óleo")

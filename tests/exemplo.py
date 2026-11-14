@@ -236,7 +236,7 @@ def contas_exemplo(pop, escala=1.0):
 
 def municipios_exemplo() -> dict:
     """Arquivo data/municipios.json em miniatura: 12 cidades com ficha, mais um pequeno município fora da lista, e as contas de quase todas."""
-    nomes, pop, pop_pib, pib, sel, contas = {}, {}, {}, {}, [], {}
+    nomes, pop, pop_pib, pib, setores, sel, contas = {}, {}, {}, {}, {}, [], {}
     for i, (cod, nome, uf, p) in enumerate(CIDADES_EX):
         nomes[cod], pop[cod], pop_pib[cod] = [nome, uf], p, int(p * 0.97)
         v = p * 42_000 * (1 + (i % 4) * 0.25) / 1000          # mil reais
@@ -245,16 +245,17 @@ def municipios_exemplo() -> dict:
         sets["ind"] = v * 0.18
         va = v - imp
         sets["serv"] = va - sets["agro"] - sets["adm"] - sets["ind"]
-        pib[cod] = {"pib": v, "imp": imp, "va": va, **sets}
+        pib[cod] = {"pib": v}
+        setores[cod] = {"imp": imp, **sets}
         sel.append(cod)
         if cod != "2900702":                                   # Alagoinhas: prefeitura sem dado utilizável
             contas[cod] = contas_exemplo(p)
         else:
             contas[cod] = {"ano": 0, "sem": 2025}
     cod = "2900108"                                            # município pequeno, sem ficha
-    nomes[cod], pop[cod], pop_pib[cod], pib[cod] = ["Abaíra", "BA"], 8_400, 8_300, {"pib": 150_000.0, "imp": 10_000.0, "va": 140_000.0,
-                                                                                    "agro": 40_000.0, "ind": 10_000.0, "serv": 50_000.0, "adm": 40_000.0}
-    return {"fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579); Tesouro Nacional (Siconfi, DCA)", "pop_ano": "2025", "pib_ano": "2023", "pop_pib_ano": "2022",
+    nomes[cod], pop[cod], pop_pib[cod], pib[cod] = ["Abaíra", "BA"], 8_400, 8_300, {"pib": 150_000.0}
+    setores[cod] = {"imp": 10_000.0, "agro": 40_000.0, "ind": 10_000.0, "serv": 50_000.0, "adm": 40_000.0}
+    return {"fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579); Tesouro Nacional (Siconfi, DCA)", "pop_ano": "2025", "pib_ano": "2023", "pop_pib_ano": "2022", "setores": setores, "setores_ano": "2022",
             "contas_ano": 2025, "nomes": nomes, "pop": pop, "pop_pib": pop_pib, "pib": pib, "sel": sel, "contas": contas,
             "links": {"2927408": {"comex": "/municipio/salvador-ba/", "oleo": "/royalties/bahia/salvador/"}, "2913606": {"oleo": "/royalties/bahia/esplanada/"},
                       "3548500": {"comex": "/municipio/santos-sp/"}}}

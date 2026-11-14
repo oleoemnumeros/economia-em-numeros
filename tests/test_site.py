@@ -1156,6 +1156,30 @@ class TestMunicipios(unittest.TestCase):
         bloco = h[h.index("Para onde vai o dinheiro"):]
         self.assertLess(bloco.index(">Saúde<"), bloco.index(">Administração<"))
 
+    def test_setores_de_outro_ano_sao_avisados_e_percentuais_fecham_em_100(self):
+        h = self.ler("municipios/bahia/salvador/index.html")
+        self.assertIn("O IBGE ainda não divulgou a divisão por setor do PIB de 2023; esta é a de 2022.", h)
+        self.assertIn("% do PIB de 2022", h)
+        self.assertIn("setores do PIB de 2022", h)
+        bloco = h[h.index("De onde vem o PIB de Salvador"):h.index("<details")]
+        pcts = [float(x.replace(",", ".")) for x in re.findall(r'<span class="v">([\d,]+)%</span>', bloco)]
+        self.assertEqual(len(pcts), 5)
+        self.assertAlmostEqual(sum(pcts), 100.0, delta=0.3)
+        _, saida = self.gerar_outro("mesmo_ano", lambda d: d.update({"setores_ano": "2023"}))
+        h2 = (saida / "municipios/bahia/salvador/index.html").read_text(encoding="utf-8")
+        self.assertNotIn("ainda não divulgou", h2)
+        self.assertIn("% do PIB de 2023", h2)
+
+    def test_formato_antigo_com_setores_dentro_do_pib_continua_valendo(self):
+        def mexe(d):
+            for c, st in d.pop("setores").items():
+                d["pib"][c].update(st)
+            d.pop("setores_ano")
+        _, saida = self.gerar_outro("formato_antigo", mexe)
+        h = (saida / "municipios/bahia/salvador/index.html").read_text(encoding="utf-8")
+        self.assertIn("De onde vem o PIB de Salvador", h)
+        self.assertIn("% do PIB de 2023", h)
+
     def test_ficha_sem_contas_mostra_aviso_e_continua_com_pib(self):
         h = self.ler("municipios/bahia/alagoinhas/index.html")
         self.assertIn("A prefeitura ainda não tem as contas anuais utilizáveis", h)
@@ -1257,8 +1281,7 @@ class TestMunicipios(unittest.TestCase):
 
     def test_municipio_sem_setores_ou_sem_contas_degrada(self):
         def mexe(d):
-            for k in ("agro", "ind"):
-                d["pib"]["2927408"].pop(k)                                      # sem a abertura por setor
+            d["setores"].pop("2927408")                                         # sem a abertura por setor
             d["contas"].pop("3550308")                                          # São Paulo sem contas
         caminhos, saida = self.gerar_outro("degrada", mexe)
         sal = (saida / "municipios/bahia/salvador/index.html").read_text(encoding="utf-8")

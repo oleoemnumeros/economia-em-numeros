@@ -2454,6 +2454,11 @@ MUN_TEXTO = ("<h2>Como ler a ficha do município</h2>"
              "<p>O portal mostra números e não avalia a gestão de nenhuma prefeitura.</p>")
 
 
+def _setores_mil(p: dict):
+    """Setores do PIB (mil reais no arquivo) em reais; None se faltar algum."""
+    return {k: p[k] * 1000.0 for k, _ in SETORES_MUN} if all(k in p for k, _ in SETORES_MUN) else None
+
+
 def _contas_em_ordem(c: dict) -> dict:
     """O arquivo é gravado com as chaves em ordem alfabética: aqui as áreas de despesa voltam à ordem do maior gasto para o menor."""
     des = c["des"]
@@ -2465,6 +2470,7 @@ def mun_prepara(d: dict | None):
     if not d or not d.get("pib") or not d.get("nomes"):
         return None
     nomes, pop, pop_pib, pib = d["nomes"], d.get("pop") or {}, d.get("pop_pib") or {}, d["pib"]
+    setores = d.get("setores") or {}
     sel, contas, links = set(d.get("sel") or []), d.get("contas") or {}, d.get("links") or {}
     mun, usados = {}, {}
     for cod in sorted(nomes):
@@ -2479,10 +2485,13 @@ def mun_prepara(d: dict | None):
         pp = pop_pib.get(cod) or pop[cod]
         c = contas.get(cod) or {}
         mun[cod] = {"cod": cod, "nome": nome, "sigla": sigla, "uf2": cod[:2], "uf_slug": UFS[cod[:2]][0], "slug": s, "pop": pop[cod], "pop_pib": pp,
-                    "pib": p["pib"] * 1000.0, "set": {k: p[k] * 1000.0 for k, _ in SETORES_MUN if k in p} if all(k in p for k, _ in SETORES_MUN) else None,
+                    "pib": p["pib"] * 1000.0, "set": _setores_mil(setores.get(cod) or p), "set_tot": 0.0,
                     "pc": p["pib"] * 1000.0 / pp, "ficha": cod in sel, "links": links.get(cod) or {}, "contas": _contas_em_ordem(c) if c.get("rec") and c.get("des") else None}
     if len(mun) < 10:
         return None
+    for m in mun.values():
+        if m["set"]:
+            m["set_tot"] = sum(m["set"].values())     # impostos + valor adicionado dos quatro setores = PIB do ano dos setores
 
     def agrega(codigos):
         pibs = sum(mun[c]["pib"] for c in codigos)
@@ -2490,7 +2499,7 @@ def mun_prepara(d: dict | None):
         com_set = [c for c in codigos if mun[c]["set"]]
         s = None
         if len(com_set) == len(codigos):
-            tot = sum(mun[c]["pib"] for c in com_set)
+            tot = sum(mun[c]["set_tot"] for c in com_set)
             s = {k: sum(mun[c]["set"][k] for c in com_set) / tot * 100 for k, _ in SETORES_MUN} if tot else None
         return {"pop": sum(mun[c]["pop"] for c in codigos), "pib": pibs, "pc": pibs / pops if pops else 0.0, "n": len(codigos), "pct": s}
     ufs = {}
@@ -2507,7 +2516,7 @@ def mun_prepara(d: dict | None):
     for pos, c in enumerate(sorted(mun, key=lambda c: -mun[c]["pib"]), 1):
         mun[c]["pos_pib_br"] = pos
     br = {**agrega(list(mun)), "mun": list(mun)}
-    return {"mun": mun, "uf": uf, "br": br, "pib_ano": d.get("pib_ano") or "", "pop_ano": d.get("pop_ano") or "", "pop_pib_ano": d.get("pop_pib_ano") or "", "contas_ano": d.get("contas_ano") or "",
+    return {"mun": mun, "uf": uf, "br": br, "pib_ano": d.get("pib_ano") or "", "pop_ano": d.get("pop_ano") or "", "pop_pib_ano": d.get("pop_pib_ano") or "", "set_ano": d.get("setores_ano") or d.get("pib_ano") or "", "contas_ano": d.get("contas_ano") or "",
             "fonte": d.get("fonte") or F_MUN, "fichas": sorted((c for c in mun if mun[c]["ficha"]), key=lambda c: -mun[c]["pib"])}
 
 
@@ -2589,13 +2598,15 @@ def mun_despesa_card(B: Base, m: dict) -> str:
 def mun_setores_card(B: Base, m: dict) -> str:
     x = B.mun
     s = m["set"]
-    linhas = [(rot, s[k], s[k] / m["pib"] * 100) for k, rot in SETORES_MUN]
+    linhas = [(rot, s[k], s[k] / m["set_tot"] * 100) for k, rot in SETORES_MUN]
     linhas.sort(key=lambda r: -r[1])
-    barras = hbarras([(esc(r), v, f"{nf(p, 1)}%", brl_abrev(v)) for r, v, p in linhas], f"% do PIB de {x['pib_ano']}")
+    barras = hbarras([(esc(r), v, f"{nf(p, 1)}%", brl_abrev(v)) for r, v, p in linhas], f"% do PIB de {x['set_ano']}")
     maior = linhas[0]
-    nota = f'<p class="small">A maior fatia do PIB de {esc(m["nome"])} vem de <strong>{esc(maior[0].lower())}</strong> ({nf(maior[2], 0)}%). Administração pública inclui o funcionalismo, a saúde e a educação públicas.</p>'
+    aviso = (f' O IBGE ainda não divulgou a divisão por setor do PIB de {esc(x["pib_ano"])}; esta é a de {esc(x["set_ano"])}.' if x["set_ano"] != x["pib_ano"] else "")
+    nota = (f'<p class="small">A maior fatia do PIB de {esc(m["nome"])} vem de <strong>{esc(maior[0].lower())}</strong> ({nf(maior[2], 0)}%). '
+            f'Administração pública inclui o funcionalismo, a saúde e a educação públicas.{aviso}</p>')
     return grafico(B, f"mun-setores-{m['cod']}", f"De onde vem o PIB de {m['nome']}", "IBGE, PIB dos Municípios (SIDRA 5938)", barras,
-                   ["Setor", "Valor (R$)", "Parte do PIB (%)"], linhas, "Municípios", casas=1, nota=nota, ultimo=f"PIB de {x['pib_ano']}",
+                   ["Setor", "Valor (R$)", "Parte do PIB (%)"], linhas, "Municípios", casas=1, nota=nota, ultimo=f"PIB de {x['set_ano']}",
                    csv_href="/dados/municipios-pib.csv", csv_rotulo="Baixar CSV do PIB de todos os municípios")
 
 
@@ -2606,7 +2617,7 @@ def mun_comparacao(B: Base, m: dict) -> str:
     linhas = [["PIB per capita (R$)", nf(m["pc"], 0), nf(uf["pc"], 0), nf(br["pc"], 0)]]
     if m["set"] and uf["pct"] and br["pct"]:
         for k, rot in SETORES_MUN:
-            linhas.append([f"{esc(rot)} (% do PIB)", nf(m["set"][k] / m["pib"] * 100, 1), nf(uf["pct"][k], 1), nf(br["pct"][k], 1)])
+            linhas.append([f"{esc(rot)} (% do PIB)", nf(m["set"][k] / m["set_tot"] * 100, 1), nf(uf["pct"][k], 1), nf(br["pct"][k], 1)])
     return tabela(["", esc(m["nome"]), esc(nome_uf), "Brasil"], linhas, ["l", "r", "r", "r"])
 
 
@@ -2653,7 +2664,7 @@ def pg_mun(B: Base, m: dict) -> str:
     if c:
         graf += [mun_receita_card(B, m), mun_despesa_card(B, m)]
     comp = card(cab("Comparação") + mun_comparacao(B, m) +
-                f'<span class="src">PIB per capita e setores de {esc(x["pib_ano"])}' + (f', com a população de {esc(x["pop_pib_ano"])}' if x["pop_pib_ano"] else "") + f'; para o Brasil e o estado, a soma dos municípios. {m["pos_pc"]}º maior PIB per capita {uf_de(m["uf2"], esc(uf["nome"]))} (entre {uf["n"]} municípios).</span>')
+                f'<span class="src">PIB per capita de {esc(x["pib_ano"])}' + (f', com a população de {esc(x["pop_pib_ano"])}' if x["pop_pib_ano"] else "") + f'; setores do PIB de {esc(x["set_ano"])}; para o Brasil e o estado, a soma dos municípios. {m["pos_pc"]}º maior PIB per capita {uf_de(m["uf2"], esc(uf["nome"]))} (entre {uf["n"]} municípios).</span>')
     dest = ""
     if c and c["rec"].get("destaques"):
         t = c["rec"]["total"]
@@ -2732,11 +2743,11 @@ def mun_csvs(B: Base):
     for c in sorted(x["mun"]):
         m = x["mun"][c]
         s = m["set"] or {}
-        pib_linhas.append((c, m["nome"], m["sigla"], m["pop"], m["pib"], m["pc"], s.get("agro"), s.get("ind"), s.get("serv"), s.get("adm"), s.get("imp")))
+        pib_linhas.append((c, m["nome"], m["sigla"], m["pop"], m["pib"], m["pc"], s.get("agro"), s.get("ind"), s.get("serv"), s.get("adm"), s.get("imp"), x["set_ano"] if s else None))
     B.csvs["municipios-pib"] = {"titulo": "PIB, PIB per capita e setores de todos os municípios", "fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579)",
                                 "ultimo": f'PIB de {x["pib_ano"]}', "grupo": "Municípios",
                                 "cab": ["Código IBGE", "Município", "UF", "População", "PIB (R$)", "PIB per capita (R$)", "Agropecuária (R$)", "Indústria (R$)",
-                                        "Serviços, exceto administração pública (R$)", "Administração pública (R$)", "Impostos sobre produtos (R$)"], "linhas": pib_linhas}
+                                        "Serviços, exceto administração pública (R$)", "Administração pública (R$)", "Impostos sobre produtos (R$)", "Ano dos setores"], "linhas": pib_linhas}
     ct = []
     for c in sorted(x["mun"]):
         m = x["mun"][c]
