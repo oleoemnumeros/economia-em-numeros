@@ -42,7 +42,7 @@ jobs:
           python-version: "3.12"
 
       - name: Instalar dependências
-        run: pip install requests==2.32.3
+        run: pip install requests==2.32.3 pillow==11.3.0
 
       - name: Rodar os testes
         run: python -m unittest discover -s tests -v

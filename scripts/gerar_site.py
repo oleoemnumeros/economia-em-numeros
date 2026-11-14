@@ -786,6 +786,49 @@ def pg_dados(B: Base) -> str:
                   f"{hero}{''.join(blocos)}{citar}", "", [(None, "Dados em CSV")])
 
 
+# ------------------------------------------------------------------ imagem de prévia
+def desenhar_og(B, destino: Path) -> bool:
+    """Imagem 1200x630 usada na prévia do link (WhatsApp, Instagram, X, LinkedIn).
+    Com B, mostra Selic e IPCA em 12 meses do último dado; sem B, só a marca."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return False
+    fontes = SITE / "fontes"
+
+    def f(bold, n):
+        return ImageFont.truetype(str(fontes / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")), n)
+    ACC, ACC2, INK, MUT, BG = (42, 91, 196), (185, 102, 15), (16, 24, 40), (90, 100, 118), (238, 242, 247)
+    W, H = 1200, 630
+    im = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, W, 14], fill=ACC)
+    # marca (mesmas três barras do logo do site)
+    d.rounded_rectangle([60, 56, 180, 176], radius=24, fill=(16, 24, 40))
+    for x0, y0, cor in ((84, 116, (126, 163, 255)), (110, 90, (126, 163, 255)), (136, 78, (240, 160, 74))):
+        d.rounded_rectangle([x0, y0, x0 + 20, 152], radius=4, fill=cor)
+    d.text((210, 116), "Economia ", font=f(True, 70), fill=INK, anchor="lm")
+    d.text((210 + d.textlength("Economia ", font=f(True, 70)), 116), "em Números", font=f(True, 70), fill=ACC, anchor="lm")
+    d.text((62, 232), "Selic, inflação, emprego, câmbio e contas públicas", font=f(False, 38), fill=INK)
+    d.text((62, 286), "dados oficiais do Brasil, explicados em português simples", font=f(False, 30), fill=MUT)
+    if B is not None:
+        selic = B.mud[-1][1]
+        ref = B.ref
+        cards = (("Selic (meta, ao ano)", f"{nf(selic, 2)}%", ACC),
+                 (f"IPCA em 12 meses · {mes_curto(ref)}", f"{nf(B.ipca_12[ref], 2)}%", ACC2))
+        x = 62
+        for rot, val, cor in cards:
+            d.rounded_rectangle([x, 372, x + 520, 534], radius=20, fill=(255, 255, 255))
+            d.rectangle([x, 392, x + 8, 514], fill=cor)
+            d.text((x + 36, 410), rot, font=f(False, 28), fill=MUT)
+            d.text((x + 36, 452), val, font=f(True, 60), fill=INK)
+            x += 556
+    d.text((62, H - 52), "Banco Central, IBGE, MDIC e MDS · economiaemnumeros.com.br", font=f(False, 24), fill=MUT, anchor="lm")
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    im.save(destino, optimize=True)
+    return True
+
+
 # ------------------------------------------------------------------ moldura
 def familia_html(atual="Economia em Números") -> str:
     itens = []
@@ -821,7 +864,11 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <meta property="og:description" content="{esc(descricao)}">
 <meta property="og:url" content="{url}">
 <meta property="og:locale" content="pt_BR">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="{BASE}/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Economia em Números: Selic, inflação e dados oficiais da economia brasileira">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#2a5bc4">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2408,6 +2455,8 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js"):
         shutil.copy(SITE / nome, saida / "assets" / nome)
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
+    if not desenhar_og(B, saida / "assets" / "og.png"):          # sem Pillow, usa a imagem pronta
+        shutil.copy(SITE / "og.png", saida / "assets" / "og.png")
     (saida / "CNAME").write_text(DOMINIO + "\n", encoding="utf-8")
     (saida / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n", encoding="utf-8")
     extras_set = set(extras)

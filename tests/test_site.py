@@ -1072,6 +1072,26 @@ class TestComposicaoIPCA(unittest.TestCase):
         self.assertNotRegex(sec, r"\d-\d")                                   # nada de hífen como sinal em número
 
 
+class TestImagemDePrevia(unittest.TestCase):
+    def test_todas_as_paginas_apontam_para_a_imagem_e_ela_existe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            g.gerar(gravar(tmp / "d.json"), tmp / "docs")
+            png = tmp / "docs" / "assets" / "og.png"
+            self.assertTrue(png.exists())
+            self.assertEqual(png.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
+            for rel in ("index.html", "inflacao/index.html", "juros/index.html", "sobre/index.html"):
+                h = (tmp / "docs" / rel).read_text(encoding="utf-8")
+                self.assertIn('<meta property="og:image" content="https://economiaemnumeros.com.br/assets/og.png">', h, rel)
+                self.assertIn('<meta name="twitter:card" content="summary_large_image">', h, rel)
+            try:
+                from PIL import Image
+            except ImportError:
+                return
+            self.assertEqual(Image.open(png).size, (1200, 630))
+            self.assertEqual(Image.open(RAIZ / "site" / "og.png").size, (1200, 630))      # imagem de reserva
+
+
 class TestTextoPtBr(unittest.TestCase):
     def test_slug(self):
         self.assertEqual(g.slugify("São João del-Rei"), "sao-joao-del-rei")
