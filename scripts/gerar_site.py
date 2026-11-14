@@ -843,9 +843,14 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
     url = BASE + caminho
     nav = "".join(f'<a href="{h}"' + (' aria-current="page"' if h == ativo else "") + f">{t}</a>" for h, t in B.nav())
     bc = ""
+    ld = ""
     if migalhas:
         partes = ['<a href="/">Início</a>'] + [f'<a href="{h}">{esc(t)}</a>' if h else esc(t) for h, t in migalhas]
         bc = '<nav class="bc" aria-label="Você está em">' + " › ".join(partes) + "</nav>"
+        itens = [{"@type": "ListItem", "position": 1, "name": "Início", "item": BASE + "/"}]
+        for i, (h, t_) in enumerate(migalhas, 2):
+            itens.append({"@type": "ListItem", "position": i, "name": t_, "item": BASE + (h or caminho)})
+        ld = '<script type="application/ld+json">' + json.dumps({"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": itens}, ensure_ascii=False) + "</script>\n"
     gerado = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
     v = B.d["gerado_em"][:10]
     robots = '<meta name="robots" content="noindex">\n' if noindex else ""
@@ -875,7 +880,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/estilo.css?v={v}">
-</head>
+{ld}</head>
 <body>
 <header class="top"><div class="top-in">
 <a class="brand" href="/" aria-label="Economia em Números, início"><svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="6" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35"/><rect x="6" y="14" width="4" height="8" rx="1" fill="var(--eco)"/><rect x="12" y="9" width="4" height="13" rx="1" fill="var(--eco)"/><rect x="18" y="6" width="4" height="16" rx="1" fill="var(--eco2)"/></svg><b>Economia <span>em Números</span></b></a>
