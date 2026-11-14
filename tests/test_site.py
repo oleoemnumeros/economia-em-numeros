@@ -1158,7 +1158,7 @@ class TestMunicipios(unittest.TestCase):
 
     def test_setores_de_outro_ano_sao_avisados_e_percentuais_fecham_em_100(self):
         h = self.ler("municipios/bahia/salvador/index.html")
-        self.assertIn("O IBGE ainda não divulgou a divisão por setor do PIB de 2023; esta é a de 2022.", h)
+        self.assertIn("A divisão por setor mais recente nos dados abertos do IBGE é a de 2022, e não a de 2023.", h)
         self.assertIn("% do PIB de 2022", h)
         self.assertIn("setores do PIB de 2022", h)
         bloco = h[h.index("De onde vem o PIB de Salvador"):h.index("<details")]
@@ -1167,7 +1167,7 @@ class TestMunicipios(unittest.TestCase):
         self.assertAlmostEqual(sum(pcts), 100.0, delta=0.3)
         _, saida = self.gerar_outro("mesmo_ano", lambda d: d.update({"setores_ano": "2023"}))
         h2 = (saida / "municipios/bahia/salvador/index.html").read_text(encoding="utf-8")
-        self.assertNotIn("ainda não divulgou", h2)
+        self.assertNotIn("divisão por setor mais recente", h2)
         self.assertIn("% do PIB de 2023", h2)
 
     def test_formato_antigo_com_setores_dentro_do_pib_continua_valendo(self):

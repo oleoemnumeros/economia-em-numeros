@@ -895,6 +895,27 @@ class TestMunicipiosRobo(unittest.TestCase):
         self.assertTrue(any("setores de 2022 para" in a for a in dbg["avisos"]))
         self.assertEqual(dbg["erros"], [])
 
+    def test_setores_ja_guardados_sao_reaproveitados_sem_refazer_a_busca_pesada(self):
+        _, d1, _ = self.executa(setores_so_no_ano_anterior=True)               # primeira rodada: acha os setores de 2022
+        consultas = []
+        base = self.roda_tudo(setores_so_no_ano_anterior=True)
+
+        def contando(url, *a, **k):
+            if "/t/5938/" in url:
+                consultas.append(url.replace("%20", " "))
+            return base(url, *a, **k)
+        with tempfile.TemporaryDirectory() as tmp:
+            arq = Path(tmp) / "municipios.json"
+            arq.write_text(json.dumps(d1), encoding="utf-8")
+            for hoje, esperado in ((dt.date(2026, 11, 14), 0), (dt.date(2026, 11, 15), 1)):       # sábado reaproveita; domingo tenta de novo
+                consultas.clear()
+                with mock.patch.object(r, "get", contando), mock.patch.object(r, "MUN_ARQ", arq), mock.patch.object(r, "HOJE", hoje), \
+                        mock.patch.object(r, "MUN_ORCAMENTO_S", 60), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+                    r.municipios()
+                extras = [c for c in consultas if "/p/last 1" not in c]
+                self.assertEqual(bool(extras), bool(esperado), hoje)
+                self.assertEqual(json.loads(arq.read_text(encoding="utf-8"))["setores_ano"], "2022")
+
     def test_http_429_espera_mais_antes_de_tentar_de_novo(self):
         class Resp:
             def __init__(self, status, headers=None):

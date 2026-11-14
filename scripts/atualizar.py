@@ -1047,7 +1047,7 @@ def _setores_validos(dados):
     return bons, ruins
 
 
-def mun_pib():
+def mun_pib(antigo=None):
     """PIB dos Municípios (IBGE, SIDRA 5938, mil reais): ({ibge: {pib}}, ano do PIB, {ibge: {imp, agro, ind, serv, adm}}, ano dos setores).
     O IBGE às vezes divulga o PIB do ano mais novo antes da abertura por setor; nesse caso os setores vêm do último ano em que existem."""
     from collections import Counter
@@ -1060,6 +1060,13 @@ def mun_pib():
     if len(pib) < 5400 or not 4e9 <= total <= 3e10 or len(anos) != 1:
         raise RuntimeError(f"PIB dos Municípios (5938): {len(pib)} municípios, soma {total:,.0f} mil reais, anos {sorted(anos)}")
     ano_pib = next(iter(anos))
+    antigo = antigo or {}
+    guardados = antigo.get("setores") or {}
+    # a busca de setores em anos anteriores é pesada: reaproveita o que já está guardado, e só tenta de novo aos domingos (ou quando o ano do PIB muda)
+    if (antigo.get("pib_ano") == ano_pib and antigo.get("setores_ano") and len(guardados) >= 0.9 * len(pib)
+            and (antigo["setores_ano"] == ano_pib or HOJE.weekday() != 6)):
+        debug["avisos"].append(f"PIB dos Municípios: {len(pib)} municípios, ano {ano_pib}; setores de {antigo['setores_ano']} reaproveitados do arquivo anterior")
+        return {c: {"pib": d["pib"]} for c, d in pib.items()}, ano_pib, guardados, antigo["setores_ano"]
     fonte_set, ano_set = None, ""
     candidatos = [(todos, ano_pib)]
     for k in (1, 2):
@@ -1255,7 +1262,7 @@ def municipios():
     if len(pop) < 5400 or not 190e6 <= sum(pop.values()) <= 260e6:
         raise RuntimeError(f"Municípios: população com {len(pop)} municípios, soma {sum(pop.values())}")
     try:
-        pib, pib_ano, setores, setores_ano = mun_pib()
+        pib, pib_ano, setores, setores_ano = mun_pib(antigo)
     except Exception as e:  # noqa: BLE001
         if not antigo.get("pib"):
             raise

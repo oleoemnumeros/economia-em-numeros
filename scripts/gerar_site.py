@@ -2602,7 +2602,7 @@ def mun_setores_card(B: Base, m: dict) -> str:
     linhas.sort(key=lambda r: -r[1])
     barras = hbarras([(esc(r), v, f"{nf(p, 1)}%", brl_abrev(v)) for r, v, p in linhas], f"% do PIB de {x['set_ano']}")
     maior = linhas[0]
-    aviso = (f' O IBGE ainda não divulgou a divisão por setor do PIB de {esc(x["pib_ano"])}; esta é a de {esc(x["set_ano"])}.' if x["set_ano"] != x["pib_ano"] else "")
+    aviso = (f' A divisão por setor mais recente nos dados abertos do IBGE é a de {esc(x["set_ano"])}, e não a de {esc(x["pib_ano"])}.' if x["set_ano"] != x["pib_ano"] else "")
     nota = (f'<p class="small">A maior fatia do PIB de {esc(m["nome"])} vem de <strong>{esc(maior[0].lower())}</strong> ({nf(maior[2], 0)}%). '
             f'Administração pública inclui o funcionalismo, a saúde e a educação públicas.{aviso}</p>')
     return grafico(B, f"mun-setores-{m['cod']}", f"De onde vem o PIB de {m['nome']}", "IBGE, PIB dos Municípios (SIDRA 5938)", barras,
