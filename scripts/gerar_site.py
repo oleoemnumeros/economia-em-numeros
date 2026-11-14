@@ -2446,12 +2446,18 @@ DESTAQUES_MUN = (("iptu", "IPTU (imposto sobre imóveis urbanos)"), ("iss", "ISS
                  ("fpm", "Fundo de Participação dos Municípios (FPM)"), ("icms", "Cota-parte do ICMS"))
 MUN_TEXTO = ("<h2>Como ler a ficha do município</h2>"
              "<p>O <strong>PIB</strong> é o valor de tudo o que se produziu no município no ano, a preços correntes. O IBGE divulga o PIB dos municípios com cerca de dois anos de atraso, "
-             "por isso o ano do PIB é anterior ao da população. O <strong>PIB per capita</strong> divide o PIB pela população estimada do mesmo ano. Em cidades com uma grande indústria, "
+             "por isso o ano do PIB é anterior ao da população mais recente. O <strong>PIB per capita</strong> divide o PIB pela população do IBGE{PP}. Em cidades com uma grande indústria, "
              "um porto ou um campo de petróleo, ele pode ficar alto sem que a renda média da população seja alta.</p>"
              "<p>As <strong>contas da prefeitura</strong> vêm da Declaração de Contas Anuais enviada ao Tesouro Nacional (Siconfi). A <strong>receita</strong> é o que a prefeitura arrecadou no ano. "
              "As <strong>transferências</strong> são repasses de outros governos, como o Fundo de Participação dos Municípios e a cota do ICMS. A <strong>despesa por área</strong> é o gasto liquidado em cada função "
              "de governo. Nem toda prefeitura entrega as contas no prazo, e algumas entregam fora do padrão; nesses casos a ficha mostra só o PIB e a população.</p>"
              "<p>O portal mostra números e não avalia a gestão de nenhuma prefeitura.</p>")
+
+
+def _contas_em_ordem(c: dict) -> dict:
+    """O arquivo é gravado com as chaves em ordem alfabética: aqui as áreas de despesa voltam à ordem do maior gasto para o menor."""
+    des = c["des"]
+    return {**c, "des": {**des, "funcoes": dict(sorted(des["funcoes"].items(), key=lambda kv: -kv[1]))}}
 
 
 def mun_prepara(d: dict | None):
@@ -2474,7 +2480,7 @@ def mun_prepara(d: dict | None):
         c = contas.get(cod) or {}
         mun[cod] = {"cod": cod, "nome": nome, "sigla": sigla, "uf2": cod[:2], "uf_slug": UFS[cod[:2]][0], "slug": s, "pop": pop[cod], "pop_pib": pp,
                     "pib": p["pib"] * 1000.0, "set": {k: p[k] * 1000.0 for k, _ in SETORES_MUN if k in p} if all(k in p for k, _ in SETORES_MUN) else None,
-                    "pc": p["pib"] * 1000.0 / pp, "ficha": cod in sel, "links": links.get(cod) or {}, "contas": c if c.get("rec") and c.get("des") else None}
+                    "pc": p["pib"] * 1000.0 / pp, "ficha": cod in sel, "links": links.get(cod) or {}, "contas": _contas_em_ordem(c) if c.get("rec") and c.get("des") else None}
     if len(mun) < 10:
         return None
 
@@ -2501,8 +2507,14 @@ def mun_prepara(d: dict | None):
     for pos, c in enumerate(sorted(mun, key=lambda c: -mun[c]["pib"]), 1):
         mun[c]["pos_pib_br"] = pos
     br = {**agrega(list(mun)), "mun": list(mun)}
-    return {"mun": mun, "uf": uf, "br": br, "pib_ano": d.get("pib_ano") or "", "pop_ano": d.get("pop_ano") or "", "contas_ano": d.get("contas_ano") or "",
+    return {"mun": mun, "uf": uf, "br": br, "pib_ano": d.get("pib_ano") or "", "pop_ano": d.get("pop_ano") or "", "pop_pib_ano": d.get("pop_pib_ano") or "", "contas_ano": d.get("contas_ano") or "",
             "fonte": d.get("fonte") or F_MUN, "fichas": sorted((c for c in mun if mun[c]["ficha"]), key=lambda c: -mun[c]["pib"])}
+
+
+def mun_texto(B: Base) -> str:
+    """Texto explicativo da ficha; informa de que ano é a população usada no PIB per capita."""
+    a = B.mun["pop_pib_ano"]
+    return MUN_TEXTO.replace("{PP}", f" de {esc(a)}" if a else "")
 
 
 def mun_url(m: dict) -> str:
@@ -2641,7 +2653,7 @@ def pg_mun(B: Base, m: dict) -> str:
     if c:
         graf += [mun_receita_card(B, m), mun_despesa_card(B, m)]
     comp = card(cab("Comparação") + mun_comparacao(B, m) +
-                f'<span class="src">PIB per capita e setores de {esc(x["pib_ano"])}; para o Brasil e o estado, a soma dos municípios. {m["pos_pc"]}º maior PIB per capita {uf_de(m["uf2"], esc(uf["nome"]))} (entre {uf["n"]} municípios).</span>')
+                f'<span class="src">PIB per capita e setores de {esc(x["pib_ano"])}' + (f', com a população de {esc(x["pop_pib_ano"])}' if x["pop_pib_ano"] else "") + f'; para o Brasil e o estado, a soma dos municípios. {m["pos_pc"]}º maior PIB per capita {uf_de(m["uf2"], esc(uf["nome"]))} (entre {uf["n"]} municípios).</span>')
     dest = ""
     if c and c["rec"].get("destaques"):
         t = c["rec"]["total"]
@@ -2657,7 +2669,7 @@ def pg_mun(B: Base, m: dict) -> str:
         dest = aviso
     corpo = (f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B, "Busque outra cidade")}'
              f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{mun_links_irmaos(B, m)}'
-             + card(MUN_TEXTO + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
+             + card(mun_texto(B) + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
     desc = (f"{nome}: {nf(m['pop'], 0)} habitantes, PIB de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
             + (f", receita da prefeitura de {brl_abrev(c['rec']['total'])} e gastos por área" if c else "") + ". Dados oficiais do IBGE e do Tesouro Nacional.")
     return pagina(B, mun_url(m), f"{nome}: PIB de {brl_abrev(m['pib'])}, população e contas da prefeitura", desc, corpo, "/municipios/",
@@ -2682,7 +2694,7 @@ def pg_mun_uf(B: Base, a: dict) -> str:
     tab = card(cab(f'Cidades {uf_de(a["cod"], esc(a["nome"]))} com ficha', f'<span class="src">PIB de {esc(x["pib_ano"])}</span>') +
                tabela(["Cidade", "Habitantes", "PIB", "PIB per capita (R$)", "Receita da prefeitura por habitante"], linhas, ["l", "r", "r", "r", "r"]) +
                f'<span class="src">Em ordem de PIB. Fonte: {esc(x["fonte"])}.</span>')
-    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B, "Busque uma cidade")}{tab}{card(MUN_TEXTO + "<p class=small><a href=/municipios/>Voltar aos municípios do Brasil</a></p>")}'
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B, "Busque uma cidade")}{tab}{card(mun_texto(B) + "<p class=small><a href=/municipios/>Voltar aos municípios do Brasil</a></p>")}'
     return pagina(B, f"/municipios/{a['slug']}/", f"Cidades {uf_de(a['cod'], a['nome'])}: PIB, população e contas das prefeituras",
                   f"{nf(a['pop'], 0)} habitantes e PIB de {brl_abrev(a['pib'])} {uf_de(a['cod'], a['nome'])}. Fichas de {len(fichas)} cidades com PIB, população e contas da prefeitura, com dados do IBGE e do Tesouro Nacional.",
                   corpo, "/municipios/", [("/municipios/", "Municípios"), (None, a["nome"])])
@@ -2708,7 +2720,7 @@ def pg_mun_hub(B: Base) -> str:
     ufs = sorted(x["uf"].values(), key=lambda a: a["nome"])
     por_uf = card(cab("Cidades por estado") + '<ul class="list">' + "".join(
         f'<li><a href="/municipios/{a["slug"]}/"><span>{esc(a["nome"])}</span><span>{len(a["fichas"])} cidades</span></a></li>' for a in ufs if a["fichas"]) + "</ul>")
-    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B)}{colunas([t1, t2])}{por_uf}{card(MUN_TEXTO)}'
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B)}{colunas([t1, t2])}{por_uf}{card(mun_texto(B))}'
     return pagina(B, "/municipios/", f"Municípios do Brasil: PIB, população e contas das prefeituras ({len(x['fichas'])} cidades)",
                   f"PIB, PIB per capita, população, receitas e despesas das prefeituras de {len(x['fichas'])} cidades brasileiras, com dados oficiais do IBGE e do Tesouro Nacional.",
                   corpo, "/municipios/", [(None, "Municípios")])

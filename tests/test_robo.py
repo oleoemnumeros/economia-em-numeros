@@ -830,8 +830,10 @@ class TestMunicipiosRobo(unittest.TestCase):
             raise AssertionError(url)
         return falso
 
-    def executa(self, **kw):
+    def executa(self, envolve=None, **kw):
         falso = self.roda_tudo(**kw)
+        if envolve:
+            falso = envolve(falso)
         with tempfile.TemporaryDirectory() as tmp:
             arq = Path(tmp) / "municipios.json"
             with mock.patch.object(r, "get", falso), mock.patch.object(r, "MUN_ARQ", arq), mock.patch.object(r, "HOJE", dt.date(2026, 11, 14)), \
@@ -870,6 +872,45 @@ class TestMunicipiosRobo(unittest.TestCase):
         c = next(iter(d["pib"]))
         self.assertEqual(list(d["pib"][c]), ["pib"])
         self.assertTrue(any("só o PIB" in a for a in dbg["avisos"]))
+
+    def test_populacao_do_pib_vem_da_estimativa_do_mesmo_ano_quando_existe(self):
+        out, d, dbg = self.executa()
+        self.assertEqual(d["pop_pib_ano"], "2022")                 # o fixture devolve "2022" para o período pedido
+        self.assertTrue(any("PIB per capita: PIB de 2023 dividido pela população de 2022" in a for a in dbg["avisos"]))
+
+    def test_sem_estimativa_do_ano_do_pib_usa_o_censo_2022(self):
+        def envolve(base):
+            def f(url, *a, **k):
+                u = url.replace("%20", " ")
+                if "/t/6579/" in u and "/p/2023" in u:
+                    return FakeResp([{"V": "Valor"}])                              # o SIDRA não tem estimativa para 2023
+                if "/t/4714/" in u:
+                    return FakeResp([{"V": "Valor"}] + [{"D1C": c, "D1N": f"{n} - {u2}", "D3C": "2022", "V": str(p - 1000)} for c, n, u2, p in _brasil_sintetico()])
+                return base(url, *a, **k)
+            return f
+        out, d, dbg = self.executa(envolve=envolve)
+        self.assertEqual(d["pop_pib_ano"], "2022")
+        c = d["sel"][0]
+        self.assertEqual(d["pop_pib"][c], d["pop"][c] - 1000)                      # veio do Censo, não da estimativa mais recente
+        self.assertEqual(dbg["erros"], [])
+
+    def test_sem_nenhuma_populacao_do_ano_cai_na_mais_recente_e_avisa(self):
+        def envolve(base):
+            def f(url, *a, **k):
+                u = url.replace("%20", " ")
+                if ("/t/6579/" in u and "/p/2023" in u) or "/t/4714/" in u:
+                    return FakeResp([{"V": "Valor"}])
+                return base(url, *a, **k)
+            return f
+        out, d, dbg = self.executa(envolve=envolve)
+        self.assertEqual(d["pop_pib_ano"], d["pop_ano"])
+        self.assertEqual(d["pop_pib"], d["pop"])
+        self.assertTrue(any("sem população de 2023 nem Censo 2022" in a for a in dbg["avisos"]))
+        self.assertEqual(dbg["erros"], [])
+
+    def test_diagnostico_do_pib_mostra_quantos_valores_vieram_por_campo(self):
+        out, d, dbg = self.executa()
+        self.assertTrue(any("campos com valor numérico" in a and "'agro'" in a for a in dbg["avisos"]))
 
 
 if __name__ == "__main__":

@@ -1137,6 +1137,25 @@ class TestMunicipios(unittest.TestCase):
         self.assertIn("Saúde", h)
         self.assertIn("Transferências correntes", h)
 
+    def test_texto_diz_de_que_ano_e_a_populacao_do_pib_per_capita(self):
+        h = self.ler("municipios/bahia/salvador/index.html")
+        self.assertIn("com a população de 2022", h)
+        self.assertIn("divide o PIB pela população do IBGE de 2022", h)
+        _, saida = self.gerar_outro("sem_ano_pop", lambda d: d.pop("pop_pib_ano"))              # arquivo antigo, sem o ano: o texto continua correto
+        h2 = (saida / "municipios/bahia/salvador/index.html").read_text(encoding="utf-8")
+        self.assertIn("divide o PIB pela população do IBGE.", h2)
+        self.assertNotIn("com a população de", h2)
+
+    def test_areas_de_despesa_em_ordem_do_maior_gasto_mesmo_com_arquivo_em_ordem_alfabetica(self):
+        def mexe(d):                                                        # o robô grava com sort_keys=True
+            f = d["contas"]["2927408"]["des"]["funcoes"]
+            d["contas"]["2927408"]["des"]["funcoes"] = dict(sorted(f.items()))
+        _, saida = self.gerar_outro("alfabetica", mexe)
+        h = (saida / "municipios/bahia/salvador/index.html").read_text(encoding="utf-8")
+        self.assertIn("a área em que mais gastou foi Saúde", h)
+        bloco = h[h.index("Para onde vai o dinheiro"):]
+        self.assertLess(bloco.index(">Saúde<"), bloco.index(">Administração<"))
+
     def test_ficha_sem_contas_mostra_aviso_e_continua_com_pib(self):
         h = self.ler("municipios/bahia/alagoinhas/index.html")
         self.assertIn("A prefeitura ainda não tem as contas anuais utilizáveis", h)

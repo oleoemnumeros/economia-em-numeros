@@ -962,9 +962,9 @@ def _slug(t, n=60):
     return (s[:n].rstrip("-")) or "item"
 
 
-def mun_populacao(periodo="last%201"):
-    """População residente estimada por município (IBGE, SIDRA 6579): ({ibge de 7 dígitos: [nome, UF]}, {ibge: população}, ano)."""
-    linhas = get(f"https://apisidra.ibge.gov.br/values/t/6579/n6/all/v/9324/p/{periodo}", tentativas=3, timeout=120).json()
+def mun_populacao(periodo="last%201", tabela="6579", variavel="9324"):
+    """População residente por município (IBGE; SIDRA 6579 = estimativa anual, 4714 = Censo 2022): ({ibge de 7 dígitos: [nome, UF]}, {ibge: população}, ano)."""
+    linhas = get(f"https://apisidra.ibge.gov.br/values/t/{tabela}/n6/all/v/{variavel}/p/{periodo}", tentativas=3, timeout=120).json()
     nomes, pop, anos = {}, {}, set()
     for x in linhas[1:]:
         try:
@@ -1006,7 +1006,9 @@ def _pib_campo(nome):
 
 def mun_pib():
     """PIB dos Municípios (IBGE, SIDRA 5938, mil reais): ({ibge: {pib, imp, va, agro, ind, serv, adm}}, ano). Uma consulta por estado (o SIDRA limita a 100 mil valores)."""
+    from collections import Counter
     pib, anos, vistas = {}, set(), {}
+    contagem_campos, nao_num = Counter(), Counter()
     for u2 in UF_SLUG:
         linhas = get(f"https://apisidra.ibge.gov.br/values/t/5938/n6/in%20n3%20{u2}/v/all/p/last%201", tentativas=3, timeout=120).json()
         for x in linhas[1:]:
@@ -1015,12 +1017,16 @@ def mun_pib():
             try:
                 v = float(x.get("V"))
             except (TypeError, ValueError):
+                if campo:
+                    nao_num[(campo, str(x.get("V")))] += 1
                 continue
             cod = str(x.get("D1C", ""))
             if campo and len(cod) == 7:
                 pib.setdefault(cod, {})[campo] = v
+                contagem_campos[campo] += 1
                 anos.add(str(x.get("D3C", "")))
     debug["avisos"].append(f"PIB dos Municípios (5938): variáveis lidas {vistas}")
+    debug["avisos"].append(f"PIB dos Municípios: campos com valor numérico {dict(contagem_campos)}; valores não numéricos {dict(list(nao_num.most_common(6)))}")
     pib = {c: d for c, d in pib.items() if d.get("pib")}
     total = sum(d["pib"] for d in pib.values())
     if len(pib) < 5400 or not 4e9 <= total <= 3e10 or len(anos) != 1:
@@ -1219,14 +1225,25 @@ def municipios():
             raise
         debug["avisos"].append(f"PIB dos Municípios falhou ({e}); mantém o dado anterior")
         pib, pib_ano = antigo["pib"], antigo.get("pib_ano", "")
-    pop_pib = antigo.get("pop_pib") if antigo.get("pib_ano") == pib_ano and antigo.get("pop_pib") else None
+    pop_pib, pop_pib_ano = None, ""
+    if antigo.get("pib_ano") == pib_ano and antigo.get("pop_pib") and antigo.get("pop_pib_ano"):
+        pop_pib, pop_pib_ano = antigo["pop_pib"], antigo["pop_pib_ano"]
     if not pop_pib:
-        try:
-            _, pop_pib, _ = mun_populacao(pib_ano)
-        except Exception as e:  # noqa: BLE001
-            debug["avisos"].append(f"População de {pib_ano} indisponível ({e}); o PIB per capita usa a população mais recente")
-        if not pop_pib or len(pop_pib) < 5400:
-            pop_pib = pop
+        for rotulo, args in ((f"estimativa de {pib_ano}", (pib_ano,)), ("Censo 2022", ("2022", "4714", "93"))):
+            try:
+                _, cand, ano_c = mun_populacao(*args)
+            except Exception as e:  # noqa: BLE001
+                debug["avisos"].append(f"População para o PIB per capita ({rotulo}): {e}")
+                continue
+            if len(cand) >= 5400 and 190e6 <= sum(cand.values()) <= 260e6:
+                pop_pib, pop_pib_ano = cand, ano_c or pib_ano
+                break
+            debug["avisos"].append(f"População para o PIB per capita ({rotulo}): só {len(cand)} municípios; descartada")
+    if not pop_pib:
+        pop_pib, pop_pib_ano = pop, pop_ano
+        debug["avisos"].append(f"PIB per capita: sem população de {pib_ano} nem Censo 2022; usa a estimativa mais recente ({pop_ano})")
+    else:
+        debug["avisos"].append(f"PIB per capita: PIB de {pib_ano} dividido pela população de {pop_pib_ano} ({len(pop_pib)} municípios)")
     try:
         links = mun_irmaos(nomes)
     except Exception as e:  # noqa: BLE001
@@ -1275,7 +1292,7 @@ def municipios():
         if erros and novas == 0 and vazias == 0 and len(erros) >= len(faltam) - adiados:
             debug["erros"].append(f"Contas das prefeituras: todas as consultas falharam, por exemplo {erros[0]}")
     com_contas = sum(1 for v in contas.values() if v.get("rec"))
-    saida = {"fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579); Tesouro Nacional (Siconfi, DCA)", "pop_ano": pop_ano, "pib_ano": pib_ano,
+    saida = {"fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579); Tesouro Nacional (Siconfi, DCA)", "pop_ano": pop_ano, "pib_ano": pib_ano, "pop_pib_ano": pop_pib_ano,
              "contas_ano": ano_alvo or antigo.get("contas_ano"), "nomes": nomes, "pop": pop, "pop_pib": pop_pib, "pib": pib, "sel": sel, "links": links,
              "contas": {c: v for c, v in sorted(contas.items())}}
     MUN_ARQ.write_text(json.dumps(saida, ensure_ascii=False, separators=(",", ":"), sort_keys=True), encoding="utf-8")

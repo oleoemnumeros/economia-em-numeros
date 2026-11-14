@@ -254,7 +254,7 @@ def municipios_exemplo() -> dict:
     cod = "2900108"                                            # município pequeno, sem ficha
     nomes[cod], pop[cod], pop_pib[cod], pib[cod] = ["Abaíra", "BA"], 8_400, 8_300, {"pib": 150_000.0, "imp": 10_000.0, "va": 140_000.0,
                                                                                     "agro": 40_000.0, "ind": 10_000.0, "serv": 50_000.0, "adm": 40_000.0}
-    return {"fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579); Tesouro Nacional (Siconfi, DCA)", "pop_ano": "2025", "pib_ano": "2023",
+    return {"fonte": "IBGE (PIB dos Municípios, SIDRA 5938; população, SIDRA 6579); Tesouro Nacional (Siconfi, DCA)", "pop_ano": "2025", "pib_ano": "2023", "pop_pib_ano": "2022",
             "contas_ano": 2025, "nomes": nomes, "pop": pop, "pop_pib": pop_pib, "pib": pib, "sel": sel, "contas": contas,
             "links": {"2927408": {"comex": "/municipio/salvador-ba/", "oleo": "/royalties/bahia/salvador/"}, "2913606": {"oleo": "/royalties/bahia/esplanada/"},
                       "3548500": {"comex": "/municipio/santos-sp/"}}}
