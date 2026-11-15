@@ -707,29 +707,10 @@ def bf_confere_mes(ym, mes, anterior):
 # Traz famílias (uma linha por família) e valor pago por município, mas não traz pessoas. O código do município é o do SIAFI,
 # então a ligação com o IBGE é feita pelo nome do município dentro da UF.
 BF_PORTAL_URL = "https://portaldatransparencia.gov.br/download-de-dados/novo-bolsa-familia/{ym}"
-BF_PORTAL_MESES = 14            # no máximo estes meses mais recentes vêm do Portal (cada arquivo tem centenas de MB)
-BF_PORTAL_ORCAMENTO_S = 1200    # tempo máximo gasto com o Portal numa execução; o que faltar entra na próxima
+BF_PORTAL_MAPA = 2              # versão da ligação Portal -> IBGE; ao subir, os meses do Portal já guardados são baixados de novo
+BF_PORTAL_MESES = 16            # no máximo estes meses mais recentes vêm do Portal (cada arquivo tem 330 MB); 16 dão os 12 meses de comparação com folga
+BF_PORTAL_ORCAMENTO_S = 1800    # tempo máximo gasto com o Portal numa execução; o que faltar entra na próxima
 BF_UA_NAVEGADOR = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36", "Accept": "*/*"}
-
-
-def bf_portal_sonda(ym):
-    """Diagnóstico (uma vez por execução): para onde o endereço do mês redireciona e quais meses a página do conjunto de dados cita."""
-    import requests
-    url = BF_PORTAL_URL.format(ym=ym.replace("-", ""))
-    try:
-        r = requests.get(url, headers=BF_UA_NAVEGADOR, timeout=30, allow_redirects=False, stream=True)
-        debug["avisos"].append(f"Sonda Portal {ym}: HTTP {r.status_code}, content-type {r.headers.get('content-type')}, location {str(r.headers.get('location'))[:250]}")
-        r.close()
-    except requests.RequestException as e:
-        debug["avisos"].append(f"Sonda Portal {ym}: erro {e!r}")
-    pagina = url.rsplit("/", 1)[0]
-    try:
-        r = requests.get(pagina, headers=BF_UA_NAVEGADOR, timeout=30)
-        achados = sorted(set(re.findall(r"novo-bolsa-familia/(\d{6})", r.text)))
-        zips = re.findall(r"""href=["']([^"']+\.zip)["']""", r.text)[:3]
-        debug["avisos"].append(f"Sonda Portal, página do conjunto: HTTP {r.status_code}, {r.headers.get('content-type')}, {len(r.content)} bytes; meses citados {achados[:3]}...{achados[-3:]} ({len(achados)}); zips {zips}")
-    except requests.RequestException as e:
-        debug["avisos"].append(f"Sonda Portal, página do conjunto: erro {e!r}")
 
 
 class PortalIndisponivel(RuntimeError):
@@ -738,7 +719,8 @@ class PortalIndisponivel(RuntimeError):
 
 def _norm_nome(s):
     import unicodedata
-    return re.sub(r"[^A-Z0-9]", "", unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().upper())
+    s = re.sub(r"\(.*?\)", "", str(s))          # "Campo Grande (ex-Augusto Severo)" -> "Campo Grande"
+    return re.sub(r"[^A-Z0-9]", "", unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().upper())
 
 
 def _ym_digitos(s):
@@ -863,9 +845,19 @@ def bf_portal_agrega(caminho, ym):
     return agg, stats
 
 
-def bf_portal_mapeia(agg, nomes):
-    """Liga (UF, nome) do Portal ao código IBGE de 6 dígitos: ({ibge: [famílias, None, R$]}, [(UF, nome) sem par])."""
+def _semelhanca(a, b):
+    """Parecença entre dois nomes normalizados: razão de difflib, ou 0,9 quando um nome está dentro do outro (Seridó / São Vicente do Seridó)."""
     import difflib
+    curto, longo = sorted((a, b), key=len)
+    if len(curto) >= 4 and curto in longo:
+        return 0.9
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def bf_portal_mapeia(agg, nomes):
+    """Liga (UF, nome) do Portal ao código IBGE de 6 dígitos: ({ibge: [famílias, None, R$]}, [(UF, nome, famílias) sem par], [(nome no Portal, nome no IBGE, UF)] aproximados).
+    O Portal usa o código SIAFI, então a ligação é pelo nome dentro da UF: primeiro igualdade (sem acento nem parênteses); o que sobrar de cada lado no mesmo
+    estado é pareado pelo nome mais parecido (Acu/Assú, Paraty/Parati, Seridó/São Vicente do Seridó), do mais parecido para o menos, com parecença mínima de 0,5."""
     por_uf = {}
     for cod, (nome, uf) in nomes.items():
         por_uf.setdefault(uf, {}).setdefault(_norm_nome(nome), []).append(cod)
@@ -879,22 +871,28 @@ def bf_portal_mapeia(agg, nomes):
             continue
         antes = out.get(cod)
         out[cod] = [f + (antes[0] if antes else 0), None, round(v + (antes[2] if antes else 0.0), 2)]
-    # o que não casou por igualdade tenta o nome mais parecido do mesmo estado que ficou sem par (grafias diferentes, p.ex. Florínia/Florínea)
     livres = {}
     for cod, (nome, uf) in nomes.items():
         if cod not in out:
-            livres.setdefault(uf, {})[_norm_nome(nome)] = cod
-    restam = []
+            livres.setdefault(uf, {})[_norm_nome(nome)] = (cod, nome)
+    pendentes = {}
     for uf, nome, f in sem_par:
-        nn = _norm_nome(nome)
-        perto = difflib.get_close_matches(nn, list(livres.get(uf, {})), n=1, cutoff=0.86)
-        if perto:
-            cod = livres[uf].pop(perto[0])
+        pendentes.setdefault(uf, []).append((_norm_nome(nome), nome, f))
+    restam, aprox = [], []
+    for uf, itens in pendentes.items():
+        livre = livres.get(uf, {})
+        pares = sorted(((_semelhanca(nn, ln), nn, nome, f, ln) for nn, nome, f in itens for ln in livre), key=lambda x: -x[0])
+        usados = set()
+        for sc, nn, nome, f, ln in pares:
+            if sc < 0.5 or nn in usados or ln not in livre:
+                continue
+            cod, nome_ibge = livre.pop(ln)
+            usados.add(nn)
             k = agg[(uf, nn)]
             out[cod] = [k[0], None, round(k[1], 2)]
-        else:
-            restam.append((uf, nome, f))
-    return out, restam
+            aprox.append((nome, nome_ibge, uf))
+        restam += [(uf, nome, f) for nn, nome, f in itens if nn not in usados]
+    return out, restam, aprox
 
 
 def bf_baixa_mes_portal(ym, nomes):
@@ -911,13 +909,13 @@ def bf_baixa_mes_portal(ym, nomes):
         agg, st = bf_portal_agrega(caminho, ym)
     finally:
         caminho.unlink(missing_ok=True)
-    mes, restam = bf_portal_mapeia(agg, nomes)
+    mes, restam, aprox = bf_portal_mapeia(agg, nomes)
     total_f = sum(x[0] for x in agg.values())
     perdidas = sum(f for _, _, f in restam)
     debug["avisos"].append(
         f"Portal da Transparência {ym}: {n / 1e6:.0f} MB em {t1 - t0:.0f}s, leitura em {time.time() - t1:.0f}s; colunas {st['cabecalho']}; codificação {st['codificacao']}; "
         f"{st['linhas']:,} linhas ({st['retroativas']:,} retroativas, {st['sem_data']:,} sem coluna de data); {st['municipios']} municípios no arquivo, {len(mes)} ligados ao IBGE; "
-        f"{len(restam)} sem par ({perdidas:,} famílias de {total_f:,}); sem par: {sorted(restam, key=lambda x: -x[2])[:8]}; "
+        f"{len(restam)} sem par ({perdidas:,} famílias de {total_f:,}); sem par: {sorted(restam, key=lambda x: -x[2])[:8]}; pareados pelo nome mais parecido: {aprox[:20]}; "
         f"Salvador: {st['linhas_salvador']:,} linhas para {st['nis_distintos_salvador']:,} NIS distintos")
     if total_f and perdidas > 0.005 * total_f:
         raise RuntimeError(f"Portal {ym}: {perdidas / total_f:.1%} das famílias ficaram sem município do IBGE")
@@ -963,13 +961,15 @@ def bolsa_familia():
     candidatos = bf_meses_candidatos()
     faltam = [m for m in reversed(candidatos) if m not in meses or origem.get(m) == "portal"]   # com o MDS de volta, os meses do Portal ganham as pessoas
     refazer = [max(meses)] if meses else []
+    refaz_portal = {m for m, o in origem.items() if o == "portal"} if antigo.get("mapa") != BF_PORTAL_MAPA else set()    # mapeamento antigo: refaz todos
+    if refazer and origem.get(refazer[0]) == "portal":
+        refaz_portal.add(refazer[0])          # a folha do último mês pode ser revisada
     do_portal = candidatos[-BF_PORTAL_MESES:]
     seguidas = 0
     novos = 0
     sondou = False
     mds_fora = False          # o MDS redireciona para a página de avisos: daqui em diante só o Portal
     portal_falhas = 0
-    portal_sondou = False
     t_portal = None
     for ym in dict.fromkeys(refazer + faltam):
         if time.time() - t0 > BF_ORCAMENTO_S and not mds_fora:
@@ -998,8 +998,8 @@ def bolsa_familia():
             else:
                 seguidas = 0
         if mds_fora:
-            if ym not in do_portal or (ym in meses and not (ym == (refazer[0] if refazer else None) and origem.get(ym) == "portal")):
-                continue          # mês antigo demais para o Portal, ou já guardado (só o último mês do Portal é refeito, porque a folha pode ser revisada)
+            if ym not in do_portal or (ym in meses and ym not in refaz_portal):
+                continue          # mês antigo demais para o Portal, ou já guardado (só se refaz o último mês, ou todos quando o mapeamento mudou)
             t_portal = t_portal or time.time()
             if time.time() - t_portal > BF_PORTAL_ORCAMENTO_S:
                 debug["avisos"].append(f"Bolsa Família: orçamento de {BF_PORTAL_ORCAMENTO_S}s do Portal esgotado; faltam {[m for m in do_portal if m not in meses][:6]}... para a próxima execução")
@@ -1008,9 +1008,6 @@ def bolsa_familia():
                 mes, de = bf_baixa_mes_portal(ym, nomes), "portal"
             except PortalIndisponivel as e:
                 debug["avisos"].append(f"Bolsa Família {ym}: Portal da Transparência sem arquivo ({e})")
-                if not portal_sondou:
-                    portal_sondou = True
-                    bf_portal_sonda(ym)
                 continue          # o arquivo do mês mais novo costuma sair com atraso: segue para os meses anteriores
             except Exception as e:  # noqa: BLE001
                 portal_falhas += 1
@@ -1057,6 +1054,7 @@ def bolsa_familia():
     saida = {"fonte": f"{fonte}; população: IBGE (SIDRA 6579)", "pop_ano": ano, "nomes": nomes, "pop": pop, "meses": meses}
     if "portal" in fontes:
         saida["origem"] = origem
+        saida["mapa"] = BF_PORTAL_MAPA
     BF_ARQ.write_text(json.dumps(saida, ensure_ascii=False, separators=(",", ":"), sort_keys=True), encoding="utf-8")
     debug["avisos"].append(f"Bolsa Família: {len(meses)} meses guardados ({min(meses)} a {max(meses)}), {novos} baixados agora")
     return {"meses": len(meses), "ultimo": max(meses)}

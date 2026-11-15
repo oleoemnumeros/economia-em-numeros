@@ -596,7 +596,7 @@ class TestBolsaFamilia(unittest.TestCase):
         pub = ["2026-08", "2026-09", "2026-10"]
         self._roda(self._get(pub), hoje=dt.date(2026, 10, 20), inicio="2026-08")
         antes = self.arq.read_text(encoding="utf-8")
-        with mock.patch.object(r, "bf_sonda") as sonda, mock.patch.object(r, "bf_baixa_mes_portal", side_effect=r.PortalIndisponivel("sem arquivo")), mock.patch.object(r, "bf_portal_sonda"):
+        with mock.patch.object(r, "bf_sonda") as sonda, mock.patch.object(r, "bf_baixa_mes_portal", side_effect=r.PortalIndisponivel("sem arquivo")):
             out, dbg = self._roda(self._html("https://www.gov.br/mds/pt-br/avisos"), hoje=dt.date(2026, 11, 13), inicio="2026-08")
         self.assertIsNone(out)
         self.assertEqual(sonda.call_count, 0)
@@ -736,6 +736,10 @@ def _brasil_sintetico():
     return out
 
 
+def _n(nome):
+    return r._norm_nome(nome)
+
+
 class TestBolsaFamiliaPortal(unittest.TestCase):
     """Fonte alternativa: lista de pagamentos do Portal da Transparência (famílias e valor por município, sem pessoas)."""
 
@@ -782,12 +786,26 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
         nomes = {"292740": ["Salvador", "BA"], "351000": ["Salvador", "SP"], "120040": ["Florínia", "SP"], "330455": ["Rio de Janeiro", "RJ"]}
         agg = {("BA", "SALVADOR"): [10, 6000.0, "SALVADOR"], ("SP", "SALVADOR"): [3, 1800.0, "SALVADOR"],
                ("SP", "FLORINEA"): [4, 2400.0, "FLORINEA"], ("RJ", "RIODEJANEIRO"): [7, 4200.0, "RIO DE JANEIRO"], ("MG", "NAOEXISTE"): [1, 600.0, "NÃO EXISTE"]}
-        mes, restam = r.bf_portal_mapeia(agg, nomes)
+        mes, restam, aprox = r.bf_portal_mapeia(agg, nomes)
         self.assertEqual(mes["292740"], [10, None, 6000.0])
         self.assertEqual(mes["351000"], [3, None, 1800.0])
         self.assertEqual(mes["120040"], [4, None, 2400.0])          # Florinea -> Florínia
         self.assertEqual(mes["330455"], [7, None, 4200.0])
         self.assertEqual(restam, [("MG", "NÃO EXISTE", 1)])
+        self.assertIn(("FLORINEA", "Florínia", "SP"), aprox)
+
+    def test_mapeia_nomes_antigos_abreviados_e_com_parenteses(self):
+        nomes = {"240020": ["Assú", "RN"], "240120": ["Arez", "RN"], "240130": ["Campo Grande", "RN"], "241030": ["Serra Caiada", "RN"], "251540": ["São Vicente do Seridó", "PB"],
+                 "251396": ["São Domingos", "PB"], "330380": ["Paraty", "RJ"], "330455": ["Rio de Janeiro", "RJ"], "292740": ["Salvador", "BA"]}
+        agg = {("RN", "ACU"): [9, 5400.0, "ACU"], ("RN", "ARES"): [8, 4800.0, "ARES"], ("RN", _n("CAMPO GRANDE (EX-AUGUSTO SEVERO)")): [7, 4200.0, "CAMPO GRANDE (EX-AUGUSTO SEVERO)"],
+               ("RN", _n("SERRA CAIADA (EX-PRESIDENTE JUSCELINO)")): [6, 3600.0, "SERRA CAIADA (EX-PRESIDENTE JUSCELINO)"], ("PB", "SERIDO"): [5, 3000.0, "SERIDO"],
+               ("PB", _n("SAO DOMINGOS DE POMBAL")): [4, 2400.0, "SÃO DOMINGOS DE POMBAL"], ("RJ", "PARATI"): [3, 1800.0, "PARATI"], ("RJ", _n("RIO DE JANEIRO")): [2, 1200.0, "RIO DE JANEIRO"],
+               ("BA", "SALVADOR"): [10, 6000.0, "SALVADOR"]}
+        mes, restam, aprox = r.bf_portal_mapeia(agg, nomes)
+        self.assertEqual(restam, [])
+        self.assertEqual({c: v[0] for c, v in mes.items()}, {"240020": 9, "240120": 8, "240130": 7, "241030": 6, "251540": 5, "251396": 4, "330380": 3, "330455": 2, "292740": 10})
+        self.assertEqual(len(aprox), 5)                                    # Acu, Ares, Seridó, São Domingos de Pombal e Parati; os demais casam por igualdade
+        self.assertEqual(sorted(a[1] for a in aprox), ["Arez", "Assú", "Paraty", "São Domingos", "São Vicente do Seridó"])
 
     def test_baixa_mes_recusa_quando_muitas_familias_ficam_sem_municipio(self):
         nomes = {"292740": ["Salvador", "BA"]}
@@ -838,19 +856,6 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
         self.assertEqual(sorted(d["meses"]), ["2026-08", "2026-09"])        # 2026-11 e 2026-10 sem arquivo, 09 e 08 baixados
         self.assertEqual(dbg["erros"], [])
         self.assertEqual(chamadas[:4], ["2026-11", "2026-10", "2026-09", "2026-08"])
-        self.assertEqual(self.sonda_portal.call_count, 1)
-
-    def test_sonda_do_portal_roda_uma_vez_e_registra_o_redirecionamento(self):
-        class Resp:
-            status_code, headers, url, text, content = 302, {"location": "https://cdn.exemplo/x.zip", "content-type": "text/html"}, "u", '<a href="/download-de-dados/novo-bolsa-familia/202401">x</a>', b"x"
-
-            def close(self):
-                pass
-        with mock.patch("requests.get", lambda *a, **k: Resp()), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
-            r.bf_portal_sonda("2026-11")
-        txt = " | ".join(dbg["avisos"])
-        self.assertIn("location https://cdn.exemplo/x.zip", txt)
-        self.assertIn("202401", txt)
 
     # ---- orquestração: MDS fora do ar -> Portal
     def setUp(self):
@@ -892,9 +897,8 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
                 return self._mes_portal(ym)
             raise r.PortalIndisponivel("sem arquivo")
         with mock.patch.object(r, "get", get), mock.patch.object(r, "BF_ARQ", self.arq), mock.patch.object(r, "HOJE", hoje), mock.patch.object(r, "BF_INICIO", inicio), \
-                mock.patch.object(r, "bf_baixa_mes_portal", baixa), mock.patch.object(r, "bf_sonda"), mock.patch.object(r, "bf_portal_sonda") as sonda_portal, \
+                mock.patch.object(r, "bf_baixa_mes_portal", baixa), mock.patch.object(r, "bf_sonda"), \
                 mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
-            self.sonda_portal = sonda_portal
             out = r.bolsa_familia()
         return out, dbg, chamadas
 
@@ -917,6 +921,16 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
         _, dbg, chamadas = self._roda(portal=["2026-08", "2026-09", "2026-10"])
         self.assertEqual([c for c in chamadas if c != "2026-11"], ["2026-10"])
         self.assertEqual(self.arq.read_text(encoding="utf-8"), antes)                   # nenhum commit à toa
+
+    def test_mapeamento_antigo_refaz_todos_os_meses_do_portal(self):
+        self._roda(portal=["2026-08", "2026-09", "2026-10"])
+        d = json.loads(self.arq.read_text(encoding="utf-8"))
+        self.assertEqual(d["mapa"], r.BF_PORTAL_MAPA)
+        del d["mapa"]                                                        # arquivo gravado por uma versão anterior do mapeamento
+        self.arq.write_text(json.dumps(d), encoding="utf-8")
+        _, _, chamadas = self._roda(portal=["2026-08", "2026-09", "2026-10"])
+        self.assertEqual(sorted(c for c in chamadas if c != "2026-11"), ["2026-08", "2026-09", "2026-10"])
+        self.assertEqual(json.loads(self.arq.read_text(encoding="utf-8"))["mapa"], r.BF_PORTAL_MAPA)
 
     def test_novo_mes_do_portal_e_acrescentado_sem_mexer_nos_outros(self):
         self._roda(portal=["2026-08", "2026-09"], hoje=dt.date(2026, 10, 20))
@@ -948,7 +962,7 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
         html = TestBolsaFamilia._html(self, "https://www.gov.br/mds/pt-br/avisos")
         with mock.patch.object(r, "get", lambda u, p=None, **k: FakeResp(self._sidra_pop()) if "/t/6579/" in u else html(u, p, **k)), mock.patch.object(r, "BF_ARQ", self.arq), \
                 mock.patch.object(r, "HOJE", dt.date(2026, 11, 13)), mock.patch.object(r, "BF_INICIO", "2026-08"), mock.patch.object(r, "bf_sonda"), \
-                mock.patch.object(r, "bf_baixa_mes_portal", side_effect=RuntimeError("timeout")) as baixa, mock.patch.object(r, "bf_portal_sonda"), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+                mock.patch.object(r, "bf_baixa_mes_portal", side_effect=RuntimeError("timeout")) as baixa, mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
             out = r.bolsa_familia()
         self.assertIsNone(out)
         self.assertEqual(baixa.call_count, 2)
