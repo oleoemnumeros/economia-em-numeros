@@ -596,7 +596,7 @@ class TestBolsaFamilia(unittest.TestCase):
         pub = ["2026-08", "2026-09", "2026-10"]
         self._roda(self._get(pub), hoje=dt.date(2026, 10, 20), inicio="2026-08")
         antes = self.arq.read_text(encoding="utf-8")
-        with mock.patch.object(r, "bf_sonda") as sonda, mock.patch.object(r, "bf_baixa_mes_portal", side_effect=r.PortalIndisponivel("sem arquivo")):
+        with mock.patch.object(r, "bf_sonda") as sonda, mock.patch.object(r, "bf_baixa_mes_portal", side_effect=r.PortalIndisponivel("sem arquivo")), mock.patch.object(r, "bf_portal_sonda"):
             out, dbg = self._roda(self._html("https://www.gov.br/mds/pt-br/avisos"), hoje=dt.date(2026, 11, 13), inicio="2026-08")
         self.assertIsNone(out)
         self.assertEqual(sonda.call_count, 0)
@@ -816,6 +816,42 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
             with self.assertRaises(r.PortalIndisponivel):
                 r.bf_portal_baixa("2026-11", Path(tmp) / "x.zip")
 
+    def test_403_nos_dois_agentes_vira_portal_indisponivel_sem_esperar_a_toa(self):
+        chamadas = []
+
+        class Resp:
+            status_code, headers, url, text = 403, {}, "u", '<?xml version="1.0"?><Error><Code>AccessDenied</Code></Error>'
+
+        def get(*a, **k):
+            chamadas.append(k["headers"]["User-Agent"])
+            return Resp()
+        with tempfile.TemporaryDirectory() as tmp, mock.patch("requests.get", get), mock.patch.object(r.time, "sleep") as dorme:
+            with self.assertRaises(r.PortalIndisponivel) as cm:
+                r.bf_portal_baixa("2026-11", Path(tmp) / "x.zip")
+        self.assertEqual(len(chamadas), 2)                                  # robô e navegador
+        self.assertIn("AccessDenied", str(cm.exception))
+        self.assertLessEqual(sum(c.args[0] for c in dorme.call_args_list), 5)
+
+    def test_meses_mais_novos_sem_arquivo_nao_impedem_os_anteriores(self):
+        out, dbg, chamadas = self._roda(portal=["2026-08", "2026-09"])
+        d = json.loads(self.arq.read_text(encoding="utf-8"))
+        self.assertEqual(sorted(d["meses"]), ["2026-08", "2026-09"])        # 2026-11 e 2026-10 sem arquivo, 09 e 08 baixados
+        self.assertEqual(dbg["erros"], [])
+        self.assertEqual(chamadas[:4], ["2026-11", "2026-10", "2026-09", "2026-08"])
+        self.assertEqual(self.sonda_portal.call_count, 1)
+
+    def test_sonda_do_portal_roda_uma_vez_e_registra_o_redirecionamento(self):
+        class Resp:
+            status_code, headers, url, text, content = 302, {"location": "https://cdn.exemplo/x.zip", "content-type": "text/html"}, "u", '<a href="/download-de-dados/novo-bolsa-familia/202401">x</a>', b"x"
+
+            def close(self):
+                pass
+        with mock.patch("requests.get", lambda *a, **k: Resp()), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            r.bf_portal_sonda("2026-11")
+        txt = " | ".join(dbg["avisos"])
+        self.assertIn("location https://cdn.exemplo/x.zip", txt)
+        self.assertIn("202401", txt)
+
     # ---- orquestração: MDS fora do ar -> Portal
     def setUp(self):
         self.codigos = [f"{uf}{i:04d}" for uf in TestBolsaFamilia.UFS for i in range(210)]
@@ -856,7 +892,9 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
                 return self._mes_portal(ym)
             raise r.PortalIndisponivel("sem arquivo")
         with mock.patch.object(r, "get", get), mock.patch.object(r, "BF_ARQ", self.arq), mock.patch.object(r, "HOJE", hoje), mock.patch.object(r, "BF_INICIO", inicio), \
-                mock.patch.object(r, "bf_baixa_mes_portal", baixa), mock.patch.object(r, "bf_sonda"), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+                mock.patch.object(r, "bf_baixa_mes_portal", baixa), mock.patch.object(r, "bf_sonda"), mock.patch.object(r, "bf_portal_sonda") as sonda_portal, \
+                mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            self.sonda_portal = sonda_portal
             out = r.bolsa_familia()
         return out, dbg, chamadas
 
@@ -910,7 +948,7 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
         html = TestBolsaFamilia._html(self, "https://www.gov.br/mds/pt-br/avisos")
         with mock.patch.object(r, "get", lambda u, p=None, **k: FakeResp(self._sidra_pop()) if "/t/6579/" in u else html(u, p, **k)), mock.patch.object(r, "BF_ARQ", self.arq), \
                 mock.patch.object(r, "HOJE", dt.date(2026, 11, 13)), mock.patch.object(r, "BF_INICIO", "2026-08"), mock.patch.object(r, "bf_sonda"), \
-                mock.patch.object(r, "bf_baixa_mes_portal", side_effect=RuntimeError("timeout")) as baixa, mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+                mock.patch.object(r, "bf_baixa_mes_portal", side_effect=RuntimeError("timeout")) as baixa, mock.patch.object(r, "bf_portal_sonda"), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
             out = r.bolsa_familia()
         self.assertIsNone(out)
         self.assertEqual(baixa.call_count, 2)

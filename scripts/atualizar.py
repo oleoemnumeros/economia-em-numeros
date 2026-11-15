@@ -712,6 +712,26 @@ BF_PORTAL_ORCAMENTO_S = 1200    # tempo máximo gasto com o Portal numa execuç�
 BF_UA_NAVEGADOR = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36", "Accept": "*/*"}
 
 
+def bf_portal_sonda(ym):
+    """Diagnóstico (uma vez por execução): para onde o endereço do mês redireciona e quais meses a página do conjunto de dados cita."""
+    import requests
+    url = BF_PORTAL_URL.format(ym=ym.replace("-", ""))
+    try:
+        r = requests.get(url, headers=BF_UA_NAVEGADOR, timeout=30, allow_redirects=False, stream=True)
+        debug["avisos"].append(f"Sonda Portal {ym}: HTTP {r.status_code}, content-type {r.headers.get('content-type')}, location {str(r.headers.get('location'))[:250]}")
+        r.close()
+    except requests.RequestException as e:
+        debug["avisos"].append(f"Sonda Portal {ym}: erro {e!r}")
+    pagina = url.rsplit("/", 1)[0]
+    try:
+        r = requests.get(pagina, headers=BF_UA_NAVEGADOR, timeout=30)
+        achados = sorted(set(re.findall(r"novo-bolsa-familia/(\d{6})", r.text)))
+        zips = re.findall(r"""href=["']([^"']+\.zip)["']""", r.text)[:3]
+        debug["avisos"].append(f"Sonda Portal, página do conjunto: HTTP {r.status_code}, {r.headers.get('content-type')}, {len(r.content)} bytes; meses citados {achados[:3]}...{achados[-3:]} ({len(achados)}); zips {zips}")
+    except requests.RequestException as e:
+        debug["avisos"].append(f"Sonda Portal, página do conjunto: erro {e!r}")
+
+
 class PortalIndisponivel(RuntimeError):
     """O arquivo do mês não existe (ainda não foi publicado) ou o Portal devolveu uma página no lugar do zip."""
 
@@ -745,6 +765,10 @@ def bf_portal_baixa(ym, destino):
             continue
         if r.status_code == 404:
             raise PortalIndisponivel(f"HTTP 404 em {url}")
+        if r.status_code == 403 and cab is BF_UA_NAVEGADOR:
+            # O Portal serve os arquivos por um CDN que responde 403 "AccessDenied" (XML) quando o arquivo do mês não existe;
+            # com os dois agentes recusados, o mês é tratado como ainda não publicado e o robô tenta os meses mais antigos.
+            raise PortalIndisponivel(f"HTTP 403 nos dois agentes em {url}: {r.text[:150]!r}")
         if r.status_code != 200:
             ultimo = f"HTTP {r.status_code} (agente {'robô' if cab is UA else 'navegador'}): {r.text[:150]!r}"
             time.sleep(5 * (i + 1))
@@ -945,6 +969,7 @@ def bolsa_familia():
     sondou = False
     mds_fora = False          # o MDS redireciona para a página de avisos: daqui em diante só o Portal
     portal_falhas = 0
+    portal_sondou = False
     t_portal = None
     for ym in dict.fromkeys(refazer + faltam):
         if time.time() - t0 > BF_ORCAMENTO_S and not mds_fora:
@@ -983,7 +1008,10 @@ def bolsa_familia():
                 mes, de = bf_baixa_mes_portal(ym, nomes), "portal"
             except PortalIndisponivel as e:
                 debug["avisos"].append(f"Bolsa Família {ym}: Portal da Transparência sem arquivo ({e})")
-                continue
+                if not portal_sondou:
+                    portal_sondou = True
+                    bf_portal_sonda(ym)
+                continue          # o arquivo do mês mais novo costuma sair com atraso: segue para os meses anteriores
             except Exception as e:  # noqa: BLE001
                 portal_falhas += 1
                 debug["avisos"].append(f"Bolsa Família {ym}: Portal da Transparência falhou ({e})")
