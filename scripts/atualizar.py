@@ -516,8 +516,32 @@ EXTERNO = (  # chave, código SGS, faixa plausível, descrição
     ("ca_pib", 23079, (-8, 4), "saldo da conta corrente acumulado em 12 meses, % do PIB"),
     ("idp_mensal", 22885, (-20000, 40000), "investimento direto no país (IDP), fluxo líquido mensal, US$ milhões"),
 )
+CARTEIRA_ACOES_SGS = 22927  # investimento em carteira, ações, passivos (compra líquida de ações brasileiras por não residentes), mensal, US$ milhões; positivo = entrada de dólares
 RESERVAS_SGS = 13621  # reservas internacionais, diária, US$ milhões; bate com o número da nota mensal do BC (US$ 357,103 bi em out/2025). A 13982 soma as linhas com recompra e dá ~US$ 11 a 15 bi a mais
 BALANCA_URL = "https://raw.githubusercontent.com/oleoemnumeros/comex-em-numeros/main/data/dados.json"
+
+
+def _carteira_acoes():
+    """Estrangeiros em ações (balanço de pagamentos, SGS 22927). É opcional: se a série falhar ou parecer errada, o resto do setor externo segue e vale a última leitura guardada."""
+    try:
+        serie = sgs(CARTEIRA_ACOES_SGS, dt.date(2015, 1, 1))
+        if len(serie) < 60 or not all(-25000 <= v <= 25000 for _, v in serie):
+            raise RuntimeError(f"SGS {CARTEIRA_ACOES_SGS} fora do esperado ({len(serie)} meses, faixa -25 a 25 bilhões por mês); últimas leituras: {[(d.isoformat(), v) for d, v in serie[-3:]]}")
+        if (HOJE - serie[-1][0]).days > 150:
+            raise RuntimeError(f"último mês ({serie[-1][0]:%Y-%m}) tem mais de 5 meses")
+        a12 = sum(v for _, v in serie[-12:])
+        if not -80000 <= a12 <= 80000:
+            raise RuntimeError(f"soma dos últimos 12 meses ({a12:.0f} US$ milhões) fora do esperado")
+        out = [[d.strftime("%Y-%m"), v] for d, v in serie]
+        debug["avisos"].append(f"Setor externo: ações por estrangeiros (SGS {CARTEIRA_ACOES_SGS}, US$ milhões, positivo = entrada): últimas leituras {out[-4:]}; 12 meses {a12:.0f}")
+        return {"acoes_mensal": out}
+    except Exception as e:  # noqa: BLE001 - opcional
+        try:
+            guardado = json.loads(DADOS.read_text(encoding="utf-8")).get("externo", {}).get("acoes_mensal")
+        except Exception:  # noqa: BLE001
+            guardado = None
+        debug["avisos"].append(f"Setor externo: ações por estrangeiros (SGS {CARTEIRA_ACOES_SGS}) não atualizadas ({e}); " + ("mantém a leitura anterior" if guardado else "o bloco fica de fora"))
+        return {"acoes_mensal": guardado} if guardado else {}
 
 
 def setor_externo():
@@ -551,6 +575,8 @@ def setor_externo():
     if not 15000 <= idp12 <= 200000:
         raise RuntimeError(f"IDP: soma dos últimos 12 meses ({idp12:.0f} US$ milhões) fora do esperado; conferir SGS 22885")
     debug["avisos"].append(f"Setor externo: conta corrente em 12 meses {v12:.0f} US$ milhões ({m12}); soma mensal {soma:.0f}; IDP em 12 meses {idp12:.0f}")
+
+    out.update(_carteira_acoes())
 
     diaria = sgs(RESERVAS_SGS, dt.date(2015, 1, 1))
     if len(diaria) < 500 or not all(150000 <= v <= 600000 for _, v in diaria):

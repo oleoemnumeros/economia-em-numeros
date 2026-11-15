@@ -389,7 +389,7 @@ class TestAtividadeECambio(unittest.TestCase):
 
 
 class TestSetorExterno(unittest.TestCase):
-    def _sgs(self, ca_mensal=lambda k: -3000.0 - k, ca_pib=lambda k: -2.5, idp=lambda k: 5000.0 + k, reservas=lambda k: 350000.0 + k):
+    def _sgs(self, ca_mensal=lambda k: -3000.0 - k, ca_pib=lambda k: -2.5, idp=lambda k: 5000.0 + k, reservas=lambda k: 350000.0 + k, acoes=lambda k: ((k * 7) % 11 - 5) * 600.0):
         """Séries sintéticas: 120 meses mensais (2016-2025 e 2026 até outubro) e 4.000 dias úteis de reservas até hoje."""
         meses = [(dt.date(2016 + k // 12, k % 12 + 1, 1), k) for k in range(130)]
         hoje = r.HOJE
@@ -406,17 +406,45 @@ class TestSetorExterno(unittest.TestCase):
                 return [(d, idp(k)) for d, k in meses]
             if cod == 13621:
                 return [(d, reservas(j)) for d, j in dias]
+            if cod == 22927:
+                return [(d, acoes(k)) for d, k in meses]
             raise AssertionError(cod)
         return sgs
 
     def test_externo_monta_series_e_confere_soma_de_12_meses(self):
         with mock.patch.object(r, "sgs", self._sgs()), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
             out = r.setor_externo()
-        self.assertEqual(set(out), {"ca_mensal", "ca_12m", "ca_pib", "idp_mensal", "reservas", "reservas_ultima"})
+        self.assertEqual(set(out), {"ca_mensal", "ca_12m", "ca_pib", "idp_mensal", "acoes_mensal", "reservas", "reservas_ultima"})
+        self.assertEqual(out["acoes_mensal"][-1][0], out["idp_mensal"][-1][0])
         self.assertEqual(out["ca_12m"][-1][0], out["ca_mensal"][-1][0])
         self.assertEqual(out["reservas"][-1][0], r.HOJE.strftime("%Y-%m"))  # último mês = último dia disponível
         self.assertEqual(out["reservas_ultima"][0], r.HOJE.isoformat())
         self.assertTrue(any(a.startswith("Reservas") for a in dbg["avisos"]))
+
+    def test_acoes_de_estrangeiros_e_opcional_e_mantem_a_ultima_leitura(self):
+        def sem_acoes(cod, ini):
+            if cod == 22927:
+                raise RuntimeError("SGS fora do ar")
+            return self._sgs()(cod, ini)
+        with mock.patch.object(r, "sgs", sem_acoes), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg, mock.patch.object(r, "DADOS", Path("/nao/existe.json")):
+            out = r.setor_externo()
+        self.assertNotIn("acoes_mensal", out)                                 # o resto do setor externo segue
+        self.assertIn("ca_mensal", out)
+        self.assertTrue(any("o bloco fica de fora" in a for a in dbg["avisos"]))
+        with tempfile.TemporaryDirectory() as tmp:
+            arq = Path(tmp) / "dados.json"
+            arq.write_text(json.dumps({"externo": {"acoes_mensal": [["2026-08", -1234.0]]}}), encoding="utf-8")
+            with mock.patch.object(r, "sgs", sem_acoes), mock.patch.object(r, "debug", {"avisos": [], "erros": []}), mock.patch.object(r, "DADOS", arq):
+                out = r.setor_externo()
+        self.assertEqual(out["acoes_mensal"], [["2026-08", -1234.0]])         # mantém a anterior em vez de sumir da página
+
+    def test_acoes_de_estrangeiros_recusa_unidade_errada(self):
+        with mock.patch.object(r, "sgs", self._sgs(acoes=lambda k: 3.0 + (k % 5))), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            self.assertIn("acoes_mensal", r.setor_externo())                  # valores pequenos mas plausíveis (US$ milhões)
+        with mock.patch.object(r, "sgs", self._sgs(acoes=lambda k: 3_000_000.0)), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg, mock.patch.object(r, "DADOS", Path("/nao/existe.json")):
+            out = r.setor_externo()                                           # em dólares, não em milhões: fora da faixa
+        self.assertNotIn("acoes_mensal", out)
+        self.assertTrue(any("fora do esperado" in a for a in dbg["avisos"]))
 
     def test_externo_recusa_serie_acumulada_que_nao_bate_com_a_mensal(self):
         sgs = self._sgs()

@@ -503,7 +503,7 @@ class TestGraficosECsv(unittest.TestCase):
             self.assertEqual(n_graf, t.count("data-abre=") + t.count("data-fam-gr="), caminho)        # nenhum gráfico sem interação
             self.assertEqual(t.count('class="gfoot"'), n_graf, caminho)       # nem sem rodapé com fonte e data
             self.assertEqual(t.count("Baixar CSV"), n_graf, caminho)
-        self.assertEqual(total, 1 + 1 + 2 + 27 + 2 + 2 + 4 + 16 + 2 + 5 + 4 + 6)   # início, juros, emprego, 27 UFs, câmbio, atividade, inflação, 16 áreas, contas públicas, indústria e varejo, crédito, setor externo
+        self.assertEqual(total, 1 + 1 + 2 + 27 + 2 + 2 + 4 + 16 + 2 + 5 + 4 + 8)   # início, juros, emprego, 27 UFs, câmbio, atividade, inflação, 16 áreas, contas públicas, indústria e varejo, crédito, setor externo
 
     def test_rodape_com_fonte_e_data(self):
         t = self.htmls["/juros/"]
@@ -690,7 +690,7 @@ class TestEixos(unittest.TestCase):
                     rot = re.search(r'<text class="yl"[^>]*>(.*?)</text>', bloco)
                     self.assertIsNotNone(rot, c)
                     self.assertGreater(len(rot.group(1)), 2, c)
-            self.assertEqual(total, 70)
+            self.assertEqual(total, 72)
             t = (d / "docs" / "cambio" / "index.html").read_text(encoding="utf-8")
             self.assertIn(">R$ por US$<", t)
             t = (d / "docs" / "contas-publicas" / "index.html").read_text(encoding="utf-8")
@@ -798,6 +798,53 @@ class TestSetorExterno(unittest.TestCase):
         self.assertNotIn("balanca-comercial", t)
         self.assertNotIn("Na balança comercial", t)
         self.assertIn("conta-corrente-pib", t)
+        self.assertEqual(t.count("<h1"), 1)
+        self.assertIsNone(re.search(r"\bNone\b|\bnan\b", t))
+
+    def test_estrangeiros_em_acoes_conferem_com_os_dados(self):
+        e = self.B.ext_stats()
+        ac = externo_exemplo()["acoes_mensal"]
+        a = e["acoes"]
+        self.assertEqual(a["mes"], "2026-09")
+        self.assertAlmostEqual(a["v"], sum(v for _, v in ac[-12:]) / 1000, 6)
+        self.assertAlmostEqual(a["dif12"], (sum(v for _, v in ac[-12:]) - sum(v for _, v in ac[-24:-12])) / 1000, 6)
+        self.assertAlmostEqual(a["mes_v"], ac[-1][1] / 1000, 6)
+        self.assertAlmostEqual(a["ano"], sum(v for m, v in ac if m.startswith("2026")) / 1000, 6)
+        self.assertEqual(a["ano_n"], 9)
+        self.assertEqual(len(a["mensal"]), len(ac))
+        self.assertEqual(len(e["idp_acoes"]), 60)
+        m, i, x = e["idp_acoes"][-1]
+        self.assertAlmostEqual(x, a["v"], 6)
+
+    def test_pagina_mostra_graficos_texto_e_tabela_das_acoes(self):
+        t = self.ler("setor-externo/index.html")
+        a = self.B.ext_stats()["acoes"]
+        self.assertIn("Em ações brasileiras, os estrangeiros", t)
+        self.assertIn("aplicaram" if a["v"] >= 0 else "retiraram", t)
+        self.assertIn("Estrangeiros em ações brasileiras, no mês (US$ bilhões)", t)
+        self.assertIn("Dinheiro estrangeiro que fica e que vai e vem, em 12 meses", t)
+        self.assertIn("Ações compradas por estrangeiros, 12 meses (US$ bi)", t)
+        self.assertIn("não é igual ao saldo diário que a B3 divulga", t)
+        self.assertIn("SGS 22927", t)
+        self.assertEqual(t.count("<h1"), 1)
+        self.assertIsNone(re.search(r"\bNone\b|\bnan\b", t))
+        csv = (self.saida / "dados" / "estrangeiros-em-acoes-mensal.csv")
+        self.assertTrue(csv.exists())
+        self.assertEqual(len(csv.read_text(encoding="utf-8-sig").splitlines()), len(externo_exemplo()["acoes_mensal"]) + 1)
+
+    def test_sem_a_serie_de_acoes_a_pagina_continua_igual(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        d = Path(d.name)
+        dados = json.loads(gravar(d / "x.json").read_text(encoding="utf-8"))
+        dados["externo"].pop("acoes_mensal")
+        (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
+        g.gerar(d / "dados.json", d / "docs")
+        t = (d / "docs" / "setor-externo" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("Em ações brasileiras", t)
+        self.assertNotIn("estrangeiros-em-acoes", t)
+        self.assertNotIn("investimento em ações por estrangeiros", t)
+        self.assertIn("conta-corrente-e-investimento-direto", t)
         self.assertEqual(t.count("<h1"), 1)
         self.assertIsNone(re.search(r"\bNone\b|\bnan\b", t))
 

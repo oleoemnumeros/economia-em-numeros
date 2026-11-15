@@ -137,9 +137,10 @@ def externo_exemplo() -> dict:
     ca_12 = [[ms[k], round(sum(v for _, v in ca_m[k - 11:k + 1]), 1)] for k in range(11, len(ms))]
     ca_pib = [[m, round(v / 2_250_000 * 100, 2)] for m, v in ca_12]
     idp = [[m, round(5200 + ((k * 5) % 11) * 300, 1)] for k, m in enumerate(ms)]
+    acoes = [[m, round(((k * 7) % 13 - 6) * 700 + (-900 if k > 100 else 0), 1)] for k, m in enumerate(ms)]     # estrangeiros em ações: meses de entrada e de saída
     res = [[m, round(340_000 + ((k * 3) % 17) * 1500, 1)] for k, m in enumerate(meses("2016-01", "2026-11"))]
     res[-1][1] = 358_200.0
-    return {"ca_mensal": ca_m, "ca_12m": ca_12, "ca_pib": ca_pib, "idp_mensal": idp, "reservas": res, "reservas_ultima": ["2026-11-12", 358_200.0]}
+    return {"ca_mensal": ca_m, "ca_12m": ca_12, "ca_pib": ca_pib, "idp_mensal": idp, "acoes_mensal": acoes, "reservas": res, "reservas_ultima": ["2026-11-12", 358_200.0]}
 
 
 def balanca_exemplo() -> dict:

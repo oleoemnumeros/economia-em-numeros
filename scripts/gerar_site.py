@@ -58,6 +58,7 @@ F_PMC_AMP = "IBGE, Pesquisa Mensal de Comércio, varejo ampliado (SIDRA, tabela 
 F_EXT_CA = "Banco Central do Brasil, balanço de pagamentos (SGS 22701, 24419 e 23079)"
 F_EXT_IDP = "Banco Central do Brasil, investimento direto no país (SGS 22885)"
 F_EXT_RES = "Banco Central do Brasil, reservas internacionais (SGS 13621)"
+F_EXT_ACOES = "Banco Central do Brasil, balanço de pagamentos: investimento em carteira, ações, passivos, líquido (SGS 22927)"
 F_EXT_BAL = "Secex/MDIC (Comex Stat), via Comex em Números"
 F_BF = "MDS, Matriz de Informação Social (MI Social); população: IBGE (SIDRA, tabela 6579)"
 F_BF_PORTAL = "Portal da Transparência (CGU), pagamentos do Novo Bolsa Família; população: IBGE (SIDRA, tabela 6579)"
@@ -374,12 +375,26 @@ class Base:
             if v is not None:
                 a = soma12(idp, mes_antes(m, 12))
                 idp12 = {"mes": m, "v": v, "dif12": v - a if a is not None else None}
+        ac = dict(serie("acoes_mensal")) if e.get("acoes_mensal") else {}
+        acoes, idp_acoes = None, []
+        if len(ac) >= 24:
+            m = max(ac)
+            v = soma12(ac, m)
+            if v is not None:
+                a = soma12(ac, mes_antes(m, 12))
+                ano = [x for x in ac if x[:4] == m[:4]]
+                acoes = {"mes": m, "v": v, "dif12": v - a if a is not None else None, "mes_v": ac[m] / 1000.0, "ano": sum(ac[x] for x in ano) / 1000.0, "ano_n": len(ano),
+                         "mensal": [(x, ac[x] / 1000.0) for x in sorted(ac)]}
+                for x in sorted(ac)[-60:]:
+                    i, s12 = soma12(idp, x) if idp else None, soma12(ac, x)
+                    if i is not None and s12 is not None:
+                        idp_acoes.append((x, i, s12))
         ca_idp = []
         for m, v in ca12["serie"][-60:]:
             i = soma12(idp, m) if idp else None
             if i is not None:
                 ca_idp.append((m, v, i))
-        out = {"res": res, "ca12": ca12, "pib": pib, "idp12": idp12, "ca_idp": ca_idp, "ca_mensal": [(m, v / 1000.0) for m, v in serie("ca_mensal")], "bal": None}
+        out = {"res": res, "ca12": ca12, "pib": pib, "idp12": idp12, "ca_idp": ca_idp, "acoes": acoes, "idp_acoes": idp_acoes, "ca_mensal": [(m, v / 1000.0) for m, v in serie("ca_mensal")], "bal": None}
         if self.tem_balanca:
             ex, im = dict(self.balanca["export"]), dict(self.balanca["import"])
             ms = sorted(set(ex) & set(im))
@@ -2056,6 +2071,10 @@ def pg_setor_externo(B: Base) -> str:
         if ca["v"] < 0 and idp["mes"] == ca["mes"]:
             lede += f', o equivalente a {nf(idp["v"] / -ca["v"] * 100, 0)}% do déficit'
     lede += "."
+    ac = e.get("acoes")
+    if ac:
+        lede += (f' Em ações brasileiras, os estrangeiros {"aplicaram" if ac["v"] >= 0 else "retiraram"} <strong>US$ {nf(abs(ac["v"]), 1)} bilhões</strong> líquidos em 12 meses até {mes_nome(ac["mes"])}'
+                 f' ({"entrada" if ac["v"] >= 0 else "saída"} de dólares pela bolsa).')
     if bal:
         lede += (f' Na balança comercial, o saldo em 12 meses até {mes_nome(bal["mes"])} foi de <strong>US$ {nf(bal["sal12"], 1)} bilhões</strong> '
                  f'(exportações de US$ {nf(bal["exp12"], 0)} bilhões e importações de US$ {nf(bal["imp12"], 0)} bilhões).')
@@ -2098,6 +2117,25 @@ def pg_setor_externo(B: Base) -> str:
                             nota='<p class="small">Quando a linha do investimento direto fica acima do déficit (em módulo), os dólares que entram como investimento produtivo cobrem o buraco da conta corrente.</p>',
                             ultimo=f"conta corrente {nf(ic[-1][1], 1)}; investimento direto {nf(ic[-1][2], 1)} ({mes_curto(ic[-1][0])})",
                             csv_cab=["Mês", "Saldo da conta corrente em 12 meses (US$ bilhões)", "Investimento direto no país em 12 meses (US$ bilhões)"], csv_linhas=ic))
+    if ac:
+        ia = e["idp_acoes"]
+        if len(ia) >= 6:
+            graf.append(grafico(B, "investimento-direto-e-acoes-12-meses", "Dinheiro estrangeiro que fica e que vai e vem, em 12 meses (US$ bilhões)", f"{F_EXT_IDP}; {F_EXT_ACOES}",
+                                svg_linhas([{"vals": [i for _, i, _ in ia], "cor": "a"}, {"vals": [a for _, _, a in ia], "cor": "b"}], [mes_curtinho(m) for m, _, _ in ia],
+                                           "Gráfico do investimento direto no país e da compra líquida de ações por estrangeiros, acumulados em 12 meses, em US$ bilhões, nos últimos 60 meses", zero=True, unidade="US$ bilhões"),
+                                ["Mês", "Investimento direto", "Ações (estrangeiros)"], ia, "Setor externo", casas=1,
+                                legenda=legenda_linhas(("a", "Investimento direto no país"), ("b", "Ações compradas por estrangeiros")),
+                                nota='<p class="small">O investimento direto costuma ser estável e positivo. A linha das ações oscila muito e fica abaixo de zero quando os estrangeiros vendem mais ações do que compram.</p>',
+                                ultimo=f"investimento direto {nf(ia[-1][1], 1)}; ações {nf(ia[-1][2], 1)} ({mes_curto(ia[-1][0])})",
+                                csv_cab=["Mês", "Investimento direto no país em 12 meses (US$ bilhões)", "Ações compradas por estrangeiros em 12 meses (US$ bilhões)"], csv_linhas=ia))
+        am = ac["mensal"][-36:]
+        graf.append(grafico(B, "estrangeiros-em-acoes-mensal", "Estrangeiros em ações brasileiras, no mês (US$ bilhões)", F_EXT_ACOES,
+                            svg_barras([v for _, v in am], [mes_curtinho(m) for m, _ in am], "Gráfico da compra líquida de ações brasileiras por estrangeiros em cada mês, em US$ bilhões, nos últimos 36 meses", unidade="US$ bilhões"),
+                            ["Mês", "Compra líquida de ações (US$ bi)"], am, "Setor externo", casas=1,
+                            nota=('<p class="small">Barras acima de zero: os estrangeiros compraram mais ações brasileiras do que venderam (entrada de dólares). Abaixo de zero: venderam mais do que compraram (saída). '
+                                  'É o dado mensal do balanço de pagamentos, em dólares; não é igual ao saldo diário que a B3 divulga em reais.</p>'),
+                            ultimo=f"{nf(am[-1][1], 1)} US$ bilhões ({mes_curto(am[-1][0])})",
+                            csv_cab=["Mês", "Compra líquida de ações brasileiras por estrangeiros no mês (US$ bilhões)"], csv_linhas=ac["mensal"]))
     cm = e["ca_mensal"][-36:]
     graf.append(grafico(B, "conta-corrente-mensal", "Conta corrente no mês (US$ bilhões)", F_EXT_CA,
                         svg_barras([v for _, v in cm], [mes_curtinho(m) for m, _ in cm], "Gráfico do saldo mensal da conta corrente, em US$ bilhões, nos últimos 36 meses", unidade="US$ bilhões"),
@@ -2127,6 +2165,8 @@ def pg_setor_externo(B: Base) -> str:
             ["Conta corrente, 12 meses (% do PIB)", mes_curto(pib["mes"]), nf(pib["v"], 1), f'{sinal(pib["dif12"], 1)} p.p.' if pib["dif12"] is not None else "–"]]
     if idp:
         rows.append(["Investimento direto no país, 12 meses (US$ bi)", mes_curto(idp["mes"]), nf(idp["v"], 1), sinal(idp["dif12"], 1) if idp["dif12"] is not None else "–"])
+    if ac:
+        rows.append(["Ações compradas por estrangeiros, 12 meses (US$ bi)", mes_curto(ac["mes"]), nf(ac["v"], 1), sinal(ac["dif12"], 1) if ac["dif12"] is not None else "–"])
     if bal:
         rows += [["Balança comercial, saldo em 12 meses (US$ bi)", mes_curto(bal["mes"]), nf(bal["sal12"], 1), sinal(bal["dif12"], 1) if bal["dif12"] is not None else "–"],
                  ["Exportações em 12 meses (US$ bi)", mes_curto(bal["mes"]), nf(bal["exp12"], 1), sinal(bal["exp12"] - bal["exp12_ant"], 1) if bal["exp12_ant"] is not None else "–"],
@@ -2141,6 +2181,9 @@ def pg_setor_externo(B: Base) -> str:
                  "Por isso o número aparece em relação ao PIB: déficits em torno de 3% do PIB ao ano costumam ser considerados confortáveis quando há dólares de investimento para financiá-los.</p>"
                  "<p>O <strong>investimento direto no país (IDP)</strong> é o dinheiro estrangeiro que vira capital de empresas aqui (fábricas, participações, empréstimos entre matriz e filial). "
                  "É o financiamento considerado mais estável do déficit, em oposição aos fluxos de curto prazo na bolsa e na renda fixa.</p>"
+                 + ("<p>O <strong>investimento em ações por estrangeiros</strong> é a diferença entre o que investidores de fora compraram e venderam de ações de empresas brasileiras no mês, na bolsa ou fora dela. "
+                    "Acima de zero é entrada líquida de dólares; abaixo, saída. É dinheiro que chega e sai depressa, ao contrário do investimento direto, e por isso oscila bastante de um mês para o outro. "
+                    "O número do Banco Central é mensal, em dólares e do balanço de pagamentos; o \"fluxo estrangeiro\" que a B3 divulga é diário, em reais e só do que passa pela bolsa. Os dois podem divergir.</p>" if ac else "") +
                  "<p>As <strong>reservas internacionais</strong> são os dólares e outros ativos externos que o Banco Central mantém para dar segurança ao câmbio e ao pagamento de compromissos. "
                  "A <strong>balança comercial</strong> aqui é a do Ministério do Desenvolvimento, Indústria, Comércio e Serviços (MDIC), com valores FOB; ela sai logo no começo do mês seguinte e por isso aparece "
                  "antes da conta corrente, que o Banco Central divulga cerca de quatro semanas depois do fim do mês. As duas medidas de comércio de bens diferem um pouco por metodologia.</p>"
