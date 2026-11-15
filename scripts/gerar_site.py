@@ -32,7 +32,7 @@ FAMILIA = [
 ]
 # Ordem de leitura do analista (menu, rodapé, início, /dados/ e fontes seguem a mesma lógica):
 # atividade → trabalho e renda → preços → juros → crédito → câmbio → setor externo → fiscal.
-NAV_FIM = [("/calculadora/", "Calculadora"), ("/sobre/", "Sobre")]
+NAV_FIM = [("/resumo/", "Resumos"), ("/calculadora/", "Calculadora"), ("/sobre/", "Sobre")]
 
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 MES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
@@ -1096,7 +1096,7 @@ def pg_inicio(B: Base) -> str:
                 '<p><a href="/calculadora/">Abrir a calculadora →</a></p>')
     mais = [x for x in (card_comp_inicio(B), card_atividade_inicio(B), card_ibge_inicio(B), card_emprego_inicio(B), card_bf_inicio(B), card_credito_inicio(B), card_cambio_inicio(B), card_externo_inicio(B), card_fiscal_inicio(B), card_mun_inicio(B)) if x]
     mais_html = "".join(f'<div class="cols">{"".join(mais[k:k + 2])}</div>' if len(mais[k:k + 2]) == 2 else mais[k] for k in range(0, len(mais), 2))
-    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div><div class="two">{selic}{card_copom(B)}</div>{linha2}{mais_html}{calc}'
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{resumos_home(B)}<div class="two">{selic}{card_copom(B)}</div>{linha2}{mais_html}{calc}'
     return pagina(B, "/", "Economia em Números: Selic, inflação (IPCA) e Copom em dados oficiais",
                   f"Selic em {pct(B.selic, 2)} ao ano e IPCA de {pct(B.ipca_12[ref], 2)} em 12 meses. Juros, inflação por região, calendário do Copom e expectativas do Focus, com fonte e data.",
                   corpo)
@@ -2917,6 +2917,191 @@ def mun_csvs(B: Base):
                                        "cab": ["Código IBGE", "Município", "UF", "Exercício", "Tipo", "Item", "Valor (R$)"], "linhas": ct}
 
 
+
+# ------------------------------------------------------------------ resumos: da semana (Boletim Focus) e do mês (IPCA e companhia)
+# O Focus sai toda segunda-feira e o IPCA uma vez por mês, então cada um tem o seu ritmo: um resumo por semana e um por mês.
+# Cada resumo é guardado em data/resumos/ na primeira vez em que é gerado: o histórico cresce sozinho, semana a semana e mês a mês.
+FOCUS_ESCALA = {"IPCA": 0.10, "Selic": 0.25, "PIB Total": 0.10, "Câmbio": 0.05}   # mudança que "conta como notícia", por indicador
+
+
+def focus_frase(it: dict, verbo: str) -> str:
+    ind, ano, v = it["indicador"], it["ano"], it["mediana"]
+    if ind == "IPCA":
+        return f"Mercado {verbo} a projeção de inflação para {ano}: {pct(v, 2)}"
+    if ind == "Selic":
+        return f"Mercado {verbo} a projeção da Selic para o fim de {ano}: {pct(v, 2)} ao ano"
+    if ind == "PIB Total":
+        return f"Mercado {verbo} a projeção de crescimento do PIB em {ano}: {pct(v, 2)}"
+    return f"Mercado {verbo} a projeção do dólar para o fim de {ano}: R$ {nf(v, 2)}"
+
+
+def focus_manchete(itens: list) -> str:
+    cand = []
+    for it in itens:
+        if it["indicador"] in FOCUS_ESCALA and it.get("semana_anterior") is not None:
+            d = it["mediana"] - it["semana_anterior"]
+            cand.append((abs(d) / FOCUS_ESCALA[it["indicador"]], d, it))
+    cand.sort(key=lambda c: -c[0])
+    if cand and cand[0][0] >= 0.5:
+        _, d, it = cand[0]
+        return focus_frase(it, "eleva" if d > 0 else "reduz")
+    ano = min((it["ano"] for it in itens), default=None)
+    pri = {it["indicador"]: it for it in itens if it["ano"] == ano}
+    partes = []
+    if "IPCA" in pri:
+        partes.append(f"inflação em {pct(pri['IPCA']['mediana'], 2)}")
+    if "Selic" in pri:
+        partes.append(f"Selic em {pct(pri['Selic']['mediana'], 2)}")
+    return f"Mercado mantém as projeções para {ano}: " + " e ".join(partes) if partes else "Mercado mantém as projeções da semana"
+
+
+def resumo_semana(B: Base) -> dict | None:
+    f = B.focus
+    if not f or not f.get("itens") or not f.get("data"):
+        return None
+    itens = [it for it in f["itens"] if it["indicador"] in FOCUS_PRINCIPAL]
+    if not itens:
+        return None
+    dia = dt.date.fromisoformat(f["data"])
+    manchete = focus_manchete(itens)
+    linhas = []
+    for ind, (rot, fm) in FOCUS_PRINCIPAL.items():
+        for it in sorted((i for i in itens if i["indicador"] == ind), key=lambda i: i["ano"]):
+            ant = it.get("semana_anterior")
+            linhas.append([f'{esc(rot)} em {it["ano"]}', fm(it["mediana"]), fm(ant) if ant is not None else "–",
+                           chg(it["mediana"] - ant, 2, "") if ant is not None else "–"])
+    tab = tabela(["Projeção para o ano", "Esta semana", "Semana anterior", "Mudança"], linhas, ["l", "r", "r", "r"])
+    ctx = [f"A meta da Selic está em <strong>{pct(B.selic, 2)} ao ano</strong>, em vigor desde {data_br(B.selic_desde)}."]
+    p = B.proxima()
+    if p:
+        ctx.append(f"A próxima reunião do Copom é em <strong>{periodo_reuniao(p['ini'], p['fim'])}</strong>.")
+    ctx.append(f"O IPCA acumulou <strong>{pct(B.ipca_12[B.ref], 2)}</strong> em 12 meses até {mes_nome(B.ref)}.")
+    quando = data_br(dia)
+    post = "\n".join([f"Boletim Focus de {quando}", "", manchete + ".", ""] +
+                     [f"{FOCUS_PRINCIPAL[it['indicador']][0]} {it['ano']}: {FOCUS_PRINCIPAL[it['indicador']][1](it['mediana'])}"
+                      for it in sorted(itens, key=lambda i: (list(FOCUS_PRINCIPAL).index(i["indicador"]), i["ano"])) if it["ano"] == min(i["ano"] for i in itens)] +
+                     ["", "Todas as projeções, com a mudança desde a semana passada:", f"{BASE}/resumo/semana/{f['data']}/", "", "#focus #economia #selic #ipca"])
+    corpo = (card(f'<span class="eyebrow">Resumo da semana · Boletim Focus de {quando}</span><h1>{esc(manchete)}</h1>'
+                  f'<p class="lede">Toda segunda-feira o Banco Central publica a mediana das projeções de mais de cem instituições do mercado. '
+                  f'Abaixo, o que mudou desde o boletim anterior.</p>') +
+             card(cab("O que o mercado espera") + tab +
+                  f'<span class="src">Mediana das projeções, Boletim Focus de {quando}. Fonte: Banco Central do Brasil.</span>') +
+             card(cab("E a economia hoje") + "<ul class=\"destaques\">" + "".join(f"<li>{x}</li>" for x in ctx) + "</ul>") +
+             resumo_compartilhar(post))
+    return {"tipo": "semana", "chave": f["data"], "titulo": manchete, "rotulo": f"Boletim Focus de {quando}", "gerado_em": B.d["gerado_em"],
+            "descricao": f"Boletim Focus de {quando}: {manchete}. O que o mercado espera para Selic, inflação, PIB e dólar, e o que mudou na semana.",
+            "corpo": corpo}
+
+
+def resumo_compartilhar(post: str) -> str:
+    return card(cab("Compartilhe este resumo") + '<p class="small">Texto pronto para WhatsApp, LinkedIn ou e-mail.</p>'
+                f'<textarea id="post" class="fam-post" readonly rows="10">{esc(post)}</textarea>'
+                '<div><button type="button" class="fam-btn" data-copiar="post"><span>Copiar texto</span></button> '
+                '<span class="small" data-copiar-msg aria-live="polite"></span></div>')
+
+
+def resumo_mes(B: Base) -> dict | None:
+    try:
+        ref = B.ref
+        ant = sorted(B.ipca_12)[-2]
+        im, im0, i12 = B.ipca_m[ref], B.ipca_m[ant], B.ipca_12[ref]
+    except (KeyError, IndexError):
+        return None
+    mes = MESES[int(ref[5:]) - 1]
+    manchete = f"Inflação de {mes}: IPCA de {pct(im, 2)} no mês e {pct(i12, 2)} em 12 meses"
+    destaques = [f"<b>IPCA do mês:</b> {pct(im, 2)}, {'acima' if im > im0 else 'abaixo' if im < im0 else 'igual'} do mês anterior ({pct(im0, 2)}). "
+                 f"Em 12 meses: {pct(i12, 2)}, {'alta' if B.ipca_12[ref] > B.ipca_12[ant] else 'queda' if B.ipca_12[ref] < B.ipca_12[ant] else 'estável'} frente a {pct(B.ipca_12[ant], 2)}."]
+    c = B.comp
+    if c and c.get("subs"):
+        subs = sorted(c["subs"], key=lambda s: -s["imp"])
+        altas, baixas = [s for s in subs if s["imp"] > 0][:3], [s for s in subs[::-1] if s["imp"] < 0][:2]
+        if altas:
+            destaques.append("<b>O que mais pressionou:</b> " + ", ".join(f"{esc(s['nome'].lower())} ({pct_sinal(s['v'], 1)})" for s in altas) + ".")
+        if baixas:
+            destaques.append("<b>O que ajudou a segurar:</b> " + ", ".join(f"{esc(s['nome'].lower())} ({pct_sinal(s['v'], 1)})" for s in baixas) + ".")
+    destaques.append(f"<b>Juros:</b> a meta da Selic está em {pct(B.selic, 2)} ao ano, em vigor desde {data_br(B.selic_desde)}.")
+    if B.tem_emprego:
+        try:
+            m = B.des["movel"][-1]
+            txt = f"<b>Emprego:</b> a desocupação está em {pct(m[2], 1)} no trimestre {rot_movel(m[0])}."
+            cg = B.caged_serie()
+            if cg:
+                txt += f" O Caged registrou saldo de {saldo_txt(cg[-1][1])} vagas formais em {mes_nome(cg[-1][0])}."
+            destaques.append(txt)
+        except (IndexError, KeyError, TypeError):
+            pass
+    tiles = [tile("IPCA em 12 meses", nf(i12, 2), "%", chg(i12 - B.ipca_12[ant], 2, " p.p.", " no mês"), "b", "/inflacao/"),
+             tile(f"IPCA em {mes}", nf(im, 2), "%", chg(im - im0, 2, " p.p.", " vs. mês anterior"), "k", "/inflacao/"),
+             tile("Meta da Selic", nf(B.selic, 2), "% ao ano", "", "a", "/juros/")]
+    post = "\n".join([f"Economia em {mes_nome(ref)}", "", manchete + ".", ""] +
+                     [re.sub(r"<[^>]+>", "", x) for x in destaques] + ["", "Números completos, com fonte e data:", f"{BASE}/resumo/mes/{ref}/", "", "#ipca #inflacao #selic #economia"])
+    corpo = (card(f'<span class="eyebrow">Resumo do mês · {mes_nome(ref)}</span><h1>{esc(manchete)}</h1>'
+                  '<p class="lede">O IPCA é divulgado pelo IBGE uma vez por mês. Veja o que mudou, o que mais pesou e como estão os juros e o emprego.</p>') +
+             f'<div class="tiles">{"".join(tiles)}</div>' +
+             card(cab(f"O que mudou em {mes}") + '<ul class="destaques">' + "".join(f"<li>{x}</li>" for x in destaques) + "</ul>") +
+             resumo_compartilhar(post))
+    return {"tipo": "mes", "chave": ref, "titulo": manchete, "rotulo": cap_mes(ref), "gerado_em": B.d["gerado_em"],
+            "descricao": f"{cap_mes(ref)}: IPCA de {pct(im, 2)} no mês e {pct(i12, 2)} em 12 meses. O que mais pesou, juros e emprego, com fonte oficial.",
+            "corpo": corpo}
+
+
+def cap_mes(p: str) -> str:
+    s = mes_nome(p)
+    return s[:1].upper() + s[1:]
+
+
+def resumos_preparar(B: Base, pasta: Path) -> None:
+    """Gera o resumo da semana e o do mês, guarda os de cada período em data/resumos/ e carrega o histórico."""
+    pasta.mkdir(parents=True, exist_ok=True)
+    for snap in (resumo_semana(B), resumo_mes(B)):
+        if snap:
+            arq = pasta / f"{snap['tipo']}-{snap['chave']}.json"
+            if arq.exists():   # mantém a data da primeira publicação
+                snap["gerado_em"] = json.loads(arq.read_text(encoding="utf-8")).get("gerado_em", snap["gerado_em"])
+            arq.write_text(json.dumps(snap, ensure_ascii=False, indent=0), encoding="utf-8")
+    B.resumos_pub = {"semana": [], "mes": []}
+    for tipo in B.resumos_pub:
+        B.resumos_pub[tipo] = sorted((json.loads(f.read_text(encoding="utf-8")) for f in pasta.glob(f"{tipo}-*.json")), key=lambda s: s["chave"], reverse=True)
+
+
+def resumo_url(s: dict) -> str:
+    return f"/resumo/{s['tipo']}/{s['chave']}/"
+
+
+def pg_resumo(B: Base, s: dict) -> str:
+    cam = resumo_url(s)
+    ld = '<script type="application/ld+json">' + json.dumps({"@context": "https://schema.org", "@type": "Article", "headline": s["titulo"], "inLanguage": "pt-BR",
+                                                            "datePublished": s["gerado_em"], "author": {"@type": "Organization", "name": "Economia em Números", "url": BASE + "/"},
+                                                            "mainEntityOfPage": BASE + cam}, ensure_ascii=False) + "</script>"
+    html_ = pagina(B, cam, f"{s['titulo']} | Economia em Números", s["descricao"], s["corpo"], "/resumo/",
+                   migalhas=[("/resumo/", "Resumos"), (None, s["rotulo"])])
+    return html_.replace("</head>", ld + "\n</head>", 1)
+
+
+def pg_resumos(B: Base) -> str:
+    def lista(tipo, vazio):
+        itens = "".join(f'<li><a href="{resumo_url(s)}"><b>{esc(s["rotulo"])}</b><span>{esc(s["titulo"])}</span></a></li>' for s in B.resumos_pub[tipo])
+        return f'<ul class="lista-resumos">{itens}</ul>' if itens else f'<p class="small">{vazio}</p>'
+    corpo = (card('<span class="eyebrow">Resumos</span><h1>Economia da semana e do mês, em uma manchete</h1>'
+                  '<p class="lede">Toda segunda-feira, o que o mercado espera para juros, inflação, PIB e dólar (Boletim Focus). '
+                  'Todo mês, o que o IPCA mostrou e o que mais pesou. O histórico começa em novembro de 2026 e cresce a cada semana.</p>') +
+             f'<div class="cols">{card(cab("Resumo da semana") + lista("semana", "O primeiro resumo sai na próxima segunda-feira."))}'
+             f'{card(cab("Resumo do mês") + lista("mes", "O primeiro resumo sai com o próximo IPCA."))}</div>')
+    return pagina(B, "/resumo/", "Resumos da economia: semana e mês | Economia em Números",
+                  "Resumo semanal do Boletim Focus e resumo mensal do IPCA, com manchete, o que mudou e a fonte oficial.", corpo, "/resumo/",
+                  migalhas=[(None, "Resumos")])
+
+
+def resumos_home(B: Base) -> str:
+    cards = []
+    for tipo, rot in (("semana", "Resumo da semana"), ("mes", "Resumo do mês")):
+        if B.resumos_pub.get(tipo):
+            s = B.resumos_pub[tipo][0]
+            cards.append(card(f'<span class="eyebrow">{rot} · {esc(s["rotulo"])}</span><h2>{esc(s["titulo"])}</h2>'
+                              f'<p><a href="{resumo_url(s)}">Ler o resumo →</a></p>'))
+    return f'<div class="cols">{"".join(cards)}</div>' if cards else ""
+
+
 def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None,
           resumos_path: Path = RAIZ / "data" / "copom_resumos.json", bf_path: Path | None = None, mun_path: Path | None = None) -> list:
     dados = json.loads(dados_path.read_text(encoding="utf-8"))
@@ -2926,6 +3111,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     bf = json.loads(Path(bf_path).read_text(encoding="utf-8")) if bf_path and Path(bf_path).exists() else None
     mun = json.loads(Path(mun_path).read_text(encoding="utf-8")) if mun_path and Path(mun_path).exists() else None
     B = Base(dados, cal, hoje, resumos, bf, mun)
+    resumos_preparar(B, dados_path.parent / "resumos")
     if saida.exists():
         shutil.rmtree(saida)
     saida.mkdir(parents=True)
@@ -2972,6 +3158,10 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
         mun_csvs(B)
     for a in B.ranking():
         paginas.append((f"/inflacao/{a['slug']}/", pg_area(B, a)))
+    paginas.append(("/resumo/", pg_resumos(B)))
+    for tipo in ("semana", "mes"):
+        for s in B.resumos_pub[tipo]:
+            paginas.append((resumo_url(s), pg_resumo(B, s)))
     paginas.append(("/dados/", pg_dados(B)))  # por último: lista os CSV de todos os gráficos já montados
     for caminho, conteudo in paginas:
         escrever(saida, caminho, conteudo)

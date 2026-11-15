@@ -59,7 +59,7 @@ class TestSite(unittest.TestCase):
 
     def test_canonical_e_sitemap(self):
         s = self.ler("sitemap.xml")
-        self.assertEqual(s.count("<url>"), 6 + 16 + 1 + 27 + 2 + 1 + 1 + 2 + 1)
+        self.assertEqual(s.count("<url>"), 6 + 16 + 1 + 27 + 2 + 1 + 1 + 2 + 1 + 3)  # + resumos: lista, semana e mês
         self.assertNotIn("404", s)
         self.assertIn('<link rel="canonical" href="https://economiaemnumeros.com.br/inflacao/salvador/">', self.ler("inflacao/salvador/index.html"))
         self.assertIn('content="noindex"', self.ler("404.html"))
@@ -233,7 +233,7 @@ class TestSemDadosNovos(unittest.TestCase):
                 dados.pop(k)
             (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
             cam = g.gerar(d / "dados.json", d / "docs", resumos_path=d / "nao_existe.json")
-            self.assertEqual(len(cam), 23)  # sem Emprego/Atividade/Indústria/Crédito/Câmbio/Contas públicas: 6 básicas (com /sugestoes/) + 16 áreas + /dados/
+            self.assertEqual(len(cam), 26)  # sem Emprego/Atividade/Indústria/Crédito/Câmbio/Contas públicas: 6 básicas (com /sugestoes/) + 16 áreas + /dados/ + 3 de resumos (lista, semana, mês)
             self.assertFalse((d / "docs" / "emprego").exists())
             for rel in ("index.html", "juros/index.html"):
                 t = (d / "docs" / rel).read_text(encoding="utf-8")
@@ -1464,3 +1464,22 @@ class TestTextoPtBr(unittest.TestCase):
         self.assertEqual(g.uf_em("35", "São Paulo"), "em São Paulo")
         for cod, (slug, nome, sigla) in g.UFS.items():
             self.assertTrue(g.uf_em(cod, nome).endswith(nome))
+
+
+class TestResumoSemana(unittest.TestCase):
+    """A manchete do resumo semanal destaca a maior mudança do Focus; sem mudança relevante, diz que o mercado manteve."""
+
+    def item(self, ind, ano, med, ant):
+        return {"indicador": ind, "ano": ano, "mediana": med, "semana_anterior": ant}
+
+    def test_destaca_a_maior_mudanca(self):
+        itens = [self.item("IPCA", 2026, 5.22, 5.21), self.item("IPCA", 2027, 4.90, 4.76), self.item("Selic", 2026, 13.75, 13.75)]
+        self.assertEqual(g.focus_manchete(itens), "Mercado eleva a projeção de inflação para 2027: 4,90%")
+
+    def test_queda_do_dolar(self):
+        itens = [self.item("Câmbio", 2026, 5.30, 5.40), self.item("IPCA", 2026, 5.0, 5.0)]
+        self.assertEqual(g.focus_manchete(itens), "Mercado reduz a projeção do dólar para o fim de 2026: R$ 5,30")
+
+    def test_sem_mudanca_relevante(self):
+        itens = [self.item("IPCA", 2026, 5.0, 5.01), self.item("Selic", 2026, 13.75, 13.75), self.item("IPCA", 2027, 4.0, 4.0)]
+        self.assertEqual(g.focus_manchete(itens), "Mercado mantém as projeções para 2026: inflação em 5,00% e Selic em 13,75%")

@@ -232,3 +232,14 @@ details.dados td,details.dados th{font-variant-numeric:tabular-nums}
 
 /* Economia: ouro */
 :root { --fam-cor: var(--eco); --fam-texto: var(--eco-t); --fam-sobre: var(--eco-sobre); }
+.fam-post { width: 100%; font: inherit; font-size: 14px; line-height: 1.5; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: inherit; margin-bottom: 10px; }
+
+/* Resumos da semana e do mês */
+.destaques { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.destaques li { padding-left: 14px; border-left: 3px solid var(--eco); }
+.lista-resumos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lista-resumos li { border-bottom: 1px solid var(--line); }
+.lista-resumos li:last-child { border-bottom: 0; }
+.lista-resumos a { display: flex; flex-direction: column; gap: 2px; padding: 12px 0; text-decoration: none; color: var(--ink); }
+.lista-resumos a b { color: var(--eco-t); }
+.lista-resumos a:hover span { text-decoration: underline; }
