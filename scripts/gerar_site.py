@@ -890,7 +890,7 @@ def familia_html(atual="Economia em Números") -> str:
     for nome, tema, url, cor in FAMILIA:
         miolo = f'<span class="ponto" style="background:{cor}"></span><span><b>{nome}</b> {tema}</span>'
         itens.append(f'<li>{miolo} <em>você está aqui</em></li>' if nome == atual else f'<li><a href="{url}">{miolo}</a></li>')
-    return ('<div class="familia"><p><b>Família em Números</b> · portais independentes que organizam dados públicos do Brasil</p>'
+    return ('<div class="familia"><p><b>Família em Números</b> · portais independentes que organizam dados públicos do Brasil · <a href="https://www.linkedin.com/company/familiaemnumeros/" rel="noopener" target="_blank">Siga no LinkedIn</a></p>'
             f'<ul>{"".join(itens)}</ul></div>')
 
 
