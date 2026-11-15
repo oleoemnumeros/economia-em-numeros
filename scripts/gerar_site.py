@@ -667,6 +667,11 @@ def _rotulos_x(rotulos, x) -> str:
     return g
 
 
+class Svg(str):
+    """SVG de reserva (o que aparece sem JavaScript) com os dados que o desenhista interativo usa (familia-graficos.js)."""
+    fam = None
+
+
 def svg_linhas(series, rotulos, aria, zero=False, unidade="") -> str:
     """series: lista de dicts {vals, cor ('a'|'b'|'m'), tracejada}; todas com o mesmo tamanho que rotulos."""
     lo, hi, marcas, d = _eixo([v for s in series for v in s["vals"]], zero=zero)
@@ -683,7 +688,10 @@ def svg_linhas(series, rotulos, aria, zero=False, unidade="") -> str:
             g += f'<path d="{tr}L{x(n - 1):.1f} {H - PB}L{x(0):.1f} {H - PB}Z" style="fill:{c}" opacity=".12"/>'
         g += f'<path d="{tr}" fill="none" style="stroke:{c}" stroke-width="2.5" stroke-linejoin="round"{dash}/>'
         g += f'<circle cx="{x(n - 1):.1f}" cy="{y(s["vals"][-1]):.1f}" r="4.5" style="fill:{c}"/>'
-    return f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>'
+    out = Svg(f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>')
+    out.fam = {"t": "l", "z": bool(zero), "u": unidade, "a": aria, "rot": list(rotulos),
+               "s": [{"v": list(s["vals"]), "c": cores[s.get("cor", "a")], "d": 1 if s.get("tracejada") else 0} for s in series]}
+    return out
 
 
 def svg_degraus(pontos, ate: dt.date, aria, unidade="") -> str:
@@ -704,7 +712,10 @@ def svg_degraus(pontos, ate: dt.date, aria, unidade="") -> str:
     g += (f'<path d="{tr}L{x(ate):.1f} {H - PB}L{x(pontos[0][0]):.1f} {H - PB}Z" style="fill:var(--eco)" opacity=".12"/>'
           f'<path d="{tr}" fill="none" style="stroke:var(--eco)" stroke-width="2.5" stroke-linejoin="round"/>'
           f'<circle cx="{x(ate):.1f}" cy="{y(pontos[-1][1]):.1f}" r="4.5" style="fill:var(--eco)"/>')
-    return f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>'
+    out = Svg(f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>')
+    out.fam = {"t": "d", "z": True, "u": unidade, "a": aria, "p": [d.isoformat() for d, _ in pontos], "ate": ate.isoformat(),
+               "s": [{"v": [v for _, v in pontos], "c": "var(--eco)"}]}
+    return out
 
 
 def svg_barras(vals, rotulos, aria, unidade="") -> str:
@@ -718,7 +729,10 @@ def svg_barras(vals, rotulos, aria, unidade="") -> str:
         y0, y1 = y(max(v, 0)), y(min(v, 0))
         cor = "var(--eco2)" if v < 0 else "var(--eco)"
         g += f'<rect x="{PL + bw * k + bw * 0.15:.1f}" y="{y0:.1f}" width="{bw * 0.7:.1f}" height="{max(1.0, y1 - y0):.1f}" rx="2" style="fill:{cor}"/>'
-    return f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>'
+    out = Svg(f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{esc(aria)}">{g}</svg>')
+    out.fam = {"t": "b", "z": True, "u": unidade, "a": aria, "rot": list(rotulos),
+               "s": [{"v": list(vals), "c": "var(--eco)", "cn": "var(--eco2)"}]}
+    return out
 
 
 # ------------------------------------------------------------------ cartão de gráfico: fonte, data, dados e CSV
@@ -749,6 +763,29 @@ def csv_texto(cabecalho, linhas) -> str:
     return "\ufeff" + "\r\n".join([";".join(cel(c) for c in cabecalho)] + [";".join(cel(c) for c in l) for l in linhas]) + "\r\n"
 
 
+
+def fam_gr(fam, svg, cabecalho, linhas, casas) -> str:
+    """Contêiner do gráfico interativo: os dados vão no atributo e o SVG de reserva fica dentro (sem JavaScript continua valendo)."""
+    s = fam["s"]
+    n = len(s[0]["v"])
+    cfg = {"t": fam["t"], "d": casas, "a": fam["a"], "lg": 1 if len(s) > 1 else 0}
+    if fam.get("u"):
+        cfg["u"] = fam["u"]
+        if fam["u"].lstrip().startswith("%"):
+            cfg["suf"] = "%"
+    if fam.get("z"):
+        cfg["z"] = 1
+    if fam["t"] == "d":
+        cfg["p"], cfg["ate"] = fam["p"], fam["ate"]
+    else:
+        per = [str(l[0]) for l in linhas] if len(linhas) == n else []
+        cfg["p"] = per if per else list(fam["rot"])
+    nomes = [html.unescape(c) for c in cabecalho[1:1 + len(s)]] if len(cabecalho) >= len(s) + 1 else []
+    cfg["s"] = [{**{k: v for k, v in x.items() if v not in (0, None)}, "n": nomes[i] if nomes else f"Série {i + 1}"} for i, x in enumerate(s)]
+    dados = html.escape(json.dumps(cfg, ensure_ascii=False, separators=(",", ":")), quote=True)
+    return f'<div class="fam-gr" data-fam-gr="{dados}"><div class="chart">{svg}</div></div>'
+
+
 def grafico(B, slug, titulo, fonte, svg, cabecalho, linhas, grupo, nota="", legenda="", ultimo="", casas=2, csv_linhas=None, csv_cab=None, csv_href=None, csv_rotulo="Baixar CSV") -> str:
     """Cartão de gráfico: título, gráfico (clicável: abre a tabela de dados), rodapé com fonte, último dado e data de atualização,
     link para o CSV e a tabela dos números. A primeira coluna é o período (texto); as demais, valores."""
@@ -766,8 +803,11 @@ def grafico(B, slug, titulo, fonte, svg, cabecalho, linhas, grupo, nota="", lege
     tab = tabela([esc(c) for c in cabecalho], [[fmt(c) for c in l] for l in linhas[::-1]], ["l"] + ["r"] * (len(cabecalho) - 1))
     atual = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
     ult = f" Último dado: {esc(ultimo)}." if ultimo else ""
+    fam = getattr(svg, "fam", None)
+    graf = (fam_gr(fam, svg, cabecalho, linhas, casas) if fam else
+            f'<div class="chart" data-abre="d-{slug}" role="button" tabindex="0" title="Clique para ver os dados">{svg}</div>')
     return card(cab(titulo) +
-                f'<div class="chart" data-abre="d-{slug}" role="button" tabindex="0" title="Clique para ver os dados">{svg}</div>' +
+                graf +
                 legenda + nota +
                 f'<div class="gfoot"><span class="src">Fonte: {esc(fonte)}.{ult} Atualizado em {atual}.</span>'
                 f'<a class="csv" href="{csv_href or f"/dados/{slug}.csv"}" download>{esc(csv_rotulo)}</a></div>'
@@ -995,6 +1035,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 </div>{familia_html()}</footer>
 <script src="/assets/graficos.js?v={v}" defer></script>
 <script src="/assets/familia.js?v={v}" defer></script>
+<script src="/assets/familia-graficos.js?v={v}" defer></script>
 {GOAT}
 </body>
 </html>
@@ -3172,7 +3213,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     # arquivos estáticos
     (saida / "assets").mkdir()
     v = dados["gerado_em"][:10]
-    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js", "familia.js"):
+    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js", "familia.js", "familia-graficos.js"):
         shutil.copy(SITE / nome, saida / "assets" / nome)
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
     if not desenhar_og(B, saida / "assets" / "og.png"):          # sem Pillow, usa a imagem pronta

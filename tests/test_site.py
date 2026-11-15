@@ -492,7 +492,7 @@ class TestGraficosECsv(unittest.TestCase):
     def test_todo_grafico_tem_fonte_dados_e_csv(self):
         total = 0
         for caminho, t in self.htmls.items():
-            for m in re.finditer(r'data-abre="(d-[^"]+)"', t):
+            for m in re.finditer(r'<details class="dados" id="(d-[^"]+)"', t):
                 total += 1
                 ident = m.group(1)
                 self.assertIn(f'<details class="dados" id="{ident}">', t, (caminho, ident))
@@ -500,7 +500,7 @@ class TestGraficosECsv(unittest.TestCase):
                 self.assertIn(f'href="/dados/{slug}.csv" download', t, (caminho, slug))
                 self.assertTrue((self.saida / "dados" / f"{slug}.csv").exists(), slug)
             n_graf = t.count('class="chart"')
-            self.assertEqual(n_graf, t.count("data-abre="), caminho)        # nenhum gráfico sem clique
+            self.assertEqual(n_graf, t.count("data-abre=") + t.count("data-fam-gr="), caminho)        # nenhum gráfico sem interação
             self.assertEqual(t.count('class="gfoot"'), n_graf, caminho)       # nem sem rodapé com fonte e data
             self.assertEqual(t.count("Baixar CSV"), n_graf, caminho)
         self.assertEqual(total, 1 + 1 + 2 + 27 + 2 + 2 + 4 + 16 + 2 + 5 + 4 + 6)   # início, juros, emprego, 27 UFs, câmbio, atividade, inflação, 16 áreas, contas públicas, indústria e varejo, crédito, setor externo
@@ -511,7 +511,21 @@ class TestGraficosECsv(unittest.TestCase):
         self.assertIn("Último dado:", t)
         self.assertRegex(t, r"Atualizado em \d{2}/\d{2}/\d{4}\.")
         self.assertIn("Ver os dados do gráfico", t)
-        self.assertIn('title="Clique para ver os dados"', t)
+        self.assertIn('data-fam-gr="', t)          # gráfico interativo (linha ao tocar e filtro de período)
+
+    def test_grafico_interativo_leva_os_dados(self):
+        import html as _h
+        import json as _j
+        # Selic em degraus: períodos em data, fim do degrau e a série dentro do JSON
+        m = re.search(r'data-fam-gr="([^"]+)"', self.htmls["/juros/"])
+        cfg = _j.loads(_h.unescape(m.group(1)))
+        self.assertEqual(cfg["t"], "d")
+        self.assertEqual(len(cfg["p"]), len(cfg["s"][0]["v"]))
+        self.assertRegex(cfg["ate"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertTrue(all(re.match(r"^\d{4}-\d{2}-\d{2}$", x) for x in cfg["p"]))
+        # toda página com gráfico carrega o desenhista e o SVG de reserva continua dentro da div
+        self.assertIn("/assets/familia-graficos.js", self.htmls["/juros/"])
+        self.assertRegex(self.htmls["/juros/"], r'data-fam-gr="[^"]+"><div class="chart"><svg')
 
     def test_csv_formato_excel_ptbr(self):
         b = self.csv("selic-meta")
@@ -634,7 +648,7 @@ class TestContasPublicas(unittest.TestCase):
         self.assertEqual(div[-1].split(";")[2], "")             # dívida líquida ainda sem set/2026: célula vazia, não "None"
 
     def test_graficos_texto_e_focus_fiscal(self):
-        self.assertEqual(self.t.count("data-abre="), 2)
+        self.assertEqual(self.t.count("data-abre=") + self.t.count("data-fam-gr="), 2)
         self.assertIn("Dívida bruta e dívida líquida (% do PIB)", self.t)
         self.assertIn("Resultado primário e nominal em 12 meses", self.t)
         self.assertIn("O que o mercado espera", self.t)

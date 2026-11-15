@@ -243,3 +243,26 @@ details.dados td,details.dados th{font-variant-numeric:tabular-nums}
 .lista-resumos a { display: flex; flex-direction: column; gap: 2px; padding: 12px 0; text-decoration: none; color: var(--ink); }
 .lista-resumos a b { color: var(--eco-t); }
 .lista-resumos a:hover span { text-decoration: underline; }
+
+/* Gráficos interativos da Família em Números (familia-graficos.js) */
+.fam-gr { --g-grade: var(--line, var(--borda, #dfe3e8)); --g-txt: var(--muted, var(--cinza, #5b6470)); --g-tinta: var(--ink, var(--tinta, #14161a)); --g-fundo: var(--card, var(--surface, var(--cartao, #fff))); position: relative; }
+.fam-gr-ctl { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; margin: 0 0 8px; }
+.fam-gr-ctl button { font: inherit; font-size: 13px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--g-grade); background: var(--g-fundo); color: var(--g-tinta); cursor: pointer; }
+.fam-gr-ctl button[aria-pressed="true"] { background: var(--fam-cor); border-color: var(--fam-cor); color: var(--fam-sobre, #fff); font-weight: 600; }
+.fam-gr-area { position: relative; }
+.fam-gr-area svg { display: block; width: 100%; height: auto; touch-action: pan-y; overflow: visible; -webkit-tap-highlight-color: transparent; }
+.fam-gr-area svg:focus { outline: none; }
+.fam-gr.teclado .fam-gr-area svg:focus { outline: 2px solid var(--fam-cor); outline-offset: 2px; border-radius: 4px; }
+.fam-gr-t { font-family: inherit; fill: var(--g-txt); }
+.fam-gr-g { stroke: var(--g-grade); stroke-width: 1; }
+.fam-gr-g.zero { stroke: var(--g-txt); }
+.fam-gr-cur { stroke: var(--g-tinta); stroke-width: 1; stroke-dasharray: 4 3; opacity: .65; }
+.fam-gr-dot { stroke: var(--g-fundo); stroke-width: 2; }
+.fam-gr-banda { fill: var(--g-tinta); opacity: .07; }
+.fam-gr-tip { position: absolute; z-index: 2; pointer-events: none; white-space: nowrap; background: var(--g-fundo); color: var(--g-tinta); border: 1px solid var(--g-grade); border-radius: 8px; padding: 6px 10px; font-size: 13px; line-height: 1.35; box-shadow: 0 2px 10px rgba(0, 0, 0, .14); }
+.fam-gr-tip b { display: block; font-weight: 600; }
+.fam-gr-lin { display: flex; align-items: center; gap: 6px; }
+.fam-gr-lin i, .fam-gr-leg i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.fam-gr-leg { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; font-size: 13px; color: var(--g-txt); }
+.fam-gr-leg span { display: inline-flex; align-items: center; gap: 6px; }
+.fam-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
