@@ -688,19 +688,216 @@ def bf_baixa_mes(ym):
 def bf_confere_mes(ym, mes, anterior):
     """Recusa um mês que não parece a folha do Bolsa Família (município faltando, mês ainda não publicado, unidade errada)."""
     tf = sum(x[0] for x in mes.values())
-    tp = sum(x[1] for x in mes.values())
+    tp = sum(x[1] or 0 for x in mes.values())
     tv = sum(x[2] for x in mes.values())
     if len(mes) < 5000:
         return f"só {len(mes)} municípios (esperado mais de 5.000)"
     if not 5e6 <= tf <= 3e7:
         return f"{tf:.0f} famílias no total, fora de 5 a 30 milhões"
-    if not tf <= tp <= 6 * tf:
+    if tp and not tf <= tp <= 6 * tf:      # o Portal da Transparência não traz pessoas (tp = 0)
         return f"{tp:.0f} pessoas para {tf:.0f} famílias, relação absurda"
     if not 100 <= tv / tf <= 2500:
         return f"benefício médio de R$ {tv / tf:.0f}, fora de R$ 100 a R$ 2.500"
     if anterior and tf < 0.6 * anterior:
         return f"{tf:.0f} famílias, menos de 60% do mês anterior ({anterior:.0f}); publicação provavelmente incompleta"
     return None
+
+
+# --- Portal da Transparência (CGU): lista mensal de pagamentos do Novo Bolsa Família, usada quando o MI Social está fora do ar.
+# Traz famílias (uma linha por família) e valor pago por município, mas não traz pessoas. O código do município é o do SIAFI,
+# então a ligação com o IBGE é feita pelo nome do município dentro da UF.
+BF_PORTAL_URL = "https://portaldatransparencia.gov.br/download-de-dados/novo-bolsa-familia/{ym}"
+BF_PORTAL_MESES = 14            # no máximo estes meses mais recentes vêm do Portal (cada arquivo tem centenas de MB)
+BF_PORTAL_ORCAMENTO_S = 1200    # tempo máximo gasto com o Portal numa execução; o que faltar entra na próxima
+BF_UA_NAVEGADOR = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36", "Accept": "*/*"}
+
+
+class PortalIndisponivel(RuntimeError):
+    """O arquivo do mês não existe (ainda não foi publicado) ou o Portal devolveu uma página no lugar do zip."""
+
+
+def _norm_nome(s):
+    import unicodedata
+    return re.sub(r"[^A-Z0-9]", "", unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().upper())
+
+
+def _ym_digitos(s):
+    """'202609', '2026-09', '09/2026' ou '2026/09' -> '202609'; vazio se não reconhecer."""
+    d = re.sub(r"\D", "", str(s))
+    if len(d) == 6 and d[:2] in ("19", "20"):
+        return d
+    if len(d) == 6:
+        return d[2:] + d[:2]
+    return ""
+
+
+def bf_portal_baixa(ym, destino):
+    """Baixa o zip do mês para `destino` (Path). Devolve o tamanho em bytes. PortalIndisponivel quando o mês não existe."""
+    import requests
+    url = BF_PORTAL_URL.format(ym=ym.replace("-", ""))
+    ultimo = None
+    for i, cab in enumerate((UA, BF_UA_NAVEGADOR, BF_UA_NAVEGADOR)):
+        try:
+            r = requests.get(url, headers={**cab, "Accept": "*/*"}, stream=True, timeout=(30, 120), allow_redirects=True)
+        except requests.RequestException as e:
+            ultimo = repr(e)
+            time.sleep(5 * (i + 1))
+            continue
+        if r.status_code == 404:
+            raise PortalIndisponivel(f"HTTP 404 em {url}")
+        if r.status_code != 200:
+            ultimo = f"HTTP {r.status_code} (agente {'robô' if cab is UA else 'navegador'}): {r.text[:150]!r}"
+            time.sleep(5 * (i + 1))
+            continue
+        n, primeiro = 0, b""
+        try:
+            with open(destino, "wb") as f:
+                for pedaco in r.iter_content(1 << 20):
+                    if not primeiro:
+                        primeiro = pedaco[:4]
+                        if primeiro != b"PK\x03\x04":
+                            raise PortalIndisponivel(f"não veio um zip (HTTP 200, {r.headers.get('content-type')}, endereço final {r.url[:200]}): {pedaco[:200]!r}")
+                    f.write(pedaco)
+                    n += len(pedaco)
+        except requests.RequestException as e:
+            ultimo = f"download interrompido: {e!r}"
+            time.sleep(5 * (i + 1))
+            continue
+        return n
+    raise RuntimeError(f"{url} falhou: {ultimo}")
+
+
+def bf_portal_agrega(caminho, ym):
+    """Lê o zip do Portal e soma por (UF, município): ({(uf, nome normalizado): [linhas, valor, nome]}, estatísticas).
+    Só conta as linhas cujo mês de competência e mês de referência são `ym` (as demais são parcelas retroativas)."""
+    import csv
+    import io
+    import zipfile
+    alvo = ym.replace("-", "")
+    with zipfile.ZipFile(caminho) as z:
+        nomes_csv = [n for n in z.namelist() if n.lower().endswith(".csv")]
+        if not nomes_csv:
+            raise RuntimeError(f"zip sem CSV: {z.namelist()[:5]}")
+        with z.open(nomes_csv[0]) as bruto:
+            amostra = bruto.read(65536)
+        try:
+            amostra.decode("utf-8")
+            codif = "utf-8-sig"
+        except UnicodeDecodeError as e:
+            codif = "utf-8-sig" if e.start >= len(amostra) - 4 else "latin-1"
+        with z.open(nomes_csv[0]) as bruto:
+            leitor = csv.reader(io.TextIOWrapper(bruto, encoding=codif, newline=""), delimiter=";")
+            cab = next(leitor)
+            ncab = [_norm_nome(c) for c in cab]
+
+            def col(*prefixos, exato=None):
+                for i, n in enumerate(ncab):
+                    if (exato and n == exato) or any(n.startswith(p) for p in prefixos):
+                        return i
+                return None
+            i_comp, i_ref = col("MESCOMPET"), col("MESREFER")
+            i_uf, i_nome = col(exato="UF"), col("NOMEMUNICIPIO", "MUNICIPIO")
+            i_val, i_nis = col("VALORPARCELA", "VALOR"), col("NISFAVORECIDO", "NIS")
+            if None in (i_uf, i_nome, i_val):
+                raise RuntimeError(f"colunas inesperadas no CSV do Portal: {cab}")
+            necessario = max(i for i in (i_comp, i_ref, i_uf, i_nome, i_val) if i is not None)
+            agg, linhas, retro, sem_data = {}, 0, 0, 0
+            ultima, acc = None, None
+            nis_teste, linhas_teste = set(), 0      # só para medir se há mais de uma linha por família (nada disso é publicado)
+            for row in leitor:
+                if len(row) <= necessario:
+                    continue
+                linhas += 1
+                if i_comp is not None and i_ref is not None:
+                    if _ym_digitos(row[i_comp]) != alvo or _ym_digitos(row[i_ref]) != alvo:
+                        retro += 1
+                        continue
+                elif i_ref is not None and _ym_digitos(row[i_ref]) != alvo:
+                    retro += 1
+                    continue
+                else:
+                    sem_data += 1
+                chave = (row[i_uf].strip().upper(), row[i_nome])
+                if chave != ultima:
+                    ultima = chave
+                    k = (chave[0], _norm_nome(chave[1]))
+                    acc = agg.get(k)
+                    if acc is None:
+                        acc = agg[k] = [0, 0.0, chave[1].strip()]
+                v = row[i_val].strip()
+                try:
+                    valor = float(v.replace(".", "").replace(",", ".")) if "," in v else float(v)
+                except ValueError:
+                    continue
+                acc[0] += 1
+                acc[1] += valor
+                if i_nis is not None and ultima[0] == "BA" and _norm_nome(ultima[1]) == "SALVADOR":
+                    linhas_teste += 1
+                    nis_teste.add(row[i_nis])
+    stats = {"cabecalho": cab, "codificacao": codif, "linhas": linhas, "retroativas": retro, "sem_data": sem_data, "municipios": len(agg),
+             "linhas_salvador": linhas_teste, "nis_distintos_salvador": len(nis_teste)}
+    return agg, stats
+
+
+def bf_portal_mapeia(agg, nomes):
+    """Liga (UF, nome) do Portal ao código IBGE de 6 dígitos: ({ibge: [famílias, None, R$]}, [(UF, nome) sem par])."""
+    import difflib
+    por_uf = {}
+    for cod, (nome, uf) in nomes.items():
+        por_uf.setdefault(uf, {}).setdefault(_norm_nome(nome), []).append(cod)
+    out, sem_par = {}, []
+    for (uf, nn), (f, v, nome) in agg.items():
+        cods = por_uf.get(uf, {}).get(nn)
+        if cods and len(cods) == 1:
+            cod = cods[0]
+        else:
+            sem_par.append((uf, nome, f))
+            continue
+        antes = out.get(cod)
+        out[cod] = [f + (antes[0] if antes else 0), None, round(v + (antes[2] if antes else 0.0), 2)]
+    # o que não casou por igualdade tenta o nome mais parecido do mesmo estado que ficou sem par (grafias diferentes, p.ex. Florínia/Florínea)
+    livres = {}
+    for cod, (nome, uf) in nomes.items():
+        if cod not in out:
+            livres.setdefault(uf, {})[_norm_nome(nome)] = cod
+    restam = []
+    for uf, nome, f in sem_par:
+        nn = _norm_nome(nome)
+        perto = difflib.get_close_matches(nn, list(livres.get(uf, {})), n=1, cutoff=0.86)
+        if perto:
+            cod = livres[uf].pop(perto[0])
+            k = agg[(uf, nn)]
+            out[cod] = [k[0], None, round(k[1], 2)]
+        else:
+            restam.append((uf, nome, f))
+    return out, restam
+
+
+def bf_baixa_mes_portal(ym, nomes):
+    """Famílias e valor por município no mês `ym`, pela lista de pagamentos do Portal da Transparência: {ibge de 6 dígitos: [famílias, None, R$]}."""
+    import os
+    import tempfile
+    t0 = time.time()
+    fd, tmp = tempfile.mkstemp(suffix=".zip", prefix="bf_")
+    os.close(fd)
+    caminho = Path(tmp)
+    try:
+        n = bf_portal_baixa(ym, caminho)
+        t1 = time.time()
+        agg, st = bf_portal_agrega(caminho, ym)
+    finally:
+        caminho.unlink(missing_ok=True)
+    mes, restam = bf_portal_mapeia(agg, nomes)
+    total_f = sum(x[0] for x in agg.values())
+    perdidas = sum(f for _, _, f in restam)
+    debug["avisos"].append(
+        f"Portal da Transparência {ym}: {n / 1e6:.0f} MB em {t1 - t0:.0f}s, leitura em {time.time() - t1:.0f}s; colunas {st['cabecalho']}; codificação {st['codificacao']}; "
+        f"{st['linhas']:,} linhas ({st['retroativas']:,} retroativas, {st['sem_data']:,} sem coluna de data); {st['municipios']} municípios no arquivo, {len(mes)} ligados ao IBGE; "
+        f"{len(restam)} sem par ({perdidas:,} famílias de {total_f:,}); sem par: {sorted(restam, key=lambda x: -x[2])[:8]}; "
+        f"Salvador: {st['linhas_salvador']:,} linhas para {st['nis_distintos_salvador']:,} NIS distintos")
+    if total_f and perdidas > 0.005 * total_f:
+        raise RuntimeError(f"Portal {ym}: {perdidas / total_f:.1%} das famílias ficaram sem município do IBGE")
+    return mes
 
 
 def bf_populacao():
@@ -727,45 +924,74 @@ def bf_populacao():
 
 
 def bolsa_familia():
-    """Bolsa Família por município e mês (famílias, pessoas, R$ repassados). Guarda tudo em data/bolsa_familia.json:
-    baixa os meses que faltam (do mais novo ao mais antigo, dentro de um orçamento de tempo) e refaz o último mês guardado,
-    que pode ser revisado. O arquivo é determinístico (sem data de geração) para não gerar commit à toa."""
+    """Bolsa Família por município e mês (famílias, pessoas, R$ repassados). Guarda tudo em data/bolsa_familia.json.
+    Fonte principal: MI Social (MDS), que traz famílias, pessoas e valor. Quando o MDS está fora do ar, os meses que faltam vêm da lista de
+    pagamentos do Portal da Transparência (famílias e valor, sem pessoas). Baixa os meses que faltam (do mais novo ao mais antigo, dentro de um
+    orçamento de tempo) e refaz o último mês guardado, que pode ser revisado. O arquivo é determinístico (sem data de geração) para não
+    gerar commit à toa."""
     antigo = json.loads(BF_ARQ.read_text(encoding="utf-8")) if BF_ARQ.exists() else {}
     meses = dict(antigo.get("meses") or {})
+    origem = dict(antigo.get("origem") or {m: "mds" for m in meses})
     nomes, pop, ano = antigo.get("nomes"), antigo.get("pop"), antigo.get("pop_ano", "")
     if not nomes or not pop:
         nomes, pop, ano = bf_populacao()
     t0 = time.time()
     candidatos = bf_meses_candidatos()
-    faltam = [m for m in reversed(candidatos) if m not in meses]
+    faltam = [m for m in reversed(candidatos) if m not in meses or origem.get(m) == "portal"]   # com o MDS de volta, os meses do Portal ganham as pessoas
     refazer = [max(meses)] if meses else []
+    do_portal = candidatos[-BF_PORTAL_MESES:]
     seguidas = 0
     novos = 0
     sondou = False
-    for ym in refazer + faltam:
-        if time.time() - t0 > BF_ORCAMENTO_S:
+    mds_fora = False          # o MDS redireciona para a página de avisos: daqui em diante só o Portal
+    portal_falhas = 0
+    t_portal = None
+    for ym in dict.fromkeys(refazer + faltam):
+        if time.time() - t0 > BF_ORCAMENTO_S and not mds_fora:
             debug["avisos"].append(f"Bolsa Família: orçamento de {BF_ORCAMENTO_S}s esgotado; faltam {[m for m in faltam if m not in meses][:6]}... para a próxima execução")
             break
-        try:
-            mes = bf_baixa_mes(ym)
-        except Exception as e:  # noqa: BLE001
-            seguidas += 1
-            debug["avisos"].append(f"Bolsa Família {ym}: falhou ({e})")
-            manutencao = isinstance(e, RespostaNaoJson) and e.manutencao
-            if isinstance(e, RespostaNaoJson) and not manutencao and not sondou:
-                sondou = True
-                bf_sonda()
-            if seguidas >= 2 and manutencao:
-                # O MDS tirou o serviço do ar ("manutenção preventiva de segurança") e redireciona tudo para a página de avisos.
-                # Não é defeito do robô: não derruba a execução; o que já estiver guardado continua valendo e a próxima execução tenta de novo.
-                debug["avisos"].append("Bolsa Família: o MDS está com o MI Social fora do ar (redireciona para gov.br/mds/pt-br/avisos); nada foi atualizado nesta execução")
-                return None
-            if seguidas >= 2:
-                raise RuntimeError(f"Bolsa Família: duas falhas seguidas, última em {ym}: {e}") from e
-            continue
-        seguidas = 0
+        mes, de = None, "mds"
+        if not mds_fora:
+            try:
+                mes = bf_baixa_mes(ym)
+            except Exception as e:  # noqa: BLE001
+                seguidas += 1
+                debug["avisos"].append(f"Bolsa Família {ym}: falhou ({e})")
+                manutencao = isinstance(e, RespostaNaoJson) and e.manutencao
+                if isinstance(e, RespostaNaoJson) and not manutencao and not sondou:
+                    sondou = True
+                    bf_sonda()
+                if manutencao:
+                    # O MDS tirou o serviço do ar ("manutenção preventiva de segurança") e redireciona tudo para a página de avisos.
+                    # Não é defeito do robô: o que falta vem do Portal da Transparência e a próxima execução tenta o MDS de novo.
+                    mds_fora = True
+                    debug["avisos"].append("Bolsa Família: o MDS está com o MI Social fora do ar (redireciona para gov.br/mds/pt-br/avisos); usa o Portal da Transparência")
+                elif seguidas >= 2:
+                    raise RuntimeError(f"Bolsa Família: duas falhas seguidas, última em {ym}: {e}") from e
+                else:
+                    continue
+            else:
+                seguidas = 0
+        if mds_fora:
+            if ym not in do_portal or (ym in meses and not (ym == (refazer[0] if refazer else None) and origem.get(ym) == "portal")):
+                continue          # mês antigo demais para o Portal, ou já guardado (só o último mês do Portal é refeito, porque a folha pode ser revisada)
+            t_portal = t_portal or time.time()
+            if time.time() - t_portal > BF_PORTAL_ORCAMENTO_S:
+                debug["avisos"].append(f"Bolsa Família: orçamento de {BF_PORTAL_ORCAMENTO_S}s do Portal esgotado; faltam {[m for m in do_portal if m not in meses][:6]}... para a próxima execução")
+                break
+            try:
+                mes, de = bf_baixa_mes_portal(ym, nomes), "portal"
+            except PortalIndisponivel as e:
+                debug["avisos"].append(f"Bolsa Família {ym}: Portal da Transparência sem arquivo ({e})")
+                continue
+            except Exception as e:  # noqa: BLE001
+                portal_falhas += 1
+                debug["avisos"].append(f"Bolsa Família {ym}: Portal da Transparência falhou ({e})")
+                if portal_falhas >= 2:
+                    break
+                continue
         if not mes or sum(x[0] for x in mes.values()) == 0:
-            debug["avisos"].append(f"Bolsa Família {ym}: sem dados (mês ainda não publicado), {len(mes)} linhas")
+            debug["avisos"].append(f"Bolsa Família {ym}: sem dados (mês ainda não publicado), {len(mes or {})} linhas")
             continue
         vizinho = [m for m in sorted(meses) if m < ym]
         anterior = sum(x[0] for x in meses[vizinho[-1]].values()) if vizinho else None
@@ -775,12 +1001,19 @@ def bolsa_familia():
             (debug["avisos"] if meses else debug["erros"]).append(f"Bolsa Família {ym}: recusado, {motivo}")
             continue
         meses[ym] = {c: x for c, x in sorted(mes.items()) if c in nomes}
+        origem[ym] = de
         novos += 1
-        tf, tp, tv = (sum(x[i] for x in meses[ym].values()) for i in range(3))
-        debug["avisos"].append(f"Bolsa Família {ym}: {len(mes)} municípios, {tf:,} famílias, {tp:,} pessoas, R$ {tv:,.0f}; amostra {list(meses[ym].items())[:2]}")
+        tf, tp, tv = (sum((x[i] or 0) for x in meses[ym].values()) for i in range(3))
+        debug["avisos"].append(f"Bolsa Família {ym} ({'Portal da Transparência' if de == 'portal' else 'MDS'}): {len(mes)} municípios, {tf:,} famílias, {tp:,} pessoas, R$ {tv:,.0f}; amostra {list(meses[ym].items())[:2]}")
     if not meses:
+        if mds_fora:       # MDS fora do ar e o Portal ainda não deu certo: não é defeito do robô, a próxima execução tenta de novo
+            debug["avisos"].append("Bolsa Família: nenhum mês disponível nesta execução (MDS fora do ar e Portal da Transparência sem sucesso)")
+            return None
         raise RuntimeError("Bolsa Família: nenhum mês foi baixado")
+    if mds_fora and not novos and antigo.get("meses"):
+        return None          # nada mudou: deixa o arquivo como está
     meses = {m: meses[m] for m in sorted(meses)[-BF_MAX_MESES:]}
+    origem = {m: origem[m] for m in meses if m in origem}
     anterior_ok = None
     for ym in sorted(meses):  # a verificação mês a mês só vê o vizinho já guardado; aqui o conjunto final é conferido em ordem
         tf = sum(x[0] for x in meses[ym].values())
@@ -788,10 +1021,15 @@ def bolsa_familia():
             (debug["avisos"] if antigo.get("meses") else debug["erros"]).append(
                 f"Bolsa Família {ym}: recusado, {tf:.0f} famílias, menos de 60% do mês anterior ({anterior_ok:.0f}); publicação provavelmente incompleta")
             del meses[ym]
+            origem.pop(ym, None)
             continue
         anterior_ok = tf
-    BF_ARQ.write_text(json.dumps({"fonte": "MDS/SAGI (MI Social); população: IBGE (SIDRA 6579)", "pop_ano": ano, "nomes": nomes, "pop": pop, "meses": meses},
-                                 ensure_ascii=False, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+    fontes = sorted(set(origem.values()))
+    fonte = ("MDS/SAGI (MI Social)" if fontes == ["mds"] else "Portal da Transparência (CGU)" if fontes == ["portal"] else "MDS/SAGI (MI Social) e Portal da Transparência (CGU)")
+    saida = {"fonte": f"{fonte}; população: IBGE (SIDRA 6579)", "pop_ano": ano, "nomes": nomes, "pop": pop, "meses": meses}
+    if "portal" in fontes:
+        saida["origem"] = origem
+    BF_ARQ.write_text(json.dumps(saida, ensure_ascii=False, separators=(",", ":"), sort_keys=True), encoding="utf-8")
     debug["avisos"].append(f"Bolsa Família: {len(meses)} meses guardados ({min(meses)} a {max(meses)}), {novos} baixados agora")
     return {"meses": len(meses), "ultimo": max(meses)}
 

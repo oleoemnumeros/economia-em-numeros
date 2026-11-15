@@ -12,7 +12,7 @@
     if (carregando) return;
     carregando = true;
     fetch(campo.getAttribute("data-indice")).then(function (r) { return r.json(); }).then(function (d) {
-      indice = d.map(function (x) { return { n: norm(x[0]), nome: x[0], uf: x[1], url: x[2], f: x[3], c: x[4] }; });
+      indice = d.map(function (x) { return { n: norm(x[0]), nome: x[0], uf: x[1], url: x[2], f: x[3], c: x[4], u: x[5] }; });
       carregando = false;
       depois();
     }).catch(function () {
@@ -44,7 +44,7 @@
       a.textContent = m.nome + " (" + m.uf + ")";
       var s = document.createElement("span");
       s.className = "small";
-      s.textContent = typeof m.f === "string" ? " · " + m.f : " · " + fmt(m.f) + " famílias" + (m.c !== null && m.c !== undefined ? ", " + String(m.c).replace(".", ",") + "% da população" : "");
+      s.textContent = typeof m.f === "string" ? " · " + m.f : " · " + fmt(m.f) + " famílias" + (m.c !== null && m.c !== undefined ? ", " + String(m.c).replace(".", ",") + (m.u === "m" ? " por mil habitantes" : "% da população") : "");
       li.appendChild(a);
       li.appendChild(s);
       lista.appendChild(li);

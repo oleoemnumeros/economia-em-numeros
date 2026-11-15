@@ -60,6 +60,8 @@ F_EXT_IDP = "Banco Central do Brasil, investimento direto no país (SGS 22885)"
 F_EXT_RES = "Banco Central do Brasil, reservas internacionais (SGS 13621)"
 F_EXT_BAL = "Secex/MDIC (Comex Stat), via Comex em Números"
 F_BF = "MDS, Matriz de Informação Social (MI Social); população: IBGE (SIDRA, tabela 6579)"
+F_BF_PORTAL = "Portal da Transparência (CGU), pagamentos do Novo Bolsa Família; população: IBGE (SIDRA, tabela 6579)"
+F_BF_MISTO = "MDS (MI Social) e Portal da Transparência (CGU); população: IBGE (SIDRA, tabela 6579)"
 CRED_CHAVES = ("inad_pf", "inad_livre_pf", "juros_pf", "juros_livre_pf", "endividamento", "comprometimento")
 NUM_PRIMEIRA_REUNIAO = 260  # 30–31/01/2024; mesma regra do robô (conferida com as atas 266, 268, 274 e 276 a 281)
 ATAS_LISTA = "https://www.bcb.gov.br/publicacoes/atascopom/cronologicos"
@@ -329,6 +331,12 @@ class Base:
     @property
     def tem_bf(self) -> bool:
         return bool(self.bf)
+
+    @property
+    def fontes_txt(self) -> str:
+        """Lista de fontes dos rodapés: o Bolsa Família vem do MDS, da CGU (Portal da Transparência) ou dos dois."""
+        tipo = self.bf["tipo_fonte"] if self.bf else "mds"
+        return {"portal": "Banco Central, IBGE, MDIC e CGU", "misto": "Banco Central, IBGE, MDIC, MDS e CGU"}.get(tipo, "Banco Central, IBGE, MDIC e MDS")
 
     @property
     def tem_mun(self) -> bool:
@@ -830,7 +838,7 @@ def desenhar_og(B, destino: Path) -> bool:
             d.text((x + 36, 410), rot, font=f(False, 28), fill=MUT)
             d.text((x + 36, 452), val, font=f(True, 60), fill=INK)
             x += 556
-    d.text((62, H - 52), "Banco Central, IBGE, MDIC e MDS · economiaemnumeros.com.br", font=f(False, 24), fill=MUT, anchor="lm")
+    d.text((62, H - 52), f"{B.fontes_txt} · economiaemnumeros.com.br", font=f(False, 24), fill=MUT, anchor="lm")
     destino.parent.mkdir(parents=True, exist_ok=True)
     im.save(destino, optimize=True)
     return True
@@ -974,7 +982,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <a class="brand" href="/" aria-label="Economia em Números, início"><svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="6" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35"/><rect x="6" y="14" width="4" height="8" rx="1" fill="var(--eco)"/><rect x="12" y="9" width="4" height="13" rx="1" fill="var(--eco)"/><rect x="18" y="6" width="4" height="16" rx="1" fill="var(--eco2)"/></svg><b>Economia <span>em Números</span></b></a>
 <nav class="main" aria-label="Seções">{nav}</nav>
 </div></header>
-<div class="info-bar"><div><strong>Dados de {mes_nome(B.ref)}.</strong> Fontes: Banco Central, IBGE, MDIC e MDS, atualizado automaticamente em {gerado}.</div></div>
+<div class="info-bar"><div><strong>Dados de {mes_nome(B.ref)}.</strong> Fontes: {B.fontes_txt}, atualizado automaticamente em {gerado}.</div></div>
 <main>
 {bc}
 {corpo}
@@ -982,7 +990,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 </main>
 <footer><div>
 <span><strong>Economia em Números</strong> · versão beta</span>
-<span>Portal independente, sem ligação com o governo. Os números vêm de fontes públicas (Banco Central, IBGE, MDIC e MDS) e não são recomendação de investimento nem aconselhamento financeiro.</span>
+<span>Portal independente, sem ligação com o governo. Os números vêm de fontes públicas ({B.fontes_txt}) e não são recomendação de investimento nem aconselhamento financeiro.</span>
 <span>{rodape}</span>
 </div>{familia_html()}</footer>
 <script src="/assets/graficos.js?v={v}" defer></script>
@@ -2164,6 +2172,11 @@ def bf_prepara(bf: dict):
         return None
     nomes, pop = bf.get("nomes") or {}, bf.get("pop") or {}
     ult = meses[-1]
+    # O Portal da Transparência traz famílias e valor, mas não pessoas (None no arquivo): sem pessoas, a comparação com a população vira "famílias por mil habitantes".
+    tem_p = sum((x[1] or 0) for x in base[ult].values()) > 0
+    origem = bf.get("origem") or {}
+    do_portal = [m for m in meses if origem.get(m) == "portal"]
+    tipo = "mds" if not do_portal else "portal" if len(do_portal) == len(meses) else "misto"
     mun, usados = {}, {}
     for cod, x in sorted(base[ult].items()):
         if cod not in nomes or cod[:2] not in UFS or not x[0]:
@@ -2174,7 +2187,7 @@ def bf_prepara(bf: dict):
             s = f"{s}-{cod}"
         usados[(cod[:2], s)] = cod
         mun[cod] = {"cod": cod, "nome": nome, "uf2": cod[:2], "sigla": UFS[cod[:2]][2], "uf_slug": UFS[cod[:2]][0], "slug": s, "pop": pop.get(cod) or 0,
-                    "serie": {m: tuple(base[m][cod]) for m in meses if base[m].get(cod)}}
+                    "serie": {m: (base[m][cod][0], base[m][cod][1] or 0, base[m][cod][2]) for m in meses if base[m].get(cod)}}
     if len(mun) < 100:
         return None
 
@@ -2196,18 +2209,29 @@ def bf_prepara(bf: dict):
     def stat(serie, pop):
         f, p, v = serie[ult]
         a = serie.get(mes_antes(ult, 12))
-        return {"f": f, "p": p, "v": v, "medio": v / f if f else 0.0, "cob": p / pop * 100 if pop else None,
-                "f12": a[0] if a else None, "medio12": a[2] / a[0] if a and a[0] else None, "cob12": a[1] / pop * 100 if a and pop else None,
+        cob = p / pop * 100 if tem_p and pop else None
+        fmil = f / pop * 1000 if pop else None
+        return {"f": f, "p": p, "v": v, "medio": v / f if f else 0.0, "cob": cob, "fmil": fmil, "rel": cob if tem_p else fmil,
+                "f12": a[0] if a else None, "medio12": a[2] / a[0] if a and a[0] else None, "cob12": a[1] / pop * 100 if tem_p and a and a[1] and pop else None,
                 "var12": (f / a[0] - 1) * 100 if a and a[0] else None}
     for m in mun.values():
         m["u"] = stat(m["serie"], m["pop"])
     for u in uf.values():
         u["u"] = stat(u["serie"], u["pop"])
-        ordem = sorted((c for c in u["mun"] if mun[c]["u"]["cob"] is not None), key=lambda c: -mun[c]["u"]["cob"])
+        ordem = sorted((c for c in u["mun"] if mun[c]["u"]["rel"] is not None), key=lambda c: -mun[c]["u"]["rel"])
         for pos, c in enumerate(ordem, 1):
             mun[c]["pos_cob"], mun[c]["n_cob"] = pos, len(ordem)
     br["u"] = stat(br["serie"], br["pop"])
-    return {"meses": meses, "ult": ult, "mun": mun, "uf": uf, "br": br, "pop_ano": bf.get("pop_ano") or "", "fonte": F_BF}
+    fonte, dados_de, curta = {"mds": (F_BF, "do MDS", "MDS"), "portal": (F_BF_PORTAL, "do Portal da Transparência", "Portal da Transparência (CGU)"),
+                              "misto": (F_BF_MISTO, "do MDS e do Portal da Transparência", "MDS e Portal da Transparência")}[tipo]
+    return {"meses": meses, "ult": ult, "mun": mun, "uf": uf, "br": br, "pop_ano": bf.get("pop_ano") or "", "fonte": fonte, "fonte_curta": curta, "dados_de": dados_de,
+            "tipo_fonte": tipo, "portal_desde": do_portal[0] if do_portal else None, "tem_p": tem_p,
+            "rot_rel": "% da população" if tem_p else "Famílias por mil hab."}
+
+
+def bf_rel(x, v) -> str:
+    """Proporção em relação à população: % da população (quando há pessoas) ou famílias por mil habitantes."""
+    return nf(v, 1) if v is not None else "–"
 
 
 def bf_busca_html(B: Base, rotulo="Busque seu município") -> str:
@@ -2238,12 +2262,26 @@ def _bf_graf_serie(B, slug, titulo, fonte, serie, idx, escala, unidade, nome_ser
                    csv_cab=["Mês", nome_serie], csv_linhas=[(m, serie[m][idx] / escala) for m in sorted(serie)], csv_href=csv_href, csv_rotulo=csv_rotulo)
 
 
-BF_TEXTO = ("<h2>Como ler os números do Bolsa Família</h2>"
-            "<p><strong>Famílias</strong> são as famílias que receberam o benefício no mês, e <strong>pessoas</strong>, todos os moradores dessas famílias. "
-            "O <strong>valor repassado</strong> é o total pago às famílias no mês e o <strong>benefício médio</strong> é esse valor dividido pelo número de famílias. "
-            "A <strong>proporção da população</strong> compara as pessoas beneficiadas com a população estimada do IBGE para o município, e por isso pode ser bem alta em municípios pequenos.</p>"
-            "<p>Os dados vêm da Matriz de Informação Social (MI Social) do Ministério do Desenvolvimento e Assistência Social (MDS) e acompanham a folha de pagamento de cada mês. "
-            "O mês mais recente pode ser revisado depois da publicação. O portal mostra números e não avalia o programa.</p>")
+def bf_texto(B: Base) -> str:
+    x = B.bf
+    fam = "<p><strong>Famílias</strong> são as famílias que receberam o benefício no mês" + (", e <strong>pessoas</strong>, todos os moradores dessas famílias. " if x["tem_p"] else ". ")
+    val = "O <strong>valor repassado</strong> é o total pago às famílias no mês e o <strong>benefício médio</strong> é esse valor dividido pelo número de famílias. "
+    if x["tem_p"]:
+        rel = "A <strong>proporção da população</strong> compara as pessoas beneficiadas com a população estimada do IBGE para o município, e por isso pode ser bem alta em municípios pequenos.</p>"
+    else:
+        rel = ("As <strong>famílias por mil habitantes</strong> comparam o número de famílias beneficiadas com a população estimada do IBGE para o município "
+               "(cada família tem, em média, mais de uma pessoa), e por isso o número pode ser alto em municípios pequenos.</p>")
+    mds = "Matriz de Informação Social (MI Social) do Ministério do Desenvolvimento e Assistência Social (MDS)"
+    portal = "lista mensal de pagamentos do Novo Bolsa Família, publicada pelo Portal da Transparência da Controladoria-Geral da União (CGU)"
+    if x["tipo_fonte"] == "mds":
+        origem = f"<p>Os dados vêm da {mds} e acompanham a folha de pagamento de cada mês. "
+    elif x["tipo_fonte"] == "portal":
+        origem = (f"<p>Os dados vêm da {portal}, que traz uma linha por família. O portal soma as famílias e o valor pago em cada município; o arquivo não informa o número de pessoas. "
+                  "Parcelas pagas em atraso, referentes a meses anteriores, não entram na conta. ")
+    else:
+        origem = (f"<p>Até {mes_nome(mes_antes(x['portal_desde'], 1))}, os dados vêm da {mds}; a partir de {mes_nome(x['portal_desde'])}, da {portal}, "
+                  "que não informa o número de pessoas. ")
+    return ("<h2>Como ler os números do Bolsa Família</h2>" + fam + val + rel + origem + "O mês mais recente pode ser revisado depois da publicação. O portal mostra números e não avalia o programa.</p>")
 
 
 def bf_comparacao(B: Base, m: dict) -> str:
@@ -2254,7 +2292,8 @@ def bf_comparacao(B: Base, m: dict) -> str:
 
     def c(v, d):
         return nf(v, d) if v is not None else "–"
-    linhas = [["Proporção da população no programa (%)", c(u["cob"], 1), c(uf["cob"], 1), c(br["cob"], 1)],
+    rot = "Proporção da população no programa (%)" if B.bf["tem_p"] else "Famílias beneficiárias por mil habitantes"
+    linhas = [[rot, c(u["rel"], 1), c(uf["rel"], 1), c(br["rel"], 1)],
               ["Benefício médio por família (R$)", c(u["medio"], 0), c(uf["medio"], 0), c(br["medio"], 0)]]
     return tabela(["Indicador", esc(m["nome"]), esc(m["sigla"]), "Brasil"], linhas, ["l", "r", "r", "r"])
 
@@ -2262,23 +2301,32 @@ def bf_comparacao(B: Base, m: dict) -> str:
 def pg_bf(B: Base) -> str:
     x = B.bf
     ult, br, u = x["ult"], x["br"], x["br"]["u"]
-    lede = (f'Em {mes_nome(ult)}, <strong>{milh(u["f"] / 1e6)} de famílias</strong> receberam o Bolsa Família, num total de {milh(u["p"] / 1e6)} de pessoas'
-            + (f' ({nf(u["cob"], 1)}% da população)' if u["cob"] else "") + f'. O repasse do mês foi de <strong>{brl_abrev(u["v"])}</strong>, com benefício médio de <strong>R$ {nf(u["medio"], 0)}</strong> por família.')
+    lede = (f'Em {mes_nome(ult)}, <strong>{milh(u["f"] / 1e6)} de famílias</strong> receberam o Bolsa Família'
+            + (f', num total de {milh(u["p"] / 1e6)} de pessoas' + (f' ({nf(u["cob"], 1)}% da população)' if u["cob"] else "") if x["tem_p"] else "")
+            + f'. O repasse do mês foi de <strong>{brl_abrev(u["v"])}</strong>, com benefício médio de <strong>R$ {nf(u["medio"], 0)}</strong> por família.')
     if u["f12"]:
         lede += f' Há 12 meses eram {milh(u["f12"] / 1e6)} de famílias.'
     hero = card('<span class="eyebrow">Bolsa Família</span><h1>Bolsa Família por estado e por município</h1>' f'<p class="lede">{lede}</p>')
     tiles = [tile(f"Famílias · {mes_curtinho(ult)}", nf(u["f"] / 1e6, 1), _un(u["f"] / 1e6, "milhão", "milhões"), chg(u["var12"], 1, "%", " em 12 meses") if u["var12"] is not None else "", "a"),
              tile("Valor repassado no mês", *brl_partes(u["v"]), "", "b"),
              tile("Benefício médio", nf(u["medio"], 0), "R$ por família", chg(u["medio"] - u["medio12"], 0, " R$", " em 12 meses") if u["medio12"] is not None else "", "k"),
-             tile("Pessoas no programa", nf(u["cob"], 1) if u["cob"] else nf(u["p"] / 1e6, 1), "% da população" if u["cob"] else _un(u["p"] / 1e6, "milhão", "milhões"), "", "g")]
-    fam = grafico(B, "bolsa-familia-familias", "Famílias e pessoas no Bolsa Família (milhões)", x["fonte"],
-                  svg_linhas([{"vals": [br["serie"][m][1] / 1e6 for m in x["meses"]], "cor": "b"}, {"vals": [br["serie"][m][0] / 1e6 for m in x["meses"]], "cor": "a"}],
-                             [mes_curtinho(m) for m in x["meses"]], "Gráfico do número de famílias e de pessoas atendidas pelo Bolsa Família no Brasil, em milhões, mês a mês", unidade="milhões"),
-                  ["Mês", "Famílias (milhões)", "Pessoas (milhões)"], [(m, br["serie"][m][0] / 1e6, br["serie"][m][1] / 1e6) for m in x["meses"]], "Bolsa Família", casas=2,
-                  legenda=legenda_linhas(("a", "Famílias"), ("b", "Pessoas")),
-                  nota=f'<p class="small">Soma de todos os municípios, mês a mês, a partir de {mes_nome(x["meses"][0])}.</p>',
-                  ultimo=f"{nf(u['f'] / 1e6, 2)} milhões de famílias ({mes_curto(ult)})".replace("1,00 milhões", "1,00 milhão"),
-                  csv_cab=["Mês", "Famílias beneficiárias", "Pessoas beneficiárias", "Valor repassado (R$)"], csv_linhas=[(m, *br["serie"][m]) for m in x["meses"]])
+             (tile("Pessoas no programa", nf(u["cob"], 1) if u["cob"] else nf(u["p"] / 1e6, 1), "% da população" if u["cob"] else _un(u["p"] / 1e6, "milhão", "milhões"), "", "g") if x["tem_p"]
+              else tile("Famílias por mil habitantes", nf(u["fmil"], 0) if u["fmil"] is not None else "–", "famílias para cada mil pessoas", "", "g"))]
+    ultimo_fam = f"{nf(u['f'] / 1e6, 2)} milhões de famílias ({mes_curto(ult)})".replace("1,00 milhões", "1,00 milhão")
+    nota_fam = f'<p class="small">Soma de todos os municípios, mês a mês, a partir de {mes_nome(x["meses"][0])}.</p>'
+    if x["tem_p"]:
+        fam = grafico(B, "bolsa-familia-familias", "Famílias e pessoas no Bolsa Família (milhões)", x["fonte"],
+                      svg_linhas([{"vals": [br["serie"][m][1] / 1e6 for m in x["meses"]], "cor": "b"}, {"vals": [br["serie"][m][0] / 1e6 for m in x["meses"]], "cor": "a"}],
+                                 [mes_curtinho(m) for m in x["meses"]], "Gráfico do número de famílias e de pessoas atendidas pelo Bolsa Família no Brasil, em milhões, mês a mês", unidade="milhões"),
+                      ["Mês", "Famílias (milhões)", "Pessoas (milhões)"], [(m, br["serie"][m][0] / 1e6, br["serie"][m][1] / 1e6) for m in x["meses"]], "Bolsa Família", casas=2,
+                      legenda=legenda_linhas(("a", "Famílias"), ("b", "Pessoas")), nota=nota_fam, ultimo=ultimo_fam,
+                      csv_cab=["Mês", "Famílias beneficiárias", "Pessoas beneficiárias", "Valor repassado (R$)"], csv_linhas=[(m, *br["serie"][m]) for m in x["meses"]])
+    else:
+        fam = grafico(B, "bolsa-familia-familias", "Famílias no Bolsa Família (milhões)", x["fonte"],
+                      svg_linhas([{"vals": [br["serie"][m][0] / 1e6 for m in x["meses"]], "cor": "a"}], [mes_curtinho(m) for m in x["meses"]],
+                                 "Gráfico do número de famílias atendidas pelo Bolsa Família no Brasil, em milhões, mês a mês", unidade="milhões"),
+                      ["Mês", "Famílias (milhões)"], [(m, br["serie"][m][0] / 1e6) for m in x["meses"]], "Bolsa Família", casas=2, nota=nota_fam, ultimo=ultimo_fam,
+                      csv_cab=["Mês", "Famílias beneficiárias", "Valor repassado (R$)"], csv_linhas=[(m, br["serie"][m][0], br["serie"][m][2]) for m in x["meses"]])
     val = grafico(B, "bolsa-familia-valor-repassado", "Valor repassado pelo Bolsa Família (R$ bilhões por mês)", x["fonte"],
                   svg_linhas([{"vals": [br["serie"][m][2] / 1e9 for m in x["meses"]], "cor": "a"}], [mes_curtinho(m) for m in x["meses"]],
                              "Gráfico do valor mensal repassado pelo Bolsa Família no Brasil, em R$ bilhões", unidade="R$ bilhões"),
@@ -2293,41 +2341,44 @@ def pg_bf(B: Base) -> str:
                   csv_cab=["Mês", "Benefício médio por família (R$)"], csv_linhas=[(m, br["serie"][m][2] / br["serie"][m][0]) for m in x["meses"]])
 
     ufs = sorted(x["uf"].values(), key=lambda a: -a["u"]["f"])
-    linhas_uf = [[f'<a href="/bolsa-familia/{a["slug"]}/">{esc(a["nome"])}</a>', nf(a["u"]["f"], 0), nf(a["u"]["cob"], 1) if a["u"]["cob"] else "–", brl_abrev(a["u"]["v"]),
+    linhas_uf = [[f'<a href="/bolsa-familia/{a["slug"]}/">{esc(a["nome"])}</a>', nf(a["u"]["f"], 0), bf_rel(x, a["u"]["rel"]), brl_abrev(a["u"]["v"]),
                   nf(a["u"]["medio"], 0), (sinal(a["u"]["var12"], 1) + "%") if a["u"]["var12"] is not None else "–"] for a in ufs]
     tab_uf = card(cab("Por estado", f'<span class="src">{mes_nome(ult)}</span>') +
-                  tabela(["Estado", "Famílias", "% da população", "Valor no mês", "Médio (R$)", "Famílias vs. 12m"], linhas_uf, ["l", "r", "r", "r", "r", "r"]) +
+                  tabela(["Estado", "Famílias", x["rot_rel"], "Valor no mês", "Médio (R$)", "Famílias vs. 12m"], linhas_uf, ["l", "r", "r", "r", "r", "r"]) +
                   f'<span class="src">Fonte: {esc(x["fonte"])}. Clique no estado para ver todos os municípios.</span>')
     grandes = sorted(x["mun"].values(), key=lambda m: -m["u"]["f"])[:15]
     top = card(cab("Maiores municípios", f'<span class="src">{mes_nome(ult)}</span>') +
-               tabela(["Município", "Famílias", "% da população"],
-                      [[f'<a href="/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/">{esc(m["nome"])} ({m["sigla"]})</a>', nf(m["u"]["f"], 0), nf(m["u"]["cob"], 1) if m["u"]["cob"] is not None else "–"] for m in grandes],
+               tabela(["Município", "Famílias", x["rot_rel"]],
+                      [[f'<a href="/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/">{esc(m["nome"])} ({m["sigla"]})</a>', nf(m["u"]["f"], 0), bf_rel(x, m["u"]["rel"])] for m in grandes],
                       ["l", "r", "r"]) +
-               '<span class="src">Os 15 municípios com mais famílias no programa. Fonte: MDS; população: IBGE.</span>')
-    prop = sorted((m for m in x["mun"].values() if m["u"]["cob"] is not None and m["pop"] >= 20000), key=lambda m: -m["u"]["cob"])[:15]
+               '<span class="src">Os 15 municípios com mais famílias no programa. Fonte: ' + esc(x["fonte_curta"]) + '; população: IBGE.</span>')
+    prop = sorted((m for m in x["mun"].values() if m["u"]["rel"] is not None and m["pop"] >= 20000), key=lambda m: -m["u"]["rel"])[:15]
     top2 = card(cab("Maior proporção da população", f'<span class="src">{mes_nome(ult)}</span>') +
-                tabela(["Município", "% da população", "Famílias"],
-                       [[f'<a href="/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/">{esc(m["nome"])} ({m["sigla"]})</a>', nf(m["u"]["cob"], 1), nf(m["u"]["f"], 0)] for m in prop], ["l", "r", "r"]) +
-                '<span class="src">Entre os municípios com 20 mil habitantes ou mais, os 15 com maior parcela da população atendida. Fonte: MDS; população estimada pelo IBGE.</span>')
-    texto = card(BF_TEXTO + f'<p class="small">População estimada pelo IBGE para {esc(x["pop_ano"])}. Todos os números por município e mês estão em <a href="/dados/bolsa-familia-municipios.csv" download>um arquivo CSV</a>.</p>')
+                tabela(["Município", x["rot_rel"], "Famílias"],
+                       [[f'<a href="/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/">{esc(m["nome"])} ({m["sigla"]})</a>', bf_rel(x, m["u"]["rel"]), nf(m["u"]["f"], 0)] for m in prop], ["l", "r", "r"]) +
+                '<span class="src">Entre os municípios com 20 mil habitantes ou mais, os 15 com ' + ("maior parcela da população atendida" if x["tem_p"] else "mais famílias atendidas para cada mil habitantes")
+                + f'. Fonte: {esc(x["fonte_curta"])}; população estimada pelo IBGE.</span>')
+    texto = card(bf_texto(B) + f'<p class="small">População estimada pelo IBGE para {esc(x["pop_ano"])}. Todos os números por município e mês estão em <a href="/dados/bolsa-familia-municipios.csv" download>um arquivo CSV</a>.</p>')
     corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{bf_busca_html(B)}{colunas([fam, val, med, top])}{tab_uf}{colunas([top2, texto])}'
     return pagina(B, "/bolsa-familia/", f"Bolsa Família por município: {milh(u['f'] / 1e6)} de famílias em {mes_nome(ult)}",
-                  f"{milh(u['f'] / 1e6)} de famílias receberam o Bolsa Família em {mes_nome(ult)}, com repasse de {brl_abrev(u['v'])}. Busque o seu município e veja famílias, valor repassado e benefício médio, com dados do MDS.",
+                  f"{milh(u['f'] / 1e6)} de famílias receberam o Bolsa Família em {mes_nome(ult)}, com repasse de {brl_abrev(u['v'])}. Busque o seu município e veja famílias, valor repassado e benefício médio, com dados {x['dados_de']}.",
                   corpo, "/bolsa-familia/", [(None, "Bolsa Família")])
 
 
 def pg_bf_uf(B: Base, a: dict) -> str:
     x = B.bf
     ult, u = x["ult"], a["u"]
-    lede = (f'Em {mes_nome(ult)}, <strong>{nf(u["f"], 0)} famílias</strong> {uf_de(a["cod"], esc(a["nome"]))} receberam o Bolsa Família ({nf(u["p"], 0)} pessoas'
-            + (f', {nf(u["cob"], 1)}% da população' if u["cob"] else "") + f'). O repasse do mês foi de <strong>{brl_abrev(u["v"])}</strong>, com benefício médio de <strong>R$ {nf(u["medio"], 0)}</strong>.')
+    lede = (f'Em {mes_nome(ult)}, <strong>{nf(u["f"], 0)} famílias</strong> {uf_de(a["cod"], esc(a["nome"]))} receberam o Bolsa Família'
+            + (f' ({nf(u["p"], 0)} pessoas' + (f', {nf(u["cob"], 1)}% da população' if u["cob"] else "") + ")" if x["tem_p"]
+               else (f' ({nf(u["fmil"], 0)} para cada mil habitantes)' if u["fmil"] is not None else "")) + f'. O repasse do mês foi de <strong>{brl_abrev(u["v"])}</strong>, com benefício médio de <strong>R$ {nf(u["medio"], 0)}</strong>.')
     if u["f12"]:
         lede += f' Há 12 meses eram {nf(u["f12"], 0)} famílias ({sinal(u["var12"], 1)}%).'
     hero = card(f'<span class="eyebrow">Bolsa Família · {esc(a["sigla"])}</span><h1>Bolsa Família {uf_em(a["cod"], esc(a["nome"]))}: famílias por município</h1><p class="lede">{lede}</p>')
     tiles = [tile(f"Famílias · {mes_curtinho(ult)}", nf(u["f"], 0), "", chg(u["var12"], 1, "%", " em 12 meses") if u["var12"] is not None else "", "a"),
              tile("Valor repassado no mês", *brl_partes(u["v"]), "", "b"),
              tile("Benefício médio", nf(u["medio"], 0), "R$ por família", chg(u["medio"] - u["medio12"], 0, " R$", " em 12 meses") if u["medio12"] is not None else "", "k"),
-             tile("Pessoas no programa", nf(u["cob"], 1) if u["cob"] else nf(u["p"], 0), "% da população" if u["cob"] else "", "", "g")]
+             (tile("Pessoas no programa", nf(u["cob"], 1) if u["cob"] else nf(u["p"], 0), "% da população" if u["cob"] else "", "", "g") if x["tem_p"]
+              else tile("Famílias por mil habitantes", nf(u["fmil"], 0) if u["fmil"] is not None else "–", "famílias para cada mil pessoas", "", "g"))]
     csv_href = "/dados/bolsa-familia-municipios.csv"
     g1 = _bf_graf_serie(B, f"bf-uf-{a['slug']}-familias", f"Famílias no Bolsa Família {uf_em(a['cod'], a['nome'])} (mil)", x["fonte"], a["serie"], 0, 1000.0, "mil famílias", "Famílias (mil)", 60, 1,
                         '<p class="small">Soma dos municípios do estado, mês a mês.</p>', f"Gráfico do número de famílias no Bolsa Família {uf_em(a['cod'], a['nome'])}, em milhares, mês a mês",
@@ -2336,15 +2387,15 @@ def pg_bf_uf(B: Base, a: dict) -> str:
                         '<p class="small">Valores correntes (sem descontar a inflação).</p>', f"Gráfico do valor mensal repassado pelo Bolsa Família {uf_em(a['cod'], a['nome'])}, em R$ milhões",
                         csv_href=csv_href, csv_rotulo="Baixar CSV de todos os municípios", grupo="Bolsa Família por estado")
     muns = sorted((x["mun"][c] for c in a["mun"]), key=lambda m: -m["u"]["f"])
-    linhas = [[f'<a href="/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/">{esc(m["nome"])}</a>', nf(m["u"]["f"], 0), nf(m["u"]["cob"], 1) if m["u"]["cob"] is not None else "–", brl_abrev(m["u"]["v"]), nf(m["u"]["medio"], 0),
+    linhas = [[f'<a href="/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/">{esc(m["nome"])}</a>', nf(m["u"]["f"], 0), bf_rel(x, m["u"]["rel"]), brl_abrev(m["u"]["v"]), nf(m["u"]["medio"], 0),
                (sinal(m["u"]["var12"], 1) + "%") if m["u"]["var12"] is not None else "–"] for m in muns]
     tab = card(cab(f"Os {len(muns)} municípios {uf_de(a['cod'], esc(a['nome']))}", f'<span class="src">{mes_nome(ult)}</span>') +
-               tabela(["Município", "Famílias", "% da população", "Valor no mês", "Médio (R$)", "Famílias vs. 12m"], linhas, ["l", "r", "r", "r", "r", "r"]) +
+               tabela(["Município", "Famílias", x["rot_rel"], "Valor no mês", "Médio (R$)", "Famílias vs. 12m"], linhas, ["l", "r", "r", "r", "r", "r"]) +
                f'<span class="src">Em ordem de número de famílias. Fonte: {esc(x["fonte"])}.</span>')
-    texto = card(BF_TEXTO + '<p class="small"><a href="/bolsa-familia/">Voltar ao Bolsa Família no Brasil</a></p>')
+    texto = card(bf_texto(B) + '<p class="small"><a href="/bolsa-familia/">Voltar ao Bolsa Família no Brasil</a></p>')
     corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{bf_busca_html(B, "Busque um município")}{colunas([g1, g2])}{tab}{texto}'
     return pagina(B, f"/bolsa-familia/{a['slug']}/", f"Bolsa Família {uf_em(a['cod'], a['nome'])}: {nf(u['f'], 0)} famílias em {mes_nome(ult)}",
-                  f"{nf(u['f'], 0)} famílias {uf_de(a['cod'], a['nome'])} receberam o Bolsa Família em {mes_nome(ult)}, com repasse de {brl_abrev(u['v'])}. Veja os números de cada município do estado, com dados do MDS.",
+                  f"{nf(u['f'], 0)} famílias {uf_de(a['cod'], a['nome'])} receberam o Bolsa Família em {mes_nome(ult)}, com repasse de {brl_abrev(u['v'])}. Veja os números de cada município do estado, com dados {x['dados_de']}.",
                   corpo, "/bolsa-familia/", [("/bolsa-familia/", "Bolsa Família"), (None, a["nome"])])
 
 
@@ -2356,6 +2407,8 @@ def pg_bf_mun(B: Base, m: dict) -> str:
     lede = f'Em {mes_nome(ult)}, <strong>{nf(u["f"], 0)} famílias</strong> de {esc(m["nome"])} ({m["sigla"]}) receberam o Bolsa Família'
     if u["cob"] is not None:
         lede += f', ou seja, {nf(u["p"], 0)} pessoas, <strong>{nf(u["cob"], 1)}% da população</strong> estimada pelo IBGE'
+    elif not x["tem_p"] and u["fmil"] is not None:
+        lede += f', o equivalente a <strong>{nf(u["fmil"], 1)} famílias para cada mil habitantes</strong> (população estimada pelo IBGE)'
     lede += f'. O repasse do mês foi de <strong>{brl_abrev(u["v"])}</strong>, com benefício médio de <strong>R$ {nf(u["medio"], 0)}</strong> por família.'
     if u["f12"]:
         lede += f' Há 12 meses eram {nf(u["f12"], 0)} famílias ({sinal(u["var12"], 1)}%).'
@@ -2363,30 +2416,38 @@ def pg_bf_mun(B: Base, m: dict) -> str:
         lede += f' Em proporção da população, {esc(m["nome"])} ocupa a {m["pos_cob"]}ª posição entre os {m["n_cob"]} municípios {uf_de(m["uf2"], esc(uf["nome"]))}.'
     hero = card(f'<span class="eyebrow">Bolsa Família · {esc(uf["nome"])}</span><h1>Bolsa Família em {esc(nome)}</h1><p class="lede">{lede}</p>')
     tiles = [tile(f"Famílias · {mes_curtinho(ult)}", nf(u["f"], 0), "", chg(u["var12"], 1, "%", " em 12 meses") if u["var12"] is not None else "", "a"),
-             tile("Pessoas no programa", nf(u["p"], 0), "", f'<span class="chg flat">● {nf(u["cob"], 1)}% da população</span>' if u["cob"] is not None else "", "g"),
+             (tile("Pessoas no programa", nf(u["p"], 0), "", f'<span class="chg flat">● {nf(u["cob"], 1)}% da população</span>' if u["cob"] is not None else "", "g") if x["tem_p"]
+              else tile("Famílias por mil habitantes", nf(u["fmil"], 1) if u["fmil"] is not None else "–", "famílias para cada mil pessoas", "", "g")),
              tile("Valor repassado no mês", *brl_partes(u["v"]), "", "b"),
              tile("Benefício médio", nf(u["medio"], 0), "R$ por família", chg(u["medio"] - u["medio12"], 0, " R$", " em 12 meses") if u["medio12"] is not None else "", "k")]
     ms = sorted(m["serie"])[-36:]
     csv_href = "/dados/bolsa-familia-municipios.csv"
     fonte = f'{x["fonte"]}'
     svg = svg_linhas([{"vals": [m["serie"][k][0] for k in ms], "cor": "a"}], [mes_curtinho(k) for k in ms], f"Gráfico do número de famílias no Bolsa Família em {m['nome']} ({m['sigla']}), mês a mês", unidade="famílias")
-    linhas = [(k, m["serie"][k][0], m["serie"][k][1], m["serie"][k][2], m["serie"][k][2] / m["serie"][k][0]) for k in ms]
-    g = grafico(B, "bf-municipio", f"Famílias no Bolsa Família em {m['nome']} ({m['sigla']})", fonte, svg, ["Mês", "Famílias", "Pessoas", "Valor repassado (R$)", "Benefício médio (R$)"], linhas, "Bolsa Família", casas=0,
-                nota='<p class="small">Famílias que receberam o benefício em cada mês, nos últimos 36 meses. A tabela traz também pessoas, valor repassado e benefício médio.</p>',
+    if x["tem_p"]:
+        cabec = ["Mês", "Famílias", "Pessoas", "Valor repassado (R$)", "Benefício médio (R$)"]
+        linhas = [(k, m["serie"][k][0], m["serie"][k][1], m["serie"][k][2], m["serie"][k][2] / m["serie"][k][0]) for k in ms]
+    else:
+        cabec = ["Mês", "Famílias", "Valor repassado (R$)", "Benefício médio (R$)"]
+        linhas = [(k, m["serie"][k][0], m["serie"][k][2], m["serie"][k][2] / m["serie"][k][0]) for k in ms]
+    g = grafico(B, "bf-municipio", f"Famílias no Bolsa Família em {m['nome']} ({m['sigla']})", fonte, svg, cabec, linhas, "Bolsa Família", casas=0,
+                nota='<p class="small">Famílias que receberam o benefício em cada mês, nos últimos 36 meses. A tabela traz também ' + ("pessoas, " if x["tem_p"] else "") + 'valor repassado e benefício médio.</p>',
                 ultimo=f"{nf(u['f'], 0)} famílias ({mes_curto(ult)})", csv_href=csv_href, csv_rotulo="Baixar CSV de todos os municípios")
     comp = card(cab("Comparação") + bf_comparacao(B, m) +
                 f'<span class="src">Município, estado e Brasil em {mes_nome(ult)}. População estimada pelo IBGE para {esc(x["pop_ano"])}.</span>')
-    texto = card(BF_TEXTO + f'<p class="small"><a href="/bolsa-familia/{m["uf_slug"]}/">Ver todos os municípios {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/bolsa-familia/">Bolsa Família no Brasil</a></p>')
+    texto = card(bf_texto(B) + f'<p class="small"><a href="/bolsa-familia/{m["uf_slug"]}/">Ver todos os municípios {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/bolsa-familia/">Bolsa Família no Brasil</a></p>')
     corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{bf_busca_html(B, "Busque outro município")}{colunas([g, comp])}{texto}'
     return pagina(B, f"/bolsa-familia/{m['uf_slug']}/{m['slug']}/", f"Bolsa Família em {nome}: {nf(u['f'], 0)} famílias em {mes_nome(ult)}",
                   f"{nf(u['f'], 0)} famílias de {m['nome']} ({m['sigla']}) receberam o Bolsa Família em {mes_nome(ult)}"
-                  + (f", {nf(u['cob'], 1)}% da população" if u["cob"] is not None else "") + f", com repasse de {brl_abrev(u['v'])}. Evolução mensal e comparação com o estado, com dados do MDS.",
+                  + (f", {nf(u['cob'], 1)}% da população" if u["cob"] is not None else f", {nf(u['fmil'], 1)} para cada mil habitantes" if u["fmil"] is not None else "") + f", com repasse de {brl_abrev(u['v'])}. Evolução mensal e comparação com o estado, com dados {x['dados_de']}.",
                   corpo, "/bolsa-familia/", [("/bolsa-familia/", "Bolsa Família"), (f"/bolsa-familia/{m['uf_slug']}/", uf["nome"]), (None, m["nome"])])
 
 
 def bf_indice(B: Base) -> str:
     """Índice de busca (JSON compacto): [nome, sigla, endereço, famílias, % da população]."""
-    itens = [[m["nome"], m["sigla"], f'/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/', m["u"]["f"], round(m["u"]["cob"], 1) if m["u"]["cob"] is not None else None]
+    # o sexto item ("m") avisa a página de busca que a proporção é em famílias por mil habitantes, e não em % da população
+    sufixo = [] if B.bf["tem_p"] else ["m"]
+    itens = [[m["nome"], m["sigla"], f'/bolsa-familia/{m["uf_slug"]}/{m["slug"]}/', m["u"]["f"], round(m["u"]["rel"], 1) if m["u"]["rel"] is not None else None] + sufixo
              for m in sorted(B.bf["mun"].values(), key=lambda m: -m["u"]["f"])]
     return json.dumps(itens, ensure_ascii=False, separators=(",", ":"))
 
@@ -2400,7 +2461,7 @@ def bf_painel_csv(B: Base):
         for k in x["meses"]:
             s = m["serie"].get(k)
             if s:
-                linhas.append((cod, m["nome"], m["sigla"], k, s[0], s[1], s[2]))
+                linhas.append((cod, m["nome"], m["sigla"], k, s[0], s[1] or "", s[2]))      # o Portal da Transparência não traz pessoas: célula vazia
     return linhas
 
 
@@ -2472,7 +2533,7 @@ def pg_sobre(B: Base) -> str:
                  '<li><strong>Vendas no varejo:</strong> IBGE, Pesquisa Mensal de Comércio (SIDRA, tabelas 8880 e 8881, esta para o varejo ampliado).</li>'
                  '<li><strong>Taxa de desocupação:</strong> IBGE, PNAD Contínua (SIDRA, tabelas 4099 e 6381).</li>'
                  '<li><strong>Vagas formais:</strong> Novo Caged, do Ministério do Trabalho e Emprego; o saldo do mês é a variação do estoque de empregos formais (série 28763 do SGS, Banco Central).</li>'
-                 '<li><strong>Bolsa Família por município:</strong> Ministério do Desenvolvimento e Assistência Social (MDS), Matriz de Informação Social (MI Social); população estimada pelo IBGE (SIDRA, tabela 6579).</li>'
+                 '<li><strong>Bolsa Família por município:</strong> Ministério do Desenvolvimento e Assistência Social (MDS), Matriz de Informação Social (MI Social); quando o MI Social está fora do ar, a lista mensal de pagamentos do Novo Bolsa Família do Portal da Transparência da Controladoria-Geral da União (CGU), que traz famílias e valor, mas não o número de pessoas; população estimada pelo IBGE (SIDRA, tabela 6579).</li>'
                  '<li><strong>Municípios:</strong> IBGE, PIB dos Municípios (SIDRA, tabela 5938) e população estimada (tabela 6579); contas das prefeituras do Tesouro Nacional, Declaração de Contas Anuais (Siconfi).</li>'
                  '<li><strong>IPCA do Brasil:</strong> IBGE, pelas séries 433 e 13522 do Banco Central.</li>'
                  '<li><strong>IPCA por região:</strong> IBGE, Sistema IBGE de Recuperação Automática (SIDRA), tabela 7060.</li>'
@@ -2496,7 +2557,7 @@ def pg_sobre(B: Base) -> str:
                  '<p class="small">Também na Família em Números: <a href="https://oleoemnumeros.com.br/">Óleo em Números</a>, '
                  '<a href="https://comexemnumeros.com.br/">Comex em Números</a> e <a href="https://vooemnumeros.com.br/">Voo em Números</a>.</p>')
     return pagina(B, "/sobre/", "Como funciona o Economia em Números: fontes e atualização",
-                  "De onde vêm os dados do Economia em Números (Banco Central, IBGE, MDIC e MDS), como são atualizados e o que o site não é.", corpo, "/sobre/", [(None, "Como funciona")])
+                  f"De onde vêm os dados do Economia em Números ({B.fontes_txt}), como são atualizados e o que o site não é.", corpo, "/sobre/", [(None, "Como funciona")])
 
 
 def pg_404(B: Base) -> str:
@@ -2894,7 +2955,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
             escrever(saida, c, pg_bf_mun(B, m))
             extras.append(c)
         escrever(saida, "/bolsa-familia/busca.json", bf_indice(B))
-        B.csvs["bolsa-familia-municipios"] = {"titulo": "Bolsa Família por município e mês (famílias, pessoas e valor repassado)", "fonte": B.bf["fonte"], "ultimo": mes_curto(B.bf["ult"]),
+        B.csvs["bolsa-familia-municipios"] = {"titulo": "Bolsa Família por município e mês (famílias, pessoas quando disponíveis e valor repassado)", "fonte": B.bf["fonte"], "ultimo": mes_curto(B.bf["ult"]),
                                               "grupo": "Bolsa Família", "cab": ["Código IBGE", "Município", "UF", "Mês", "Famílias beneficiárias", "Pessoas beneficiárias", "Valor repassado (R$)"],
                                               "linhas": bf_painel_csv(B)}
     if B.tem_mun:

@@ -978,6 +978,116 @@ class TestBolsaFamilia(unittest.TestCase):
             self.assertFalse([c for c in cam if "bolsa" in c])
 
 
+class TestBolsaFamiliaPortal(unittest.TestCase):
+    """Bolsa Família vindo do Portal da Transparência: famílias e valor, sem pessoas (o arquivo traz None no lugar)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.d = Path(cls.tmp.name)
+        cls.dados = gravar(cls.d / "dados.json")
+        puro = bf_exemplo()
+        puro["fonte"] = "Portal da Transparência (CGU)"
+        for ym, mes in puro["meses"].items():
+            for cod in mes:
+                mes[cod][1] = None
+        puro["origem"] = {ym: "portal" for ym in puro["meses"]}
+        misto = json.loads(json.dumps(puro))
+        for ym, mes in bf_exemplo()["meses"].items():
+            if ym <= "2026-07":                                      # os meses antigos ainda vêm do MDS, com pessoas
+                misto["meses"][ym] = mes
+                del misto["origem"][ym]
+        cls.puro, cls.misto = puro, misto
+        for nome, d in (("puro", puro), ("misto", misto)):
+            (cls.d / f"{nome}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+            setattr(cls, f"cam_{nome}", g.gerar(cls.dados, cls.d / nome, bf_path=cls.d / f"{nome}.json"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def ler(self, pasta, rel):
+        return (self.d / pasta / rel).read_text(encoding="utf-8")
+
+    def paginas(self, pasta, cam):
+        return [c for c in cam if c.startswith("/bolsa-familia/") and c.endswith("/")]
+
+    def test_sem_pessoas_as_paginas_trocam_a_proporcao_por_familias_por_mil_habitantes(self):
+        for c in self.paginas("puro", self.cam_puro):
+            t = self.ler("puro", c.lstrip("/") + "index.html")
+            self.assertNotIn("Pessoas no programa", t, c)
+            self.assertNotIn("% da população", t, c)
+            self.assertNotIn("Pessoas (milhões)", t, c)
+            self.assertIsNone(re.search(r"\bNone\b|\bnan\b|\binf\b|undefined", re.sub(r"<script.*?</script>", "", t, flags=re.S)), c)
+            self.assertEqual(t.count("<h1"), 1, c)
+        br = self.ler("puro", "bolsa-familia/index.html")
+        self.assertIn("Famílias por mil habitantes", br)
+        self.assertIn("Famílias por mil hab.", br)
+        self.assertIn("Portal da Transparência", br)
+        self.assertNotIn("Matriz de Informação Social", br)               # a fonte do texto acompanha a origem dos dados
+        self.assertIn("não informa o número de pessoas", br)
+
+    def test_pagina_do_municipio_mostra_a_proporcao_em_mil_habitantes(self):
+        x = g.bf_prepara(self.puro)
+        self.assertFalse(x["tem_p"])
+        self.assertEqual(x["tipo_fonte"], "portal")
+        m = x["mun"]["290003"]
+        t = self.ler("puro", f"bolsa-familia/{m['uf_slug']}/{m['slug']}/index.html")
+        self.assertIn(f'{g.nf(m["u"]["fmil"], 1)} famílias para cada mil habitantes', t)
+        self.assertIn("Famílias beneficiárias por mil habitantes", t)       # quadro de comparação
+        self.assertNotIn("Pessoas", t.replace("Pessoas pelo", ""))          # tabela do gráfico sem a coluna de pessoas
+        self.assertIn("com dados do Portal da Transparência", t)
+
+    def test_ranking_do_estado_usa_famílias_por_mil_habitantes(self):
+        x = g.bf_prepara(self.puro)
+        ba = [m for m in x["mun"].values() if m["uf2"] == "29" and m["u"]["rel"] is not None]
+        melhor = max(ba, key=lambda m: m["u"]["fmil"])
+        self.assertEqual(melhor["pos_cob"], 1)
+        self.assertEqual(melhor["n_cob"], len(ba))
+
+    def test_indice_de_busca_avisa_que_a_proporcao_e_por_mil_habitantes(self):
+        itens = json.loads(self.ler("puro", "bolsa-familia/busca.json"))
+        self.assertTrue(all(len(i) == 6 and i[5] == "m" for i in itens))
+        com = [i for i in itens if i[4] is not None]
+        self.assertTrue(com)
+        js = (RAIZ / "site" / "busca.js").read_text(encoding="utf-8")
+        self.assertIn("por mil habitantes", js)
+
+    def test_csv_deixa_as_pessoas_em_branco(self):
+        linhas = (self.d / "puro" / "dados" / "bolsa-familia-municipios.csv").read_text(encoding="utf-8-sig").splitlines()
+        self.assertIn("Pessoas beneficiárias", linhas[0])
+        col = [l.split(";")[5] if ";" in l else l.split(",")[5] for l in linhas[1:50]]
+        self.assertTrue(all(c == "" for c in col), col[:5])
+
+    def test_rodape_cita_a_cgu_quando_so_o_portal_alimenta_o_bolsa_familia(self):
+        home = self.ler("puro", "index.html")
+        self.assertIn("MDIC e CGU", home)
+        self.assertNotIn("MDIC e MDS", home)
+        self.assertIn("MDS", self.ler("puro", "sobre/index.html"))          # a página Sobre descreve as duas fontes
+
+    def test_fonte_mista_explica_ate_quando_veio_do_mds(self):
+        x = g.bf_prepara(self.misto)
+        self.assertEqual(x["tipo_fonte"], "misto")
+        self.assertEqual(x["portal_desde"], "2026-08")
+        self.assertFalse(x["tem_p"])                                       # o último mês é do Portal
+        t = self.ler("misto", "bolsa-familia/index.html")
+        self.assertIn("MI Social", t)
+        self.assertIn("Portal da Transparência", t)
+        self.assertIn("Até julho de 2026", t)
+        self.assertIn("MDIC, MDS e CGU", self.ler("misto", "index.html"))
+        linhas = (self.d / "misto" / "dados" / "bolsa-familia-municipios.csv").read_text(encoding="utf-8-sig").splitlines()
+        meses = {l.split(";")[3] if ";" in l else l.split(",")[3]: l for l in linhas[1:]}
+        self.assertTrue(meses["2026-07"].split(";" if ";" in meses["2026-07"] else ",")[5])   # mês do MDS mantém as pessoas
+
+    def test_com_pessoas_nada_muda(self):
+        x = g.bf_prepara(bf_exemplo())
+        self.assertTrue(x["tem_p"])
+        self.assertEqual(x["tipo_fonte"], "mds")
+        self.assertEqual(x["rot_rel"], "% da população")
+        m = next(iter(x["mun"].values()))
+        self.assertEqual(m["u"]["rel"], m["u"]["cob"])
+
+
 class TestComposicaoIPCA(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
