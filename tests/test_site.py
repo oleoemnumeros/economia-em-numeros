@@ -1149,6 +1149,36 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
         self.assertEqual(m["u"]["rel"], m["u"]["cob"])
 
 
+class TestCompartilhar(unittest.TestCase):
+    """Botão Compartilhar (WhatsApp): o arquivo vai para os assets e toda página o carrega, depois do familia.js."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        tmp = Path(cls.tmp.name)
+        cls.dados = gravar(tmp / "dados.json")
+        cls.docs = tmp / "docs"
+        g.gerar(cls.dados, cls.docs)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_arquivo_copiado_e_carregado(self):
+        js = (self.docs / "assets" / "familia-compartilhar.js")
+        self.assertTrue(js.exists())
+        for rel in ("index.html", "juros/index.html", "cambio/index.html", "404.html"):
+            t = (self.docs / rel).read_text(encoding="utf-8")
+            self.assertIn('/assets/familia-compartilhar.js?v=', t, rel)
+            self.assertLess(t.index("/assets/familia.js"), t.index("/assets/familia-compartilhar.js"), rel)   # depois do botão de CSV, para ficarem lado a lado
+
+    def test_script_cobre_os_quatro_portais_e_o_whatsapp(self):
+        t = (self.docs / "assets" / "familia-compartilhar.js").read_text(encoding="utf-8")
+        for host in ("oleoemnumeros.com.br", "comexemnumeros.com.br", "vooemnumeros.com.br", "economiaemnumeros.com.br"):
+            self.assertIn(host, t)
+        self.assertIn("https://wa.me/?text=", t)
+        self.assertIn("navigator.canShare", t)
+
 class TestComposicaoIPCA(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -1051,6 +1051,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <script src="/assets/graficos.js?v={v}" defer></script>
 <script src="/assets/familia.js?v={v}" defer></script>
 <script src="/assets/familia-graficos.js?v={v}" defer></script>
+<script src="/assets/familia-compartilhar.js?v={v}" defer></script>
 {GOAT}
 </body>
 </html>
@@ -3256,7 +3257,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     # arquivos estáticos
     (saida / "assets").mkdir()
     v = dados["gerado_em"][:10]
-    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js", "familia.js", "familia-graficos.js"):
+    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js", "familia.js", "familia-graficos.js", "familia-compartilhar.js"):
         shutil.copy(SITE / nome, saida / "assets" / nome)
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
     if not desenhar_og(B, saida / "assets" / "og.png"):          # sem Pillow, usa a imagem pronta
