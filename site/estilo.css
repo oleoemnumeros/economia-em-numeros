@@ -1,8 +1,8 @@
 /* Layout: cabeçalho fixo + coluna única no celular, grade de 2–4 colunas no desktop.
-   Azul = cor principal do portal; âmbar = segunda série (comparações). */
+   Ouro = cor principal do portal; azul-marinho = segunda série (comparações). */
 :root{
   --bg:#eef1f6; --surface:#ffffff; --ink:#0f1d2b; --muted:#566879; --line:#d6dee5;
-  --eco:#2a5bc4; --eco2:#b9660f; --up:#17803a; --down:#b42318; --chip:#e3eaef;
+  --eco:#b58900; --eco-t:#7a5a00; --eco-sobre:#1e1700; --eco2:#1f4e8c; --up:#17803a; --down:#b42318; --chip:#e3eaef;
   --display:"IBM Plex Sans Condensed","Arial Narrow",Arial,sans-serif;
   --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   color-scheme:light;
@@ -10,17 +10,17 @@
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#0b131b; --surface:#121e29; --ink:#e5ecf2; --muted:#93a5b6; --line:#243443;
-    --eco:#7ea3ff; --eco2:#f0a04a; --up:#4cc774; --down:#ff7a6b; --chip:#1b2a37; color-scheme:dark;
+    --eco:#f2c230; --eco-t:#f2c230; --eco-sobre:#0b131b; --eco2:#8db4ff; --up:#4cc774; --down:#ff7a6b; --chip:#1b2a37; color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
   --bg:#0b131b; --surface:#121e29; --ink:#e5ecf2; --muted:#93a5b6; --line:#243443;
-  --eco:#7ea3ff; --eco2:#f0a04a; --up:#4cc774; --down:#ff7a6b; --chip:#1b2a37; color-scheme:dark;
+  --eco:#f2c230; --eco-t:#f2c230; --eco-sobre:#0b131b; --eco2:#8db4ff; --up:#4cc774; --down:#ff7a6b; --chip:#1b2a37; color-scheme:dark;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.55}
-a{color:var(--eco)}
+a{color:var(--eco-t)}
 a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--eco);outline-offset:2px}
 h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
 h1{font-size:clamp(1.6rem,5vw,2.3rem);font-weight:700}
@@ -86,8 +86,8 @@ td a:hover{text-decoration:underline}
 .note{border-left:3px solid var(--eco2);padding:8px 12px;background:color-mix(in srgb,var(--eco2) 8%,transparent);border-radius:0 6px 6px 0;font-size:.9rem}
 .cta{display:grid;gap:20px}
 @media (min-width:860px){.cta{grid-template-columns:1fr 1fr}}
-button.btn{font:inherit;font-weight:600;font-size:.92rem;border:1px solid var(--eco);background:var(--eco);color:var(--surface);padding:9px 14px;border-radius:8px;cursor:pointer;width:fit-content}
-button.btn.ghost{background:transparent;color:var(--eco)}
+button.btn{font:inherit;font-weight:600;font-size:.92rem;border:1px solid var(--eco);background:var(--eco);color:var(--eco-sobre);padding:9px 14px;border-radius:8px;cursor:pointer;width:fit-content}
+button.btn.ghost{background:transparent;color:var(--eco-t)}
 code.embed{display:block;font-size:.78rem;background:var(--chip);padding:10px;border-radius:6px;overflow-x:auto;white-space:pre;color:var(--ink)}
 form.nl{display:flex;gap:8px;flex-wrap:wrap}
 form.nl input{flex:1 1 200px;font:inherit;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
@@ -162,12 +162,12 @@ ul.list a span:last-child{color:var(--muted);font-variant-numeric:tabular-nums;w
 .chart[data-abre]:focus-visible{outline:2px solid var(--eco);outline-offset:2px}
 .gfoot{display:flex;justify-content:space-between;align-items:flex-start;gap:8px 14px;flex-wrap:wrap}
 .gfoot .src{flex:1 1 220px}
-a.csv{display:inline-block;font-size:.84rem;font-weight:600;text-decoration:none;color:var(--eco);border:1px solid var(--eco);border-radius:8px;padding:5px 12px;white-space:nowrap}
+a.csv{display:inline-flex;align-items:center;min-height:40px;font-size:.9rem;font-weight:600;text-decoration:none;color:var(--eco-t);border:1px solid var(--eco);border-radius:8px;padding:0 14px;white-space:nowrap}
 a.csv{margin-left:0}
 a.csv::before{content:"\2193";margin-right:.4em}
-a.csv:hover{background:var(--eco);color:var(--surface)}
+a.csv:hover{background:var(--eco);color:var(--eco-sobre)}
 details.dados{border-top:1px solid var(--line);padding-top:10px}
-details.dados summary{cursor:pointer;font-size:.88rem;font-weight:600;color:var(--eco)}
+details.dados summary{cursor:pointer;font-size:.88rem;font-weight:600;color:var(--eco-t)}
 details.dados[open] summary{margin-bottom:8px}
 details.dados .scroll{max-height:320px;overflow:auto}
 details.dados thead th{position:sticky;top:0;background:var(--surface)}
@@ -191,7 +191,7 @@ details.dados td,details.dados th{font-variant-numeric:tabular-nums}
 .sug textarea{resize:vertical;min-height:150px}
 .sug input:focus-visible,.sug select:focus-visible,.sug textarea:focus-visible,.sug button:focus-visible{outline:2px solid var(--eco);outline-offset:2px}
 .sug .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
-.sug button{font:inherit;font-weight:600;min-height:44px;padding:0 20px;border:0;border-radius:8px;background:var(--eco);color:var(--surface);cursor:pointer;justify-self:start}
+.sug button{font:inherit;font-weight:600;min-height:44px;padding:0 20px;border:0;border-radius:8px;background:var(--eco);color:var(--eco-sobre);cursor:pointer;justify-self:start}
 .sug button:disabled{opacity:.6;cursor:default}
 .sug-msg{margin:0;font-size:.9rem;color:var(--muted);min-height:1.2em}
 .sug-ok{display:none;border:1px solid var(--eco);border-radius:10px;padding:14px 16px;background:var(--surface);max-width:640px}
@@ -221,3 +221,14 @@ details.dados td,details.dados th{font-variant-numeric:tabular-nums}
 .cont-tag i{width:8px;height:8px;border-radius:50%;display:inline-block}
 .cont-grid b{font-family:var(--display);font-size:1.02rem;line-height:1.3}
 .cont-d{font-size:.86rem;line-height:1.4;color:var(--muted)}
+
+/* Família em Números: ferramentas comuns (mesmo bloco nos quatro portais).
+   Cada portal define --fam-cor (cor principal), --fam-texto (cor para texto/link) e --fam-sobre (texto sobre a cor principal). */
+.fam-ferr { display: flex; justify-content: flex-end; margin: 10px 0 6px; }
+.fam-btn { font: inherit; font-size: 14px; font-weight: 600; line-height: 1; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 8px; border: 1.5px solid var(--fam-cor); background: transparent; color: var(--fam-texto); cursor: pointer; }
+.fam-btn:hover, .fam-btn:focus-visible { background: var(--fam-cor); color: var(--fam-sobre); }
+.fam-btn svg { flex: none; }
+@media print { .fam-ferr { display: none; } }
+
+/* Economia: ouro */
+:root { --fam-cor: var(--eco); --fam-texto: var(--eco-t); --fam-sobre: var(--eco-sobre); }

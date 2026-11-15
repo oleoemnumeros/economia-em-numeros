@@ -25,9 +25,9 @@ GOAT = '<script data-goatcounter="https://economiaemnumeros.goatcounter.com/coun
 
 # Família em Números: para incluir um novo portal, acrescente uma linha nesta lista
 FAMILIA = [
-    ("Óleo em Números", "Petróleo e gás", "https://oleoemnumeros.com.br/", "#B45309"),
-    ("Comex em Números", "Exportações e importações", "https://comexemnumeros.com.br/", "#0b7a68"),
-    ("Voo em Números", "Pontualidade aérea", "https://vooemnumeros.com.br/", "#7C5CE0"),
+    ("Óleo em Números", "Petróleo e gás", "https://oleoemnumeros.com.br/", "#17758C"),
+    ("Comex em Números", "Exportações e importações", "https://comexemnumeros.com.br/", "#1F85D0"),
+    ("Voo em Números", "Pontualidade aérea", "https://vooemnumeros.com.br/", "#4FB8EE"),
     ("Economia em Números", "Macroeconomia", "https://economiaemnumeros.com.br/", "var(--eco)"),
 ]
 # Ordem de leitura do analista (menu, rodapé, início, /dados/ e fontes seguem a mesma lógica):
@@ -857,10 +857,10 @@ def familia_html(atual="Economia em Números") -> str:
 # ---------------------------------------------------------------- Continue explorando (entre os portais)
 # Para incluir um novo portal, acrescente uma linha aqui e em FAMILIA.
 PORTAIS = {
-    "oleo": ("Óleo em Números", "https://oleoemnumeros.com.br", "#B45309"),
-    "comex": ("Comex em Números", "https://comexemnumeros.com.br", "#0b7a68"),
-    "voo": ("Voo em Números", "https://vooemnumeros.com.br", "#7C5CE0"),
-    "economia": ("Economia em Números", BASE, "#2a5bc4"),
+    "oleo": ("Óleo em Números", "https://oleoemnumeros.com.br", "#17758C"),
+    "comex": ("Comex em Números", "https://comexemnumeros.com.br", "#1F85D0"),
+    "voo": ("Voo em Números", "https://vooemnumeros.com.br", "#4FB8EE"),
+    "economia": ("Economia em Números", BASE, "#D9A514"),
 }
 ESTE = "economia"
 # páginas do próprio site: caminho -> (título, descrição); só entram se a página existe (ver B.nav())
@@ -970,7 +970,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Economia em Números: Selic, inflação e dados oficiais da economia brasileira">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#2a5bc4">
+<meta name="theme-color" content="#B58900">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -994,6 +994,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <span>{rodape}</span>
 </div>{familia_html()}</footer>
 <script src="/assets/graficos.js?v={v}" defer></script>
+<script src="/assets/familia.js?v={v}" defer></script>
 {GOAT}
 </body>
 </html>
@@ -2981,7 +2982,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     # arquivos estáticos
     (saida / "assets").mkdir()
     v = dados["gerado_em"][:10]
-    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js"):
+    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js", "familia.js"):
         shutil.copy(SITE / nome, saida / "assets" / nome)
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
     if not desenhar_og(B, saida / "assets" / "og.png"):          # sem Pillow, usa a imagem pronta
