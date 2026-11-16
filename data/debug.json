@@ -1,5 +1,5 @@
 {
- "inicio": "2026-11-16T20:43:59",
+ "inicio": "2026-11-16T21:24:10",
  "avisos": [
   "IPCA composição (63,66): 11882 linhas, 457 categorias; ignoradas []; amostra [{'NC': '1', 'NN': 'Brasil', 'MC': '2', 'MN': '%', 'V': '0.09', 'D1C': '1', 'D1N': 'Brasil', 'D2C': '63', 'D2N': 'IPCA - Variação mensal', 'D3C': '202510', 'D3N': 'outubro 2025', 'D4C': '7169', 'D4N': 'Índice geral'}]",
   "IPCA composição 2026-10: índice geral 0.14; soma dos grupos 0.144; soma dos 377 subitens 0.144; maior diferença mensal dos grupos 0.005",
@@ -38,7 +38,6 @@
   "Setor externo idp_mensal (SGS 22885, investimento direto no país (IDP), fluxo líquido mensal, US$ milhões): últimas leituras [['2026-07', 6968.3], ['2026-08', 7396.1], ['2026-09', 11294.5]]",
   "Setor externo: conta corrente em 12 meses -59986 US$ milhões (2026-09); soma mensal -59986; IDP em 12 meses 88270",
   "Setor externo: ações por estrangeiros (SGS 22927, US$ milhões, positivo = entrada): últimas leituras [['2026-06', -2793.9], ['2026-07', 1688.5], ['2026-08', -5559.3], ['2026-09', -2111.7]]; 12 meses -5339",
-  "Reservas (SGS 13621): 2977 dias; última leitura ['2026-11-13', 364006.0]; fim de mês [['2026-09', 362821.0], ['2026-10', 365019.0], ['2026-11', 364006.0]]",
   "Balança (MDIC): 142 meses; último 2026-10: exportação 37807.2, importação 28489.7",
   "Balança: saldo do balanço de pagamentos (SGS 22707) menos saldo MDIC, soma de 11 meses: -8367 US$ milhões",
   "IGP-M SGS 189: últimas leituras [['2026-08', -0.22], ['2026-09', 1.57], ['2026-10', 1.47]]",
@@ -46,7 +45,7 @@
   "CDI SGS 4391: últimas leituras [['2026-09', 1.08], ['2026-10', 1.07], ['2026-11', 0.46]]",
   "Bolsa Família 2026-09: falhou (MI Social não devolveu JSON (HTTP 200, text/html;charset=utf-8, 208259 bytes, endereço final https://www.gov.br/mds/pt-br/avisos): '<!DOCTYPE html>\\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"pt-br\" xml:lang=\"pt-br\">\\n\\n<head>\\n    <meta charset=\"utf-8\" />\\n  <!-- Google Tag Manager -->\\n  <script type=\"text\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\\'gtm.start\\':\\n  new Date().getTime(),event:\\'gtm.js\\'});var f=d.getElementsByT')",
   "Bolsa Família: o MDS está com o MI Social fora do ar (redireciona para gov.br/mds/pt-br/avisos); usa o Portal da Transparência",
-  "Portal da Transparência 2026-09: 329 MB em 2s, leitura em 54s; colunas ['MÊS COMPETÊNCIA', 'MÊS REFERÊNCIA', 'UF', 'CÓDIGO MUNICÍPIO SIAFI', 'NOME MUNICÍPIO', 'CPF FAVORECIDO', 'NIS FAVORECIDO', 'NOME FAVORECIDO', 'VALOR PARCELA']; codificação latin-1; 18,695,578 linhas (42,724 retroativas, 0 sem coluna de data); 5571 municípios no arquivo, 5571 ligados ao IBGE; 0 sem par (0 famílias de 18,652,854); sem par: []; pareados pelo nome mais parecido: [('MUQUEM DE SAO FRANCISCO', 'Muquém do São Francisco', 'BA'), ('SANTA TERESINHA', 'Santa Terezinha', 'BA'), ('ITAPAGE', 'Itapajé', 'CE'), ('SAO THOME DAS LETRAS', 'São Tomé das Letras', 'MG'), ('BARAO DE MONTE ALTO', 'Barão do Monte Alto', 'MG'), ('DONA EUSEBIA', 'Dona Euzébia', 'MG'), ('BRASOPOLIS', 'Brazópolis', 'MG'), ('SANTO ANTONIO DO LEVERGER', 'Santo Antônio de Leverger', 'MT'), ('POXOREO', 'Poxoréu', 'MT'), ('ELDORADO DOS CARAJAS', 'Eldorado do Carajás', 'PA'), ('SANTA ISABEL DO PARA', 'Santa Izabel do Pará', 'PA'), ('SAO DOMINGOS DE POMBAL', 'São Domingos', 'PB'), ('SERIDO', 'São Vicente do Seridó', 'PB'), ('BELEM DE SAO FRANCISCO', 'Belém do São Francisco', 'PE'), ('LAGOA DO ITAENGA', 'Lagoa de Itaenga', 'PE'), ('DISTRITO ESTADUAL DE FERNANDO DE NORONHA', 'Fernando de Noronha', 'PE'), ('IGUARACI', 'Iguaracy', 'PE'), ('TRAJANO DE MORAIS', 'Trajano de Moraes', 'RJ'), ('PARATI', 'Paraty', 'RJ'), ('ARES', 'Arez', 'RN')]; Salvador: 291,086 linhas para 291,081 NIS distintos",
+  "Portal da Transparência 2026-09: 329 MB em 3s, leitura em 80s; colunas ['MÊS COMPETÊNCIA', 'MÊS REFERÊNCIA', 'UF', 'CÓDIGO MUNICÍPIO SIAFI', 'NOME MUNICÍPIO', 'CPF FAVORECIDO', 'NIS FAVORECIDO', 'NOME FAVORECIDO', 'VALOR PARCELA']; codificação latin-1; 18,695,578 linhas (42,724 retroativas, 0 sem coluna de data); 5571 municípios no arquivo, 5571 ligados ao IBGE; 0 sem par (0 famílias de 18,652,854); sem par: []; pareados pelo nome mais parecido: [('MUQUEM DE SAO FRANCISCO', 'Muquém do São Francisco', 'BA'), ('SANTA TERESINHA', 'Santa Terezinha', 'BA'), ('ITAPAGE', 'Itapajé', 'CE'), ('SAO THOME DAS LETRAS', 'São Tomé das Letras', 'MG'), ('BARAO DE MONTE ALTO', 'Barão do Monte Alto', 'MG'), ('DONA EUSEBIA', 'Dona Euzébia', 'MG'), ('BRASOPOLIS', 'Brazópolis', 'MG'), ('SANTO ANTONIO DO LEVERGER', 'Santo Antônio de Leverger', 'MT'), ('POXOREO', 'Poxoréu', 'MT'), ('ELDORADO DOS CARAJAS', 'Eldorado do Carajás', 'PA'), ('SANTA ISABEL DO PARA', 'Santa Izabel do Pará', 'PA'), ('SAO DOMINGOS DE POMBAL', 'São Domingos', 'PB'), ('SERIDO', 'São Vicente do Seridó', 'PB'), ('BELEM DE SAO FRANCISCO', 'Belém do São Francisco', 'PE'), ('LAGOA DO ITAENGA', 'Lagoa de Itaenga', 'PE'), ('DISTRITO ESTADUAL DE FERNANDO DE NORONHA', 'Fernando de Noronha', 'PE'), ('IGUARACI', 'Iguaracy', 'PE'), ('TRAJANO DE MORAIS', 'Trajano de Moraes', 'RJ'), ('PARATI', 'Paraty', 'RJ'), ('ARES', 'Arez', 'RN')]; Salvador: 291,086 linhas para 291,081 NIS distintos",
   "Bolsa Família 2026-09 (Portal da Transparência): 5571 municípios, 18,652,854 famílias, 0 pessoas, R$ 12,630,306,534; amostra [('110001', [1418, None, 971733.0]), ('110002', [7209, None, 4908340.0])]",
   "Bolsa Família 2026-11: Portal da Transparência sem arquivo (HTTP 403 nos dois agentes em https://portaldatransparencia.gov.br/download-de-dados/novo-bolsa-familia/202611: '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>')",
   "Bolsa Família 2026-10: Portal da Transparência sem arquivo (HTTP 403 nos dois agentes em https://portaldatransparencia.gov.br/download-de-dados/novo-bolsa-familia/202610: '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>')",
@@ -60,30 +59,30 @@
   "Municípios: 5571 no Brasil, 2165 com ficha, 2141 com contas, 2065 ligados ao Comex ou ao Óleo"
  ],
  "erros": [
-  "selic: Expecting value: line 1 column 1 (char 0)"
+  "externo: Expecting value: line 1 column 1 (char 0)"
  ],
  "tempos": {
-  "selic": 30.6,
-  "ipca": 6.0,
-  "areas": 0.4,
-  "composicao": 1.5,
-  "focus": 6.7,
+  "selic": 22.7,
+  "ipca": 9.3,
+  "areas": 1.2,
+  "composicao": 1.6,
+  "focus": 10.2,
   "atas": 0.0,
-  "desocupacao": 0.8,
-  "caged": 0.5,
-  "cambio": 5.0,
-  "ibc": 1.1,
-  "pib": 0.2,
-  "fiscal": 6.4,
-  "credito": 7.7,
-  "industria": 1.4,
-  "varejo": 0.6,
-  "externo": 22.0,
-  "balanca": 1.4,
-  "igpm": 1.8,
-  "inpc": 2.9,
-  "cdi": 2.9,
-  "bolsa_familia": 71.5,
-  "municipios": 36.7
+  "desocupacao": 0.6,
+  "caged": 0.8,
+  "cambio": 22.0,
+  "ibc": 1.8,
+  "pib": 0.6,
+  "fiscal": 8.5,
+  "credito": 14.6,
+  "industria": 1.7,
+  "varejo": 1.1,
+  "externo": 62.2,
+  "balanca": 1.5,
+  "igpm": 5.8,
+  "inpc": 3.9,
+  "cdi": 4.7,
+  "bolsa_familia": 101.8,
+  "municipios": 46.9
  }
 }
