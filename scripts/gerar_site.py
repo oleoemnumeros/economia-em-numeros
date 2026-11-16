@@ -200,6 +200,9 @@ class Base:
         self.hoje = hoje
         self.mud = [(dt.date.fromisoformat(a), float(v)) for a, v in dados["selic"]["meta"]]
         self.ipca_m = {k: float(v) for k, v in dados["ipca"]["mensal"]}
+        self.igpm_m = {k: float(v) for k, v in (dados.get("igpm") or {}).get("mensal", [])}
+        self.inpc_m = {k: float(v) for k, v in (dados.get("inpc") or {}).get("mensal", [])}
+        self.cdi_m = {k: float(v) for k, v in (dados.get("cdi") or {}).get("mensal", [])}
         self.ipca_12 = {k: float(v) for k, v in dados["ipca"]["acum12"]}
         self.ref = max(self.ipca_12)
         self.areas = {}
@@ -2026,25 +2029,58 @@ def pg_area(B: Base, a: dict) -> str:
                   corpo, "/inflacao/", [("/inflacao/", "Inflação"), (None, a["nome"])])
 
 
+_INDICES_CALC = {  # chave -> (rótulo no seletor, nome por extenso, fonte, série SGS, uso típico)
+    "ipca": ("IPCA (IBGE)", "IPCA", "IBGE, via Banco Central", "433", "IPCA para a inflação do dia a dia"),
+    "igpm": ("IGP-M (FGV)", "IGP-M", "FGV, via Banco Central", "189", "IGP-M para aluguéis e muitos contratos"),
+    "inpc": ("INPC (IBGE)", "INPC", "IBGE, via Banco Central", "188", "INPC para reajustes de salário e benefícios"),
+}
+
+
 def pg_calc(B: Base) -> str:
-    dados = json.dumps([[k, v] for k, v in sorted(B.ipca_m.items())], separators=(",", ":"))
-    hero = card('<span class="eyebrow">Ferramenta</span><h1>Calculadora de correção pelo IPCA</h1>'
-                '<p class="lede">Descubra quanto um valor de um mês passado vale hoje, corrigido pela inflação oficial (IPCA, do IBGE).</p>'
+    series = {"ipca": sorted(B.ipca_m.items()), "igpm": sorted(B.igpm_m.items()), "inpc": sorted(B.inpc_m.items()), "cdi": sorted(B.cdi_m.items())}
+    dados = json.dumps(series, separators=(",", ":"))
+    disponiveis = [v[1] for k, v in _INDICES_CALC.items() if series[k]]
+    opcoes_indice = "".join(f'<option value="{k}">{esc(v[0])}</option>' for k, v in _INDICES_CALC.items() if series[k])
+    titulo_indices = " e ".join([", ".join(disponiveis[:-1]), disponiveis[-1]]) if len(disponiveis) > 1 else (disponiveis[0] if disponiveis else "IPCA")
+    titulo = f"Calculadora de correção monetária ({titulo_indices})" + (" e rendimento do CDI" if series["cdi"] else "")
+    descricao = (f"Corrija qualquer valor por {titulo_indices}" + (", ou calcule o rendimento bruto no CDI," if series["cdi"] else ",") +
+                 f" de janeiro de 2000 a {mes_nome(B.ref)}. Calculadora gratuita, com índices oficiais.")
+    hero = card('<span class="eyebrow">Ferramenta</span><h1>Calculadora: correção monetária' + (' e rendimento no CDI' if series["cdi"] else '') + '</h1>'
+                '<p class="lede">Descubra quanto um valor de um mês passado vale hoje, corrigido pela inflação oficial' +
+                (', ou quanto renderia aplicado a um percentual do CDI.</p>' if series["cdi"] else '.</p>'))
+    usos = ", ".join(v[4] for k, v in _INDICES_CALC.items() if series[k])
+    correcao = card('<h2>Correção monetária</h2>'
+                f'<p class="lede">Escolha o índice: {usos}.</p>'
                 '<div class="calc"><div class="fields">'
+                '<label>Índice<select id="indice">' + opcoes_indice + '</select></label>'
                 '<label>Valor (R$)<input id="valor" type="text" inputmode="decimal" value="1.000,00" autocomplete="off"></label>'
                 '<label>Mês inicial<select id="ini"></select></label>'
                 '<label>Mês final<select id="fim"></select></label>'
                 '<button class="btn" type="button" id="calcular">Calcular</button></div>'
                 '<div class="result" id="res" aria-live="polite"><span class="small">Escolha os meses e clique em Calcular.</span></div></div>')
     como = card("<h2>Como o cálculo é feito</h2>"
-                "<p>O valor é corrigido multiplicando as variações mensais do IPCA, de um mês depois do inicial até o mês final (inclusive). "
-                "Por exemplo, para corrigir de janeiro a março, entram as variações de fevereiro e de março. É o mesmo método do índice acumulado do IBGE.</p>"
-                f"<p>Os índices vão de janeiro de 2000 até {mes_nome(B.ref)}. Fonte: IBGE, via Banco Central (série 433).</p>"
-                '<div class="aviso">Uma correção pelo IPCA mostra a inflação do período; contratos, aluguéis e tributos podem usar outros índices ou regras próprias. Confira o que vale no seu caso.</div>')
-    script = f'<script type="application/json" id="dados-ipca">{dados}</script><script src="/assets/calc.js" defer></script>'
-    return pagina(B, "/calculadora/", "Calculadora de correção pelo IPCA: quanto vale hoje o seu dinheiro",
-                  f"Corrija qualquer valor pela inflação (IPCA) de janeiro de 2000 a {mes_nome(B.ref)}. Calculadora gratuita, com índices oficiais do IBGE.",
-                  hero + como + script, "/calculadora/", [(None, "Calculadora")])
+                "<p>O valor é corrigido multiplicando as variações mensais do índice escolhido, de um mês depois do inicial até o mês final (inclusive). "
+                "Por exemplo, para corrigir de janeiro a março, entram as variações de fevereiro e de março. É o mesmo método do índice acumulado oficial.</p>"
+                "<p>" + " ".join(f'{esc(v[1])}: fonte {esc(v[2])} (série {v[3]}), de janeiro de 2000 até {mes_nome(B.ref)}.' for k, v in _INDICES_CALC.items() if series[k]) + "</p>"
+                '<div class="aviso">Cada correção mostra a inflação do período por aquele índice; contratos, aluguéis e tributos podem usar outros índices ou regras próprias (reajuste anual, e não mês a mês, por exemplo). Confira o que vale no seu caso.</div>')
+    rendimento = card('<h2>Rendimento no CDI</h2>'
+                       '<p class="lede">Descubra quanto renderia um valor aplicado a um percentual do CDI, entre dois meses.</p>'
+                       '<div class="aviso destaque"><strong>O resultado é bruto, sem desconto de Imposto de Renda.</strong> '
+                       'Aplicações como CDB e fundos de renda fixa têm IR regressivo sobre o rendimento (de 22,5% a 15%, conforme o tempo); Tesouro Selic também é tributado. '
+                       'Já a poupança, LCI e LCA costumam ser isentas de IR para pessoa física. O valor líquido que cai na sua conta é menor do que o mostrado aqui.</div>'
+                       '<div class="calc"><div class="fields">'
+                       '<label>Valor (R$)<input id="valor2" type="text" inputmode="decimal" value="1.000,00" autocomplete="off"></label>'
+                       '<label>% do CDI<input id="pct" type="text" inputmode="decimal" value="100" autocomplete="off"></label>'
+                       '<label>Mês inicial<select id="ini2"></select></label>'
+                       '<label>Mês final<select id="fim2"></select></label>'
+                       '<button class="btn" type="button" id="calcular2">Calcular</button></div>'
+                       '<div class="result" id="res2" aria-live="polite"><span class="small">Escolha os meses e clique em Calcular.</span></div></div>'
+                       f'<p class="small">CDI acumulado no mês, fonte Banco Central (série 4391), de janeiro de 2000 até {mes_nome(B.ref)}. '
+                       'Um CDB "100% do CDI" paga o CDI integral; um fundo DI costuma pagar menos que 100% (confira a taxa de administração).</p>'
+                       ) if series["cdi"] else ""
+    script = f'<script type="application/json" id="dados-calc">{dados}</script><script src="/assets/calc.js" defer></script>'
+    return pagina(B, "/calculadora/", titulo, descricao,
+                  hero + correcao + rendimento + como + script, "/calculadora/", [(None, "Calculadora")])
 
 
 # ------------------------------------------------------------------ setor externo

@@ -149,6 +149,7 @@ ul.list{list-style:none;margin:0;padding:0;display:grid}
 ul.list a{display:flex;justify-content:space-between;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);text-decoration:none;color:var(--ink)}
 ul.list a span:last-child{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .aviso{border-left:4px solid var(--eco);padding:8px 12px;background:var(--chip);border-radius:0 8px 8px 0;font-size:.9rem}
+.aviso.destaque{border-left-color:var(--down);background:color-mix(in srgb,var(--down) 10%,var(--chip))}
 .tile .chg{white-space:normal}
 /* No celular o gráfico (640 px de largura) é reduzido pela metade: aumenta as letras para continuarem legíveis */
 @media (max-width:600px){.chart text{font-size:21px}}

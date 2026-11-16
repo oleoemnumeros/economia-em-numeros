@@ -185,6 +185,26 @@ class TestAtividadeECambio(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 r.ibcbr()
 
+    def test_calculadora_igpm_inpc_cdi_mensal(self):
+        meses = [(dt.date(2015 + (k // 12), k % 12 + 1, 1), k) for k in range(138)]
+        faixa = {189: -0.2, 188: 0.3, 4391: 0.9}  # % ao mês plausível para cada série
+        with mock.patch.object(r, "sgs", lambda cod, ini: [(d, faixa[cod] + k / 1000) for d, k in meses]), mock.patch.object(r, "debug", {"avisos": [], "erros": []}) as dbg:
+            self.assertEqual(r.igpm()["mensal"][0][0], "2015-01")
+            self.assertEqual(r.inpc()["mensal"][-1][0], "2026-06")
+            self.assertEqual(r.cdi()["mensal"][-1][1], faixa[4391] + 137 / 1000)
+        self.assertTrue(any(a.startswith("IGP-M") for a in dbg["avisos"]))
+        self.assertTrue(any(a.startswith("INPC") for a in dbg["avisos"]))
+        self.assertTrue(any(a.startswith("CDI") for a in dbg["avisos"]))
+
+    def test_calculadora_recusa_serie_estranha_ou_curta(self):
+        meses = [(dt.date(2015 + (k // 12), k % 12 + 1, 1), k) for k in range(138)]
+        with mock.patch.object(r, "sgs", lambda cod, ini: [(d, 50.0) for d, _ in meses]), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.igpm()  # 50% ao mês não é IGP-M, é a série errada (ex.: um índice, não a variação)
+        with mock.patch.object(r, "sgs", lambda cod, ini: [(d, 0.5) for d, _ in meses[:10]]), mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            with self.assertRaises(RuntimeError):
+                r.cdi()  # série curta demais
+
     def test_fiscal_quatro_series_e_trava(self):
         faixa = {13762: 78.0, 4513: 62.0, 5793: 0.6, 5727: 7.5}
         meses = [(dt.date(2015 + (k // 12), k % 12 + 1, 1), k) for k in range(138)]

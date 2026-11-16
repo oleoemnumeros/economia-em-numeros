@@ -11,7 +11,7 @@ sys.path.insert(0, str(RAIZ / "scripts"))
 sys.path.insert(0, str(RAIZ / "tests"))
 
 import gerar_site as g  # noqa: E402
-from exemplo import AREAS, balanca_exemplo, bf_exemplo, externo_exemplo, gravar, gravar_bf, gravar_mun, municipios_exemplo  # noqa: E402
+from exemplo import AREAS, balanca_exemplo, bf_exemplo, dados_exemplo, externo_exemplo, gravar, gravar_bf, gravar_mun, municipios_exemplo  # noqa: E402
 
 
 def sem_dados(t: str) -> str:
@@ -97,10 +97,35 @@ class TestSite(unittest.TestCase):
 
     def test_calculadora_embute_indices(self):
         t = self.ler("calculadora/index.html")
-        m = re.search(r'<script type="application/json" id="dados-ipca">(.*?)</script>', t, re.S)
+        m = re.search(r'<script type="application/json" id="dados-calc">(.*?)</script>', t, re.S)
         dados = json.loads(m.group(1))
-        self.assertEqual(dados[0][0], "2000-01")
-        self.assertEqual(dados[-1][0], "2026-09")
+        self.assertEqual(set(dados), {"ipca", "igpm", "inpc", "cdi"})
+        for chave in ("ipca", "igpm", "inpc", "cdi"):
+            self.assertEqual(dados[chave][0][0], "2000-01", chave)
+            self.assertEqual(dados[chave][-1][0], "2026-09", chave)
+        # seletor de índice (correção) e aviso de imposto bem visível na ferramenta de rendimento
+        self.assertIn('<select id="indice">', t)
+        for rotulo in ("IPCA (IBGE)", "IGP-M (FGV)", "INPC (IBGE)"):
+            self.assertIn(rotulo, t)
+        self.assertIn('id="pct"', t)  # % do CDI
+        self.assertIn("resultado é bruto, sem desconto de Imposto de Renda", t)
+        self.assertIn("aviso destaque", t)
+        self.assertIn("assets/calc.js", t)
+
+    def test_calculadora_some_indices_sem_dado(self):
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            dados = dados_exemplo()
+            del dados["igpm"], dados["cdi"]
+            dados_path = tmp / "dados.json"
+            dados_path.write_text(json.dumps(dados, ensure_ascii=False), encoding="utf-8")
+            saida = tmp / "docs"
+            g.gerar(dados_path, saida)
+            html = (saida / "calculadora" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("IGP-M", html)
+        self.assertIn("INPC (IBGE)", html)  # inpc continua disponível
+        self.assertNotIn('id="pct"', html)  # sem CDI, a ferramenta de rendimento não aparece
+        self.assertIn("IPCA (IBGE)", html)
 
     def test_familia_no_rodape(self):
         t = self.ler("index.html")

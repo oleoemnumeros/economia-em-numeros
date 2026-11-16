@@ -11,6 +11,7 @@ Baixa as séries públicas e grava data/dados.json:
   - Contas públicas (Banco Central): dívida bruta (SGS 13762), dívida líquida (4513), resultado primário (5793) e nominal (5727), em % do PIB
   - Setor externo: conta corrente (SGS 22701, 24419, 23079), investimento direto no país (22885), reservas internacionais (13621) e balança comercial (Secex/MDIC, pelo Comex em Números)
   - Bolsa Família por município (MDS, API MI Social + população do IBGE), gravado à parte em data/bolsa_familia.json
+  - Calculadora: IGP-M mensal (FGV, SGS 189), INPC mensal (IBGE, SGS 188) e CDI acumulado no mês (SGS 4391), para corrigir valores e calcular rendimento bruto
 
 Roda no GitHub Actions (a rede do ambiente de desenvolvimento não alcança essas APIs).
 Se uma fonte opcional falhar, o robô mantém o dado anterior daquela fonte e segue.
@@ -117,6 +118,32 @@ def ipca_brasil():
     acum12 = sgs(13522, dt.date(2000, 1, 1))
     return {"mensal": [[d.strftime("%Y-%m"), v] for d, v in mensal],
             "acum12": [[d.strftime("%Y-%m"), v] for d, v in acum12]}
+
+
+def _mensal_sgs(nome: str, codigo: int, inicio: dt.date, faixa: tuple) -> dict:
+    """Série mensal de variação (% ao mês) do SGS, no mesmo formato de ipca_brasil()['mensal']: usada pela calculadora."""
+    serie = sgs(codigo, inicio)
+    out = [[d.strftime("%Y-%m"), v] for d, v in serie]
+    lo, hi = faixa
+    if len(out) < 60 or not all(lo <= v <= hi for _, v in out):
+        raise RuntimeError(f"SGS {codigo} ({nome}) fora do esperado (% ao mês entre {lo} e {hi}, pelo menos 60 meses)")
+    debug["avisos"].append(f"{nome} SGS {codigo}: últimas leituras {out[-3:]}")
+    return {"mensal": out}
+
+
+def igpm():
+    """IGP-M mensal (FGV, via Banco Central, SGS 189), % ao mês. Usado só na calculadora (correção)."""
+    return _mensal_sgs("IGP-M", 189, dt.date(2000, 1, 1), (-6, 8))
+
+
+def inpc():
+    """INPC mensal (IBGE, via Banco Central, SGS 188), % ao mês. Usado só na calculadora (correção)."""
+    return _mensal_sgs("INPC", 188, dt.date(2000, 1, 1), (-2, 5))
+
+
+def cdi():
+    """CDI acumulado no mês (SGS 4391), % ao mês. Usado só na calculadora (rendimento bruto, sem IR)."""
+    return _mensal_sgs("CDI", 4391, dt.date(2000, 1, 1), (-1, 4))
 
 
 def ipca_areas():
@@ -1653,7 +1680,8 @@ def main():
                              ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False),
                              ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False), ("fiscal", fiscal, False),
                              ("credito", credito, False), ("industria", producao_industrial, False), ("varejo", varejo, False),
-                             ("externo", setor_externo, False), ("balanca", balanca, False)]:
+                             ("externo", setor_externo, False), ("balanca", balanca, False),
+                             ("igpm", igpm, False), ("inpc", inpc, False), ("cdi", cdi, False)]:
         if not essencial and time.time() - t0 > ORCAMENTO_S:
             debug["erros"].append(f"{nome}: pulada, o robô já passou de {ORCAMENTO_S // 60} minutos (mantém o dado anterior)")
             print(f"PULADA {nome}: orçamento de tempo esgotado", file=sys.stderr, flush=True)
