@@ -82,6 +82,9 @@ jobs:
             git push
           fi
 
+      - name: IndexNow, o que mudou nesta publicação
+        run: python scripts/indexnow.py preparar docs https://economiaemnumeros.com.br dd29e02b6a59701824ff131f7fef6ab9
+
       - name: Empacotar site
         uses: actions/upload-pages-artifact@v3
         with:
@@ -90,6 +93,10 @@ jobs:
       - name: Publicar no GitHub Pages
         id: publicar
         uses: actions/deploy-pages@v4
+
+      - name: IndexNow, avisar o Bing das páginas que mudaram
+        continue-on-error: true
+        run: python scripts/indexnow.py enviar docs https://economiaemnumeros.com.br dd29e02b6a59701824ff131f7fef6ab9
 
       - name: Falhar se o robô falhou
         if: steps.robo.outcome == 'failure'

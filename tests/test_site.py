@@ -1149,6 +1149,39 @@ class TestBolsaFamiliaPortal(unittest.TestCase):
         self.assertEqual(m["u"]["rel"], m["u"]["cob"])
 
 
+class TestBuscaDoCabecalho(unittest.TestCase):
+    """Busca no cabeçalho (familia-busca.js): toda página carrega o script e o índice cobre as páginas publicadas."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        tmp = Path(cls.tmp.name)
+        cls.dados = gravar(tmp / "dados.json")
+        cls.docs = tmp / "docs"
+        g.gerar(cls.dados, cls.docs)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_script_em_toda_pagina(self):
+        self.assertTrue((self.docs / "assets" / "familia-busca.js").exists())
+        for rel in ("index.html", "juros/index.html", "404.html"):
+            t = (self.docs / rel).read_text(encoding="utf-8")
+            self.assertIn('/assets/familia-busca.js?v=', t, rel)
+            self.assertIn('data-indice="/busca-geral.json?v=', t, rel)
+
+    def test_indice_aponta_para_paginas_que_existem(self):
+        indice = json.loads((self.docs / "busca-geral.json").read_text(encoding="utf-8"))
+        enderecos = [i[1] for i in indice]
+        self.assertIn("/juros/", enderecos)
+        self.assertEqual(len(enderecos), len(set(enderecos)))
+        for titulo, endereco, tipo, *_ in indice:
+            self.assertTrue(titulo and tipo)
+            self.assertNotIn("| Economia em Números", titulo)
+            self.assertTrue((self.docs / endereco.lstrip("/") / "index.html").exists(), endereco)
+
+
 class TestCompartilhar(unittest.TestCase):
     """Botão Compartilhar (WhatsApp): o arquivo vai para os assets e toda página o carrega, depois do familia.js."""
 

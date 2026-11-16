@@ -1052,6 +1052,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <script src="/assets/familia.js?v={v}" defer></script>
 <script src="/assets/familia-graficos.js?v={v}" defer></script>
 <script src="/assets/familia-compartilhar.js?v={v}" defer></script>
+<script src="/assets/familia-busca.js?v={v}" data-indice="/busca-geral.json?v={v}" data-dica="Cidade, Selic, inflação, dólar…" defer></script>
 {GOAT}
 </body>
 </html>
@@ -3254,10 +3255,11 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
         (saida / "dados").mkdir(exist_ok=True)
         (saida / "dados" / f"{slug}.csv").write_bytes(csv_texto(c["cab"], c["linhas"]).encode("utf-8"))
     escrever(saida, "/404.html", pg_404(B))
+    (saida / "busca-geral.json").write_text(busca_geral(B, paginas), encoding="utf-8")
     # arquivos estáticos
     (saida / "assets").mkdir()
     v = dados["gerado_em"][:10]
-    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js", "familia.js", "familia-graficos.js", "familia-compartilhar.js"):
+    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js", "familia.js", "familia-graficos.js", "familia-compartilhar.js", "familia-busca.js"):
         shutil.copy(SITE / nome, saida / "assets" / nome)
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
     if not desenhar_og(B, saida / "assets" / "og.png"):          # sem Pillow, usa a imagem pronta
@@ -3270,6 +3272,29 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     urls = "".join(f"<url><loc>{BASE}{c}</loc><lastmod>{v}</lastmod><priority>{prio.get(c, '0.4' if c in extras_set else '0.6')}</priority></url>" for c in todos)
     (saida / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>\n", encoding="utf-8")
     return todos
+
+
+_TIPO_BUSCA = {"resumo": "resumo", "inflacao": "inflação", "emprego": "emprego", "municipios": "municípios", "bolsa-familia": "Bolsa Família", "dados": "dados"}
+
+
+def busca_geral(B: Base, paginas: list) -> str:
+    """Índice da busca do cabeçalho (familia-busca.js): [título, endereço, tipo], do mais procurado para o menos."""
+    itens = []
+    for caminho, html_pg in paginas:
+        if 'name="robots" content="noindex' in html_pg[:3000]:
+            continue
+        m = re.search(r"<title>(.*?)</title>", html_pg, re.S)
+        if not m:
+            continue
+        titulo = html.unescape(m.group(1)).split(" | ")[0].strip()
+        itens.append([titulo, caminho, _TIPO_BUSCA.get(caminho.strip("/").split("/")[0], "página")])
+    if B.tem_mun:
+        for m in sorted((B.mun["mun"][c] for c in B.mun["fichas"]), key=lambda m: -(m.get("pop") or 0)):
+            itens.append([f'{m["nome"]} ({m["sigla"]})', mun_url(m), "município", "pib prefeitura populacao cidade"])
+    if B.tem_bf:
+        for m in sorted(B.bf["mun"].values(), key=lambda m: -(m.get("fam") or m.get("pop") or 0)):
+            itens.append([f'Bolsa Família em {m["nome"]} ({m["sigla"]})', f"/bolsa-familia/{m['uf_slug']}/{m['slug']}/", "Bolsa Família"])
+    return json.dumps(itens, ensure_ascii=False, separators=(",", ":"))
 
 
 def main():
