@@ -1200,6 +1200,7 @@ class TestCompartilhar(unittest.TestCase):
     def test_arquivo_copiado_e_carregado(self):
         js = (self.docs / "assets" / "familia-compartilhar.js")
         self.assertTrue(js.exists())
+        self.assertIn("?incorporar=", js.read_text(encoding="utf-8"))   # código para incorporar o gráfico em outros sites
         for rel in ("index.html", "juros/index.html", "cambio/index.html", "404.html"):
             t = (self.docs / rel).read_text(encoding="utf-8")
             self.assertIn('/assets/familia-compartilhar.js?v=', t, rel)
