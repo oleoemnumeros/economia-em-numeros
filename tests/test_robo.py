@@ -1250,5 +1250,29 @@ class TestMunicipiosRobo(unittest.TestCase):
         self.assertTrue(any("campos com valor numérico" in a and "'agro'" in a for a in dbg["avisos"]))
 
 
+class TestGetTentaDeNovo(unittest.TestCase):
+    """O SGS às vezes responde 200 com corpo vazio, ou 304: o robô tem que tentar de novo em vez de falhar."""
+
+    def _resp(self, status, texto):
+        class R:
+            status_code = status
+            text = texto
+            headers = {}
+
+            def json(self):
+                return json.loads(texto)
+        return R()
+
+    def test_corpo_vazio_e_304_sao_tentados_de_novo(self):
+        respostas = iter([self._resp(200, ""), self._resp(304, ""), self._resp(200, '[{"data":"01/01/2026","valor":"1"}]')])
+        with mock.patch("requests.get", lambda *a, **k: next(respostas)), mock.patch.object(r.time, "sleep", lambda s: None):
+            self.assertEqual(r.get("http://x", json=True).json()[0]["valor"], "1")
+
+    def test_desiste_depois_das_tentativas(self):
+        with mock.patch("requests.get", lambda *a, **k: self._resp(200, "")), mock.patch.object(r.time, "sleep", lambda s: None):
+            with self.assertRaises(RuntimeError):
+                r.get("http://x", tentativas=3, json=True)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -51,7 +51,9 @@ AREAS = {
 debug = {"inicio": dt.datetime.now().isoformat(timespec="seconds"), "avisos": [], "erros": []}
 
 
-def get(url, params=None, tentativas=4, timeout=90):
+def get(url, params=None, tentativas=4, timeout=90, json=False):
+    """GET com novas tentativas. Com json=True, uma resposta 200 que não é JSON (a API do Banco Central às vezes devolve corpo vazio
+    ou uma página de erro com status 200) também conta como falha e é tentada de novo."""
     import requests  # importado aqui para os testes não dependerem dele
 
     ultimo = None
@@ -60,8 +62,18 @@ def get(url, params=None, tentativas=4, timeout=90):
         try:
             r = requests.get(url, params=params, headers=UA, timeout=timeout)
             if r.status_code == 200:
-                return r
-            ultimo = f"HTTP {r.status_code}: {r.text[:200]}"
+                if not json:
+                    return r
+                try:
+                    r.json()
+                    return r
+                except ValueError:
+                    ultimo = f"resposta 200 que não é JSON: {r.text[:120]!r}"
+                    espera = 10 * (i + 1)
+            else:
+                ultimo = f"HTTP {r.status_code}: {r.text[:200]}"
+                if r.status_code == 304:  # sem corpo: um cache no caminho respondeu; tenta de novo
+                    espera = 10 * (i + 1)
             if r.status_code == 429:      # limite de ritmo da API (Tesouro): espera mais, respeitando o Retry-After quando vem
                 try:
                     espera = max(espera, min(60, int(r.headers.get("Retry-After", 0))), 15 * (i + 1))
@@ -94,7 +106,8 @@ def sgs(codigo, inicio):
     valores = {}
     for a, b in janelas(inicio, HOJE):
         r = get(f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados",
-                {"formato": "json", "dataInicial": a.strftime("%d/%m/%Y"), "dataFinal": b.strftime("%d/%m/%Y")})
+                {"formato": "json", "dataInicial": a.strftime("%d/%m/%Y"), "dataFinal": b.strftime("%d/%m/%Y")},
+                tentativas=6, json=True)
         for x in r.json():
             if x.get("valor") in (None, ""):
                 continue
