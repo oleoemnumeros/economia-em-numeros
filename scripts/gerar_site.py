@@ -3109,39 +3109,207 @@ def resumo_semana(B: Base) -> dict | None:
              card(cab("O que o mercado espera") + tab +
                   f'<span class="src">Mediana das projeções, Boletim Focus de {quando}. Fonte: Banco Central do Brasil.</span>') +
              card(cab("E a economia hoje") + "<ul class=\"destaques\">" + "".join(f"<li>{x}</li>" for x in ctx) + "</ul>") +
-             resumo_compartilhar(post))
+             resumo_compartilhar(post, montar_x(f"{BASE}/resumo/semana/{f['data']}/", f"Boletim Focus de {quando}: {manchete}.", [], "#focus #economia")))
     return {"tipo": "semana", "chave": f["data"], "titulo": manchete, "rotulo": f"Boletim Focus de {quando}", "gerado_em": B.d["gerado_em"],
             "descricao": f"Boletim Focus de {quando}: {manchete}. O que o mercado espera para Selic, inflação, PIB e dólar, e o que mudou na semana.",
             "corpo": corpo}
 
 
-def resumo_compartilhar(post: str) -> str:
-    return card(cab("Compartilhe este resumo") + '<p class="small">Texto pronto para WhatsApp, LinkedIn ou e-mail.</p>'
-                f'<textarea id="post" class="fam-post" readonly rows="10">{esc(post)}</textarea>'
-                '<div><button type="button" class="fam-btn" data-copiar="post"><span>Copiar texto</span></button> '
-                '<span class="small" data-copiar-msg aria-live="polite"></span></div>')
+LIMITE_X = 280       # caracteres do post no X
+PESO_LINK_X = 23     # o X conta qualquer link como 23 caracteres
+MIN_EXTREMO = 6      # "a maior/menor em N meses" só aparece quando N chega a isso
+MIN_JANELA = 12      # recorde desde o início da série só vale com pelo menos um ano de histórico
+META_IPCA, TOLERANCIA_IPCA = 3.0, 1.5   # meta de inflação do CMN e a tolerância para mais e para menos, em p.p.
+
+
+def _extremo(valores: list, idx: int):
+    """Diz se o valor de `idx` é o maior ou o menor em N meses: {'tipo', 'n', 'janela'} ou None.
+    N é quantos meses para trás ele se sustenta como o mais alto (ou o mais baixo); se nenhum mês da série o supera,
+    N é o tamanho da série ('janela': True)."""
+    v = valores[idx]
+    if v is None:
+        return None
+    melhor = None
+    for tipo, bate in (("maior", lambda x: x >= v), ("menor", lambda x: x <= v)):
+        j = next((k for k in range(idx - 1, -1, -1) if valores[k] is not None and bate(valores[k])), None)
+        if j is None:
+            n, janela = idx + 1, True
+            if n < MIN_JANELA:
+                continue
+        else:
+            n, janela = idx - j, False
+            if n < MIN_EXTREMO:
+                continue
+        if melhor is None or n > melhor["n"]:
+            melhor = {"tipo": tipo, "n": n, "janela": janela}
+    return melhor
+
+
+def _mes_antes(p: str, n: int) -> str:
+    k = int(p[:4]) * 12 + int(p[5:]) - 1 - n
+    return f"{k // 12}-{k % 12 + 1:02d}"
+
+
+def montar_x(url: str, cabeca: str, extras: list[str], tags: str) -> str:
+    """Post curto para o X: cabe em 280 caracteres (o link conta 23). Tira os extras, do último para o primeiro, e por fim as hashtags."""
+    for n in range(len(extras), -1, -1):
+        for com_tags in (True, False):
+            texto = " ".join([cabeca] + extras[:n]) + f"\n\n{url}" + (f"\n{tags}" if com_tags else "")
+            if len(texto.replace(url, "x" * PESO_LINK_X)) <= LIMITE_X:
+                return texto
+    return f"{cabeca}\n\n{url}"
+
+
+def resumo_compartilhar(post: str, post_x: str = "") -> str:
+    """Bloco recolhido com os textos prontos: o do X (curto) e o do LinkedIn, WhatsApp ou e-mail (maior)."""
+    x = (f'<h3>Para o X</h3><textarea id="post-x" class="fam-post" readonly rows="6">{esc(post_x)}</textarea>'
+         '<div><button type="button" class="fam-btn" data-copiar="post-x"><span>Copiar texto do X</span></button> '
+         '<span class="small" data-copiar-msg aria-live="polite"></span></div>') if post_x else ""
+    return card('<details class="compartilhe"><summary><h2>Compartilhe este resumo</h2></summary>'
+                '<p class="small">Textos prontos: uma versão curta, para o X, e uma maior, para o LinkedIn, o WhatsApp ou o e-mail.</p>'
+                f'{x}<h3>Para o LinkedIn</h3>'
+                f'<textarea id="post" class="fam-post" readonly rows="12">{esc(post)}</textarea>'
+                '<div><button type="button" class="fam-btn" data-copiar="post"><span>Copiar texto do LinkedIn</span></button> '
+                '<span class="small" data-copiar-msg aria-live="polite"></span></div></details>')
+
+
+def _pp(dif: float) -> str:
+    return sinal(dif, 2) + " p.p."
+
+
+def resumo_ipca_dados(B: Base) -> dict | None:
+    try:
+        ref = B.ref
+        meses = sorted(B.ipca_12)
+        ant = meses[-2]
+        d = {"ref": ref, "ant": ant, "ano": _mes_antes(ref, 12), "im": B.ipca_m[ref], "im0": B.ipca_m[ant], "i12": B.ipca_12[ref],
+             "i12_0": B.ipca_12[ant]}
+    except (KeyError, IndexError):
+        return None
+    d["i12_ano"] = B.ipca_12.get(d["ano"])
+    d["ext12"] = _extremo([B.ipca_12[m] for m in meses], len(meses) - 1)
+    mm = sorted(B.ipca_m)
+    d["extm"] = _extremo([B.ipca_m[m] for m in mm], len(mm) - 1) if mm and mm[-1] == ref else None
+    d["desde"] = meses[0]
+    c = B.comp
+    d["comp"] = c if c and c.get("mes") == ref else None
+    return d
+
+
+def resumo_ipca_abertura(B: Base, d: dict) -> str:
+    """Parágrafo de abertura: IPCA do mês, comparação com o mês anterior, IPCA em 12 meses (e sua mudança), meta e recorde."""
+    mes, ref_ant = mes_nome(d["ref"]), mes_nome(d["ant"])
+    cmp_m = "acima do" if d["im"] > d["im0"] + 0.004 else "abaixo do" if d["im"] < d["im0"] - 0.004 else "igual ao"
+    txt = f"O IPCA de {mes} foi de {pct(d['im'])}, {cmp_m} {pct(d['im0'])} de {ref_ant}."
+    dif = d["i12"] - d["i12_0"]
+    sentido = "alta" if dif > 0.004 else "queda" if dif < -0.004 else "estabilidade"
+    txt += f" Em 12 meses, a inflação está em {pct(d['i12'])}, {sentido}"
+    txt += f" de {nf(abs(dif), 2)} p.p. frente a {ref_ant}" if sentido != "estabilidade" else f" frente a {ref_ant}"
+    if d.get("i12_ano") is not None:
+        txt += f" ({pct(d['i12_ano'])} um ano antes)"
+    txt += "."
+    e = d.get("ext12")
+    if e:
+        txt += (f" É o {'maior' if e['tipo'] == 'maior' else 'menor'} acumulado em 12 meses "
+                + (f"da série, que começa em {mes_nome(d['desde'])}." if e["janela"] else f"em {e['n']} meses."))
+    return txt
+
+
+def resumo_ipca_pressao(d: dict) -> tuple[list, list]:
+    """Os 5 itens que mais pressionaram e os 5 que mais seguraram o IPCA do mês (pelo impacto em p.p.)."""
+    c = d.get("comp")
+    if not c or not c.get("subs"):
+        return [], []
+    subs = [s for s in c["subs"] if s["imp"]]
+    return ([s for s in sorted(subs, key=lambda s: -s["imp"]) if s["imp"] > 0][:5],
+            [s for s in sorted(subs, key=lambda s: s["imp"]) if s["imp"] < 0][:5])
+
+
+def resumo_ipca_grupos(d: dict) -> list[dict]:
+    """2 ou 3 grupos em destaque: o que mais pressionou, o que mais aliviou e o de maior alta em 12 meses."""
+    c = d.get("comp")
+    if not c:
+        return []
+    g = [{"nome": x["nome"], "v": x["v"][-1], "imp": x["imp"][-1], "w": x["w"][-1], "acum12": x.get("acum12")} for x in c["grupos"]]
+    out, vistos = [], set()
+
+    def add(x, nota):
+        if x["nome"] in vistos:
+            return
+        vistos.add(x["nome"])
+        a12 = f" e {pct_sinal(x['acum12'], 2)} em 12 meses" if x["acum12"] is not None else ""
+        impacto = f", com impacto de {_pp(x['imp'])} no IPCA" if abs(x["imp"]) >= 0.005 else ""
+        out.append({"nome": x["nome"], "texto": f"{x['nome']}: {pct_sinal(x['v'], 2)} no mês{a12}{impacto} (peso de {nf(x['w'], 1)}%); {nota}."})
+    top, baixo = max(g, key=lambda x: x["imp"]), min(g, key=lambda x: x["imp"])
+    if top["imp"] > 0:
+        add(top, "maior pressão do mês")
+    if baixo["imp"] < 0:
+        add(baixo, "maior alívio do mês")
+    com12 = [x for x in g if x["acum12"] is not None]
+    if com12:
+        add(max(com12, key=lambda x: x["acum12"]), "maior alta em 12 meses entre os grupos")
+    return out[:3]
+
+
+def resumo_ipca_insight(B: Base, d: dict) -> str:
+    """Uma ou duas frases sobre o que explica o mês, pela primeira regra que se aplica."""
+    achados = []
+    c = d.get("comp")
+    if c and d["im"] > 0:
+        g = max(c["grupos"], key=lambda x: x["imp"][-1])
+        imp = g["imp"][-1]
+        if imp > 0:
+            if imp / d["im"] > 1:
+                achados.append(f"{g['nome']} pressionou o índice em {_pp(imp)}, mais do que o IPCA do mês ({pct(d['im'])}), "
+                               "compensado por quedas em outros grupos.")
+            elif imp / d["im"] >= 0.5:
+                achados.append(f"{g['nome']} respondeu por {nf(imp / d['im'] * 100, 0)}% do IPCA do mês ({_pp(imp)} de {pct(d['im'])}).")
+    i12 = d["i12"]
+    teto, piso = META_IPCA + TOLERANCIA_IPCA, META_IPCA - TOLERANCIA_IPCA
+    if i12 > teto:
+        achados.append(f"Com {pct(i12)}, o IPCA em 12 meses está acima do teto da meta ({pct(teto)}).")
+    elif i12 < piso:
+        achados.append(f"Com {pct(i12)}, o IPCA em 12 meses está abaixo do piso da meta ({pct(piso)}).")
+    else:
+        achados.append(f"Com {pct(i12)}, o IPCA em 12 meses está dentro do intervalo da meta ({pct(piso)} a {pct(teto)}; centro em {pct(META_IPCA)}).")
+    try:
+        real = ((1 + B.selic / 100) / (1 + i12 / 100) - 1) * 100
+        achados.append(f"Com a Selic em {pct(B.selic)} ao ano, o juro real ex-post é de {pct(real)}.")
+    except (TypeError, ZeroDivisionError):
+        pass
+    return " ".join(achados[:2])
+
+
+def resumo_ipca_post(B: Base, d: dict, manchete: str, altas: list, baixas: list, grupos: list, insight: str, url: str) -> str:
+    l = [f"Inflação em {mes_nome(d['ref'])}", "", resumo_ipca_abertura(B, d), ""]
+    if altas:
+        l.append("O que mais pressionou: " + "; ".join(f"{s['nome'].lower()} ({pct_sinal(s['v'], 1)}, {_pp(s['imp'])})" for s in altas[:3]) + ".")
+    if baixas:
+        l.append("O que mais ajudou a segurar: " + "; ".join(f"{s['nome'].lower()} ({pct_sinal(s['v'], 1)}, {_pp(s['imp'])})" for s in baixas[:3]) + ".")
+    if altas or baixas:
+        l.append("")
+    if grupos:
+        l.append("Grupos em destaque:")
+        l += [f"• {g['texto']}" for g in grupos]
+        l.append("")
+    if insight:
+        l += [insight, ""]
+    l += ["Números completos, com fonte e data:", url, "", "#ipca #inflacao #selic #economia", "Fonte: IBGE e Banco Central, organizados pelo Economia em Números."]
+    return "\n".join(l)
 
 
 def resumo_mes(B: Base) -> dict | None:
-    try:
-        ref = B.ref
-        ant = sorted(B.ipca_12)[-2]
-        im, im0, i12 = B.ipca_m[ref], B.ipca_m[ant], B.ipca_12[ref]
-    except (KeyError, IndexError):
+    d = resumo_ipca_dados(B)
+    if not d:
         return None
-    mes = MESES[int(ref[5:]) - 1]
+    ref, mes = d["ref"], MESES[int(d["ref"][5:]) - 1]
+    im, im0, i12 = d["im"], d["im0"], d["i12"]
     manchete = f"Inflação de {mes}: IPCA de {pct(im, 2)} no mês e {pct(i12, 2)} em 12 meses"
-    destaques = [f"<b>IPCA do mês:</b> {pct(im, 2)}, {'acima' if im > im0 else 'abaixo' if im < im0 else 'igual'} do mês anterior ({pct(im0, 2)}). "
-                 f"Em 12 meses: {pct(i12, 2)}, {'alta' if B.ipca_12[ref] > B.ipca_12[ant] else 'queda' if B.ipca_12[ref] < B.ipca_12[ant] else 'estável'} frente a {pct(B.ipca_12[ant], 2)}."]
-    c = B.comp
-    if c and c.get("subs"):
-        subs = sorted(c["subs"], key=lambda s: -s["imp"])
-        altas, baixas = [s for s in subs if s["imp"] > 0][:3], [s for s in subs[::-1] if s["imp"] < 0][:2]
-        if altas:
-            destaques.append("<b>O que mais pressionou:</b> " + ", ".join(f"{esc(s['nome'].lower())} ({pct_sinal(s['v'], 1)})" for s in altas) + ".")
-        if baixas:
-            destaques.append("<b>O que ajudou a segurar:</b> " + ", ".join(f"{esc(s['nome'].lower())} ({pct_sinal(s['v'], 1)})" for s in baixas) + ".")
-    destaques.append(f"<b>Juros:</b> a meta da Selic está em {pct(B.selic, 2)} ao ano, em vigor desde {data_br(B.selic_desde)}.")
+    url = f"{BASE}/resumo/mes/{ref}/"
+    altas, baixas = resumo_ipca_pressao(d)
+    grupos, insight = resumo_ipca_grupos(d), resumo_ipca_insight(B, d)
+    abertura = resumo_ipca_abertura(B, d)
+    contexto = [f"<b>Juros:</b> a meta da Selic está em {pct(B.selic, 2)} ao ano, em vigor desde {data_br(B.selic_desde)}."]
     if B.tem_emprego:
         try:
             m = B.des["movel"][-1]
@@ -3149,21 +3317,43 @@ def resumo_mes(B: Base) -> dict | None:
             cg = B.caged_serie()
             if cg:
                 txt += f" O Caged registrou saldo de {saldo_txt(cg[-1][1])} vagas formais em {mes_nome(cg[-1][0])}."
-            destaques.append(txt)
+            contexto.append(txt)
         except (IndexError, KeyError, TypeError):
             pass
-    tiles = [tile("IPCA em 12 meses", nf(i12, 2), "%", chg(i12 - B.ipca_12[ant], 2, " p.p.", " no mês"), "b", "/inflacao/"),
+    tiles = [tile("IPCA em 12 meses", nf(i12, 2), "%", chg(i12 - d["i12_0"], 2, " p.p.", " no mês"), "b", "/inflacao/"),
              tile(f"IPCA em {mes}", nf(im, 2), "%", chg(im - im0, 2, " p.p.", " vs. mês anterior"), "k", "/inflacao/"),
              tile("Meta da Selic", nf(B.selic, 2), "% ao ano", "", "a", "/juros/")]
-    post = "\n".join([f"Economia em {mes_nome(ref)}", "", manchete + ".", ""] +
-                     [re.sub(r"<[^>]+>", "", x) for x in destaques] + ["", "Números completos, com fonte e data:", f"{BASE}/resumo/mes/{ref}/", "", "#ipca #inflacao #selic #economia"])
-    corpo = (card(f'<span class="eyebrow">Resumo do mês · {mes_nome(ref)}</span><h1>{esc(manchete)}</h1>'
-                  '<p class="lede">O IPCA é divulgado pelo IBGE uma vez por mês. Veja o que mudou, o que mais pesou e como estão os juros e o emprego.</p>') +
-             f'<div class="tiles">{"".join(tiles)}</div>' +
-             card(cab(f"O que mudou em {mes}") + '<ul class="destaques">' + "".join(f"<li>{x}</li>" for x in destaques) + "</ul>") +
-             resumo_compartilhar(post))
+
+    def tab(lista):
+        linhas = [[f'{esc(s["nome"])}<br><span class="small">{esc(s["grupo"])}</span>', pct_sinal(s["v"], 2), _pp(s["imp"])] for s in lista]
+        return tabela(["Item", "Variação no mês", "Impacto no IPCA"], linhas, ["l", "r", "r"])
+    tabelas = ""
+    if altas or baixas:
+        tabelas = ('<div class="cols">'
+                   + card(cab("Maiores altas") + '<p class="small">Itens que mais pressionaram o IPCA do mês</p>' + (tab(altas) if altas else '<p class="small">Nenhum item pressionou o índice neste mês.</p>'))
+                   + card(cab("Maiores quedas") + '<p class="small">Itens que mais seguraram o IPCA do mês</p>' + (tab(baixas) if baixas else '<p class="small">Nenhum item segurou o índice neste mês.</p>'))
+                   + '</div>')
+    destaque = (card(cab("Grupos em destaque") + '<p class="small">Os movimentos mais relevantes entre os nove grupos do IPCA</p><ul class="destaques">'
+                     + "".join(f"<li>{esc(g['texto'])}</li>" for g in grupos) + "</ul>") if grupos else "")
+    ins = card(cab("Em resumo") + f"<p>{esc(insight)}</p>") if insight else ""
+    links = [("/inflacao/", "Inflação: séries e composição"), ("/juros/", "Juros e Copom"), ("/calculadora/", "Calculadora de correção"), ("/resumo/", "Todos os resumos")]
+    if B.tem_emprego:
+        links.insert(2, ("/emprego/", "Emprego"))
+    mais = card(cab("Para ir além") + '<ul class="links-resumo">' + "".join(f'<li><a href="{h}">{esc(t)}</a></li>' for h, t in links) + "</ul>")
+    post = resumo_ipca_post(B, d, manchete, altas, baixas, grupos, insight, url)
+    ext = d.get("ext12")
+    extra = []
+    if ext:
+        extra.append(f"Acumulado em 12 meses: o {'maior' if ext['tipo'] == 'maior' else 'menor'} em {ext['n']} meses.")
+    if altas:
+        extra.append(f"Maior pressão: {altas[0]['nome'].lower()} ({pct_sinal(altas[0]['v'], 1)}).")
+    post_x = montar_x(url, f"Inflação em {mes_nome(ref)}: IPCA de {pct(im)} no mês e {pct(i12)} em 12 meses.", extra, "#ipca #inflacao")
+    corpo = (card(f'<span class="eyebrow">Resumo do mês · {mes_nome(ref)}</span><h1>{esc(manchete)}</h1><p class="lede">{esc(abertura)}</p>') +
+             f'<div class="tiles">{"".join(tiles)}</div>' + tabelas + destaque + ins +
+             card(cab("E a economia hoje") + '<ul class="destaques">' + "".join(f"<li>{x}</li>" for x in contexto) + "</ul>") +
+             mais + resumo_compartilhar(post, post_x))
     return {"tipo": "mes", "chave": ref, "titulo": manchete, "rotulo": cap_mes(ref), "gerado_em": B.d["gerado_em"],
-            "descricao": f"{cap_mes(ref)}: IPCA de {pct(im, 2)} no mês e {pct(i12, 2)} em 12 meses. O que mais pesou, juros e emprego, com fonte oficial.",
+            "descricao": f"{cap_mes(ref)}: IPCA de {pct(im, 2)} no mês e {pct(i12, 2)} em 12 meses. Maiores altas e quedas, grupos em destaque, juros e emprego, com fonte oficial.",
             "corpo": corpo}
 
 

@@ -268,3 +268,11 @@ details.dados td,details.dados th{font-variant-numeric:tabular-nums}
 .fam-gr-leg span { display: inline-flex; align-items: center; gap: 6px; }
 .fam-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 footer .familia p a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.compartilhe > summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.compartilhe > summary::-webkit-details-marker { display: none; }
+.compartilhe > summary h2 { margin: 0; }
+.compartilhe > summary::after { content: "+"; font-size: 24px; line-height: 1; }
+.compartilhe[open] > summary::after { content: "−"; }
+.compartilhe h3 { margin: 16px 0 8px; font-size: 1rem; }
+.links-resumo { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.links-resumo a { display: inline-flex; align-items: center; min-height: 44px; }

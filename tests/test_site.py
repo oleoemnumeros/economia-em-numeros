@@ -1633,3 +1633,35 @@ class TestResumoSemana(unittest.TestCase):
     def test_sem_mudanca_relevante(self):
         itens = [self.item("IPCA", 2026, 5.0, 5.01), self.item("Selic", 2026, 13.75, 13.75), self.item("IPCA", 2027, 4.0, 4.0)]
         self.assertEqual(g.focus_manchete(itens), "Mercado mantém as projeções para 2026: inflação em 5,00% e Selic em 13,75%")
+
+
+class TestResumoMensalTexto(unittest.TestCase):
+    """O texto do resumo do mês vem de regras: recorde da série, post do X dentro de 280 caracteres, insight com a meta."""
+
+    def test_extremo(self):
+        self.assertEqual(g._extremo([10, 11, 12, 13, 14, 20, 1, 2, 3, 4, 5, 6, 7, 19], 13), {"tipo": "maior", "n": 8, "janela": False})
+        self.assertEqual(g._extremo(list(range(14)), 13), {"tipo": "maior", "n": 14, "janela": True})
+        self.assertIsNone(g._extremo([5, 3, 9, 8, 7, 9, 6], 6))
+
+    def test_post_x_cabe_em_280(self):
+        url = "https://economiaemnumeros.com.br/resumo/mes/2026-10/"
+        cab = "Inflação em outubro de 2026: IPCA de 0,14% no mês e 4,63% em 12 meses."
+        extras = ["Acumulado em 12 meses: o maior em 14 meses.", "Maior pressão: " + "tomate " * 30]
+        x = g.montar_x(url, cab, extras, "#ipca #inflacao")
+        self.assertLessEqual(len(x.replace(url, "x" * 23)), 280)
+        self.assertIn(url, x)
+        self.assertIn("Acumulado em 12 meses", x)           # o extra curto fica; o comprido sai
+        self.assertNotIn("tomate tomate", x)
+
+    def test_insight_com_a_meta_e_o_peso_do_grupo(self):
+        from types import SimpleNamespace as NS
+        B = NS(selic=13.75)
+        comp = {"grupos": [{"nome": "Alimentação e bebidas", "imp": [0.22]}, {"nome": "Transportes", "imp": [-0.12]}]}
+        d = {"im": 0.14, "i12": 4.63, "comp": comp}
+        t = g.resumo_ipca_insight(B, d)
+        self.assertIn("pressionou o índice em +0,22 p.p., mais do que o IPCA do mês", t)   # impacto maior que o índice: compensado por outros grupos
+        self.assertIn("acima do teto da meta (4,50%)", t)
+        d = {"im": 0.30, "i12": 3.2, "comp": comp}
+        t = g.resumo_ipca_insight(B, d)
+        self.assertIn("respondeu por 73% do IPCA do mês", t)
+        self.assertIn("dentro do intervalo da meta", t)
