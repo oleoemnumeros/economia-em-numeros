@@ -1008,7 +1008,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
     gerado = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
     v = B.d["gerado_em"][:10]
     robots = '<meta name="robots" content="noindex">\n' if noindex else ""
-    rodape = " · ".join(f'<a href="{h}">{"Como funciona" if h == "/sobre/" else t}</a>' for h, t in B.nav()) + ' · <a href="/dados/">Dados em CSV</a> · <a href="/sugestoes/">Sugestões e críticas</a>'
+    rodape = " · ".join(f'<a href="{h}">{"Como funciona" if h == "/sobre/" else t}</a>' for h, t in B.nav()) + ' · <a href="/dados/">Dados em CSV</a> · <a href="/sugestoes/">Sugestões e críticas</a> · <a href="/contato/">Contato</a> · <a href="/privacidade/">Privacidade</a>'
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -2646,6 +2646,78 @@ def pg_sugestoes(B: Base) -> str:
                   corpo, "/sugestoes/", [(None, "Sugestões e críticas")])
 
 
+# Páginas de privacidade e contato (exigidas para anúncios e boa prática de LGPD). O texto é o mesmo em toda a Família em Números.
+PRIVACIDADE_HTML = """<p class="lede">Esta página explica quais dados o __NOME__ coleta, por que coleta e quais são os seus direitos. Em resumo: não pedimos cadastro, não vendemos dados e não usamos cookies de rastreamento próprios.</p>
+<p class="small">Última atualização: 18 de novembro de 2026.</p>
+
+<h2>Quem somos</h2>
+<p>O __NOME__ faz parte da Família em Números, um grupo de portais independentes que organizam dados públicos do Brasil. Não temos ligação com órgãos do governo nem com as empresas citadas nos dados. Para qualquer assunto de privacidade, escreva para <a href="mailto:__EMAIL__">__EMAIL__</a>.</p>
+
+<h2>O que coletamos e para quê</h2>
+<ul>
+<li><strong>Estatísticas de visitas.</strong> Usamos o GoatCounter, um contador sem cookies que guarda dados agregados, como a página aberta, o site de origem, o tipo de aparelho e de navegador e o país. Ele não identifica quem visita. Serve para saber quais páginas são úteis.</li>
+<li><strong>Mensagens.</strong> Se você usar o formulário de <a href="__HREF_SUG__">Sugestões e críticas</a> ou escrever para o e-mail do portal, recebemos o que você escrever e, se informar, o seu nome e o seu e-mail. Usamos só para ler e responder. O formulário é entregue pelo serviço FormSubmit (formsubmit.co).</li>
+<li><strong>Dados técnicos de acesso.</strong> O site é hospedado no GitHub Pages, que, como qualquer servidor, pode registrar o endereço IP de quem acessa. As fontes de letra vêm do Google Fonts, que também recebe o endereço IP de quem abre a página.__MAPA__</li>
+</ul>
+
+<h2>Anúncios</h2>
+<p>Podemos exibir anúncios do Google AdSense para custear o projeto. Quando houver anúncios, o Google e os seus parceiros podem usar cookies e identificadores do navegador para mostrar anúncios com base nas suas visitas a este e a outros sites. Você pode gerenciar ou desativar a personalização em <a href="https://adssettings.google.com" rel="noopener" target="_blank">adssettings.google.com</a>, saber mais em <a href="https://policies.google.com/technologies/ads?hl=pt-BR" rel="noopener" target="_blank">como o Google usa dados de sites parceiros</a> e bloquear cookies nas configurações do seu navegador. Os anúncios não mudam os números mostrados nem a forma como os dados são organizados.</p>
+
+<h2>Cookies e armazenamento no navegador</h2>
+<p>O __NOME__ não define cookies de rastreamento. Para lembrar uma preferência, como o período escolhido nos gráficos, o site usa o armazenamento local do seu navegador. Essa informação fica no seu aparelho e não é enviada a nós. Se houver anúncios, os cookies serão os do Google, descritos acima.</p>
+
+<h2>O que publicamos</h2>
+<p>Os números vêm de bases públicas e aparecem de forma agregada (país, estado, município, empresa, campo, aeroporto ou rota, por exemplo). O site não pede nem publica dados pessoais de pessoas físicas.</p>
+
+<h2>Compartilhamento</h2>
+<p>Não vendemos nem alugamos dados. Os serviços citados acima (__SERV__) recebem apenas o que é necessário para funcionar.</p>
+
+<h2>Seus direitos</h2>
+<p>Pela Lei Geral de Proteção de Dados (Lei nº 13.709/2018), você pode pedir a confirmação de que tratamos dados seus, o acesso, a correção ou a eliminação deles, entre outros direitos. Escreva para <a href="mailto:__EMAIL__">__EMAIL__</a>. Guardamos as mensagens só pelo tempo necessário para responder e as apagamos quando você pedir.</p>
+
+<h2>Mudanças nesta página</h2>
+<p>Podemos atualizar este texto. A data da última atualização fica no topo. Dúvidas? Veja a página de <a href="__HREF_CONT__">contato</a>.</p>"""
+
+CONTATO_HTML = """<p class="lede">Encontrou um erro, tem uma sugestão ou quer falar com a gente? Escreva para <a href="mailto:__EMAIL__">__EMAIL__</a> ou use o <a href="__HREF_SUG__">formulário de sugestões e críticas</a>. Lemos todas as mensagens e respondemos quando você deixa um e-mail para retorno.</p>
+
+<h2>Sobre o que você pode escrever</h2>
+<ul>
+<li><strong>Erro em um dado ou página.</strong> Envie o endereço da página e o número que parece errado. Conferimos na fonte oficial e corrigimos.</li>
+<li><strong>Sugestões.</strong> Um dado que faz falta, uma página nova ou uma melhoria no site.</li>
+<li><strong>Imprensa e parcerias.</strong> Uso dos dados em reportagens, estudos e projetos. Os dados são públicos, mas gostamos de saber onde são usados.</li>
+<li><strong>Privacidade.</strong> Pedidos sobre dados pessoais, conforme a <a href="__HREF_PRIV__">política de privacidade</a>.</li>
+</ul>
+
+<h2>Importante</h2>
+<p>O __NOME__ é um projeto independente, sem ligação com órgãos do governo nem com as empresas citadas nos dados. __ESPECIFICO__</p>
+<p class="small">O __NOME__ faz parte da Família em Números, um grupo de portais que organizam dados públicos do Brasil.</p>"""
+
+_ESPECIFICO = 'O site mostra totais por estado e por município e não tem acesso a dados de pessoas. Para consultar o seu Bolsa Família ou outro benefício, use os canais oficiais do governo.'
+
+
+def _texto_legal(modelo: str) -> str:
+    """Troca os marcadores do texto pelo nome do portal, e-mail e endereços das páginas."""
+    trocas = {"__NOME__": "Economia em Números", "__EMAIL__": FORM_EMAIL, "__SERV__": "GoatCounter, FormSubmit, GitHub e Google", "__MAPA__": "",
+              "__HREF_SUG__": "/sugestoes/", "__HREF_CONT__": "/contato/", "__HREF_PRIV__": "/privacidade/", "__ESPECIFICO__": _ESPECIFICO}
+    for k, v in trocas.items():
+        modelo = modelo.replace(k, v)
+    return modelo
+
+
+def pg_privacidade(B: Base) -> str:
+    corpo = card('<span class="eyebrow">Privacidade</span><h1>Política de privacidade</h1>' + _texto_legal(PRIVACIDADE_HTML))
+    return pagina(B, "/privacidade/", "Privacidade | Economia em Números",
+                  "Como o Economia em Números trata dados: o que coleta, anúncios do Google AdSense, cookies e seus direitos pela LGPD.",
+                  corpo, "/privacidade/", [(None, "Privacidade")])
+
+
+def pg_contato(B: Base) -> str:
+    corpo = card('<span class="eyebrow">Fale com a gente</span><h1>Contato</h1>' + _texto_legal(CONTATO_HTML))
+    return pagina(B, "/contato/", "Contato | Economia em Números",
+                  "Fale com o Economia em Números: e-mail, formulário de sugestões, erros em dados, imprensa e parcerias.",
+                  corpo, "/contato/", [(None, "Contato")])
+
+
 def pg_sobre(B: Base) -> str:
     corpo = card("<h1>Como funciona o Economia em Números</h1>"
                  '<p class="lede">Um portal independente que reúne dados abertos da economia brasileira e os organiza para consulta. Não tem ligação com o governo nem com instituições financeiras.</p>'
@@ -3427,7 +3499,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     if saida.exists():
         shutil.rmtree(saida)
     saida.mkdir(parents=True)
-    paginas = [("/", pg_inicio(B)), ("/juros/", pg_juros(B)), ("/inflacao/", pg_inflacao(B)), ("/calculadora/", pg_calc(B)), ("/sobre/", pg_sobre(B)), ("/sugestoes/", pg_sugestoes(B))]
+    paginas = [("/", pg_inicio(B)), ("/juros/", pg_juros(B)), ("/inflacao/", pg_inflacao(B)), ("/calculadora/", pg_calc(B)), ("/sobre/", pg_sobre(B)), ("/sugestoes/", pg_sugestoes(B)), ("/contato/", pg_contato(B)), ("/privacidade/", pg_privacidade(B))]
     if B.tem_emprego:
         paginas.append(("/emprego/", pg_emprego(B)))
         for u in B.uf_lista():
@@ -3493,7 +3565,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     (saida / "CNAME").write_text(DOMINIO + "\n", encoding="utf-8")
     (saida / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n", encoding="utf-8")
     extras_set = set(extras)
-    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/contas-publicas/": "0.9", "/credito/": "0.9", "/industria-e-varejo/": "0.9", "/setor-externo/": "0.9", "/bolsa-familia/": "0.9", "/municipios/": "0.8", "/inflacao/": "0.9", "/calculadora/": "0.8", "/dados/": "0.5", "/sobre/": "0.3", "/sugestoes/": "0.2"}
+    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/contas-publicas/": "0.9", "/credito/": "0.9", "/industria-e-varejo/": "0.9", "/setor-externo/": "0.9", "/bolsa-familia/": "0.9", "/municipios/": "0.8", "/inflacao/": "0.9", "/calculadora/": "0.8", "/dados/": "0.5", "/sobre/": "0.3", "/sugestoes/": "0.2", "/contato/": "0.2", "/privacidade/": "0.2"}
     todos = [c for c, _ in paginas] + extras
     urls = "".join(f"<url><loc>{BASE}{c}</loc><lastmod>{v}</lastmod><priority>{prio.get(c, '0.4' if c in extras_set else '0.6')}</priority></url>" for c in todos)
     (saida / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>\n", encoding="utf-8")
