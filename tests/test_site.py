@@ -59,7 +59,7 @@ class TestSite(unittest.TestCase):
 
     def test_canonical_e_sitemap(self):
         s = self.ler("sitemap.xml")
-        self.assertEqual(s.count("<url>"), 6 + 16 + 1 + 27 + 2 + 1 + 1 + 2 + 1 + 3)  # + resumos: lista, semana e mês
+        self.assertEqual(s.count("<url>"), 8 + 16 + 1 + 27 + 2 + 1 + 1 + 2 + 1 + 3)  # + resumos: lista, semana e mês
         self.assertNotIn("404", s)
         self.assertIn('<link rel="canonical" href="https://economiaemnumeros.com.br/inflacao/salvador/">', self.ler("inflacao/salvador/index.html"))
         self.assertIn('content="noindex"', self.ler("404.html"))
@@ -126,6 +126,26 @@ class TestSite(unittest.TestCase):
         self.assertIn("INPC (IBGE)", html)  # inpc continua disponível
         self.assertNotIn('id="pct"', html)  # sem CDI, a ferramenta de rendimento não aparece
         self.assertIn("IPCA (IBGE)", html)
+
+    def test_privacidade_e_contato(self):
+        priv = self.ler("privacidade/index.html")
+        for trecho in ("Política de privacidade", "GoatCounter", "Google AdSense", "adssettings.google.com", "Lei nº 13.709/2018",
+                       'mailto:oleoemnumeros@gmail.com', "Última atualização"):
+            self.assertIn(trecho, priv)
+        self.assertEqual(priv.count("<h1"), 1)
+        self.assertNotIn("__", priv.split("</main>")[0])                              # nenhum marcador sem trocar
+        cont = self.ler("contato/index.html")
+        self.assertIn('mailto:oleoemnumeros@gmail.com', cont)
+        self.assertIn('href="/sugestoes/"', cont)
+        self.assertEqual(cont.count("<h1"), 1)
+        self.assertNotIn("__", cont.split("</main>")[0])
+        for rel in ("index.html", "sobre/index.html"):                                 # links no rodapé de todas as páginas
+            t = self.ler(rel)
+            self.assertIn('href="/privacidade/"', t)
+            self.assertIn('href="/contato/"', t)
+        s = self.ler("sitemap.xml")
+        self.assertIn("/privacidade/", s)
+        self.assertIn("/contato/", s)
 
     def test_familia_no_rodape(self):
         t = self.ler("index.html")
@@ -258,7 +278,7 @@ class TestSemDadosNovos(unittest.TestCase):
                 dados.pop(k)
             (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
             cam = g.gerar(d / "dados.json", d / "docs", resumos_path=d / "nao_existe.json")
-            self.assertEqual(len(cam), 26)  # sem Emprego/Atividade/Indústria/Crédito/Câmbio/Contas públicas: 6 básicas (com /sugestoes/) + 16 áreas + /dados/ + 3 de resumos (lista, semana, mês)
+            self.assertEqual(len(cam), 28)  # sem Emprego/Atividade/Indústria/Crédito/Câmbio/Contas públicas: 8 básicas (com /sugestoes/, /contato/ e /privacidade/) + 16 áreas + /dados/ + 3 de resumos (lista, semana, mês)
             self.assertFalse((d / "docs" / "emprego").exists())
             for rel in ("index.html", "juros/index.html"):
                 t = (d / "docs" / rel).read_text(encoding="utf-8")
