@@ -51,6 +51,9 @@ class TestSite(unittest.TestCase):
         self.assertTrue(llms.startswith("# Economia em Números"))
         self.assertIn("https://economiaemnumeros.com.br/inflacao/", llms)
         self.assertIn("https://x.com/familianumeros", self.ler("index.html"))
+        js = self.ler("assets/familia.js")
+        self.assertIn("https://x.com/intent/tweet?text=", js)       # botão "Publicar no X" ao lado do texto pronto
+        self.assertIn('"#D9A514"', self.ler("assets/familia-compartilhar.js"))
         self.assertNotIn("__BASE__", llms)
 
     def test_sem_lixo_no_html(self):
