@@ -50,6 +50,7 @@ class TestSite(unittest.TestCase):
         llms = self.ler("llms.txt")
         self.assertTrue(llms.startswith("# Economia em Números"))
         self.assertIn("https://economiaemnumeros.com.br/inflacao/", llms)
+        self.assertIn("https://x.com/familianumeros", self.ler("index.html"))
         self.assertNotIn("__BASE__", llms)
 
     def test_sem_lixo_no_html(self):
