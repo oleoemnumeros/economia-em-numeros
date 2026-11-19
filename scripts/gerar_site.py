@@ -13,8 +13,12 @@ import json
 import math
 import re
 import shutil
+import sys
 import unicodedata
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from familia_card import TEXTO_COMPARTILHE, bloco_imagem, gera_card, sem_imagem, seta  # noqa: E402  imagem do resumo, igual nos portais
 
 RAIZ = Path(__file__).resolve().parent.parent
 SITE = RAIZ / "site"
@@ -997,7 +1001,7 @@ def continue_html(B: Base, caminho: str, extra=None) -> str:
             f'<ul class="cont-grid">{"".join(cartoes)}</ul></section>')
 
 
-def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, noindex=False, continuar=None) -> str:
+def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, noindex=False, continuar=None, imagem=None) -> str:
     url = BASE + caminho
     nav = "".join(f'<a href="{h}"' + (' aria-current="page"' if h == ativo else "") + f">{t}</a>" for h, t in B.nav())
     bc = ""
@@ -1027,7 +1031,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
 <meta property="og:description" content="{esc(descricao)}">
 <meta property="og:url" content="{url}">
 <meta property="og:locale" content="pt_BR">
-<meta property="og:image" content="{BASE}/assets/og.png">
+<meta property="og:image" content="{imagem or BASE + "/assets/og.png"}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Economia em Números: Selic, inflação e dados oficiais da economia brasileira">
@@ -3185,7 +3189,8 @@ def resumo_semana(B: Base) -> dict | None:
              card(cab("O que o mercado espera") + tab +
                   f'<span class="src">Mediana das projeções, Boletim Focus de {quando}. Fonte: Banco Central do Brasil.</span>') +
              card(cab("E a economia hoje") + "<ul class=\"destaques\">" + "".join(f"<li>{x}</li>" for x in ctx) + "</ul>") +
-             resumo_compartilhar(post, montar_x(f"{BASE}/resumo/semana/{f['data']}/", f"Boletim Focus de {quando}: {manchete}.", [], "#focus #economia")))
+             resumo_compartilhar(post, montar_x(f"{BASE}/resumo/semana/{f['data']}/", f"Boletim Focus de {quando}: {manchete}.", [], "#focus #economia"),
+                                 (f"economia-em-numeros-focus-{f['data']}.png", f"Boletim Focus de {quando}: projeções do mercado para Selic, IPCA, PIB e dólar")))
     return {"tipo": "semana", "chave": f["data"], "titulo": manchete, "rotulo": f"Boletim Focus de {quando}", "gerado_em": B.d["gerado_em"],
             "descricao": f"Boletim Focus de {quando}: {manchete}. O que o mercado espera para Selic, inflação, PIB e dólar, e o que mudou na semana.",
             "corpo": corpo}
@@ -3236,13 +3241,14 @@ def montar_x(url: str, cabeca: str, extras: list[str], tags: str) -> str:
     return f"{cabeca}\n\n{url}"
 
 
-def resumo_compartilhar(post: str, post_x: str = "") -> str:
-    """Bloco recolhido com os textos prontos: o do X (curto) e o do LinkedIn, WhatsApp ou e-mail (maior)."""
+def resumo_compartilhar(post: str, post_x: str = "", img: tuple[str, str] | None = None) -> str:
+    """Bloco recolhido com a imagem do resumo (img = (nome do arquivo para baixar, texto alternativo)) e os textos prontos:
+    o do X (curto) e o do LinkedIn, WhatsApp ou e-mail (maior). Sem card.png, a página tira a imagem (sem_imagem)."""
     x = (f'<h3>Para o X</h3><textarea id="post-x" class="fam-post" readonly rows="6">{esc(post_x)}</textarea>'
          '<div><button type="button" class="fam-btn" data-copiar="post-x"><span>Copiar texto do X</span></button> '
          '<span class="small" data-copiar-msg aria-live="polite"></span></div>') if post_x else ""
     return card('<details class="compartilhe"><summary><h2>Compartilhe este resumo</h2></summary>'
-                '<p class="small">Textos prontos: uma versão curta, para o X, e uma maior, para o LinkedIn, o WhatsApp ou o e-mail.</p>'
+                f'<p class="small">{TEXTO_COMPARTILHE}</p>' + (bloco_imagem(*img) if img else "") +
                 f'{x}<h3>Para o LinkedIn</h3>'
                 f'<textarea id="post" class="fam-post" readonly rows="12">{esc(post)}</textarea>'
                 '<div><button type="button" class="fam-btn" data-copiar="post"><span>Copiar texto do LinkedIn</span></button> '
@@ -3427,7 +3433,7 @@ def resumo_mes(B: Base) -> dict | None:
     corpo = (card(f'<span class="eyebrow">Resumo do mês · {mes_nome(ref)}</span><h1>{esc(manchete)}</h1><p class="lede">{esc(abertura)}</p>') +
              f'<div class="tiles">{"".join(tiles)}</div>' + tabelas + destaque + ins +
              card(cab("E a economia hoje") + '<ul class="destaques">' + "".join(f"<li>{x}</li>" for x in contexto) + "</ul>") +
-             mais + resumo_compartilhar(post, post_x))
+             mais + resumo_compartilhar(post, post_x, (f"economia-em-numeros-ipca-{ref}.png", f"IPCA de {mes_nome(ref)}: {pct(im, 2)} no mês e {pct(i12, 2)} em 12 meses")))
     return {"tipo": "mes", "chave": ref, "titulo": manchete, "rotulo": cap_mes(ref), "gerado_em": B.d["gerado_em"],
             "descricao": f"{cap_mes(ref)}: IPCA de {pct(im, 2)} no mês e {pct(i12, 2)} em 12 meses. Maiores altas e quedas, grupos em destaque, juros e emprego, com fonte oficial.",
             "corpo": corpo}
@@ -3438,15 +3444,73 @@ def cap_mes(p: str) -> str:
     return s[:1].upper() + s[1:]
 
 
+def _curto(p: str) -> str:
+    return f"{MES_CURTO[int(p[5:]) - 1]}/{p[2:4]}"
+
+
+def card_resumo(B: Base, snap: dict, destino: Path) -> bool:
+    """Imagem do resumo, guardada ao lado do JSON em data/resumos/ (mesmo desenho dos outros portais da família).
+    Mês: IPCA no mês, em 12 meses e Selic, com as barras do IPCA mensal. Semana: as projeções do Focus para o ano."""
+    cor = PORTAIS["economia"][2]
+    if snap["tipo"] == "mes":
+        d = resumo_ipca_dados(B)
+        if not d or d["ref"] != snap["chave"]:
+            return False
+        ref, ant = d["ref"], _curto(d["ant"])
+
+        def var(v, v0):
+            dif = round(v - v0, 2)
+            return (f"{seta(dif)} {nf(abs(dif), 2)} p.p. sobre {ant}", None if dif == 0 else dif < 0)   # inflação caindo é boa notícia
+        meses = [m for m in sorted(B.ipca_m) if m <= ref][-13:]
+        barras = [(MES_CURTO[int(m[5:]) - 1], [B.ipca_m[m]]) for m in meses]
+        return gera_card(destino, "Economia em Números", cor, f"Inflação (IPCA) · {mes_nome(ref)}",
+                         [("IPCA no mês", pct(d["im"], 2), *var(d["im"], d["im0"])),
+                          ("IPCA em 12 meses", pct(d["i12"], 2), *var(d["i12"], d["i12_0"])),
+                          ("Meta da Selic (ao ano)", pct(B.selic, 2), f"desde {data_br(B.selic_desde)}", None)],
+                         barras, None, f"IPCA no mês (%), mês a mês · Fonte: IBGE · {DOMINIO}/resumo/mes/{ref}/",
+                         [nf(v[0], 2) for _, v in barras])
+    f = B.focus or {}
+    itens = [it for it in f.get("itens", []) if it["indicador"] in FOCUS_PRINCIPAL]
+    if not itens or f.get("data") != snap["chave"]:
+        return False
+    ano = min(it["ano"] for it in itens)
+    rotulo = {"Selic": f"Selic no fim de {ano}", "IPCA": f"IPCA em {ano}", "PIB Total": f"PIB em {ano}", "Câmbio": f"Dólar no fim de {ano}"}
+    nums = []
+    for ind, (_, fm) in FOCUS_PRINCIPAL.items():
+        it = next((i for i in itens if i["indicador"] == ind and i["ano"] == ano), None)
+        if not it:
+            continue
+        cambio = ind == "Câmbio"
+        val = f"R$ {nf(it['mediana'], 2)}" if cambio else fm(it["mediana"])
+        var = ""
+        if it.get("semana_anterior") is not None:
+            dif = round(it["mediana"] - it["semana_anterior"], 2)
+            var = ("igual à semana anterior" if dif == 0 else
+                   f"{seta(dif)} {'R$ ' if cambio else ''}{nf(abs(dif), 2)}{'' if cambio else ' p.p.'} na semana")
+        nums.append((rotulo.get(ind, ind), val, var, None))
+    dia = dt.date.fromisoformat(f["data"])
+    return gera_card(destino, "Economia em Números", cor, f"Boletim Focus · {data_br(dia)}", nums, None, None,
+                     f"Mediana das projeções do mercado · Fonte: Banco Central · {DOMINIO}/resumo/semana/{f['data']}/")
+
+
+def resumo_png(B: Base, s: dict) -> Path:
+    return B.resumos_pasta / f"{s['tipo']}-{s['chave']}.png"
+
+
 def resumos_preparar(B: Base, pasta: Path) -> None:
-    """Gera o resumo da semana e o do mês, guarda os de cada período em data/resumos/ e carrega o histórico."""
+    """Gera o resumo da semana e o do mês, guarda os de cada período em data/resumos/ (texto e imagem) e carrega o histórico."""
     pasta.mkdir(parents=True, exist_ok=True)
+    B.resumos_pasta = pasta
     for snap in (resumo_semana(B), resumo_mes(B)):
         if snap:
             arq = pasta / f"{snap['tipo']}-{snap['chave']}.json"
             if arq.exists():   # mantém a data da primeira publicação
                 snap["gerado_em"] = json.loads(arq.read_text(encoding="utf-8")).get("gerado_em", snap["gerado_em"])
             arq.write_text(json.dumps(snap, ensure_ascii=False, indent=0), encoding="utf-8")
+            try:
+                card_resumo(B, snap, resumo_png(B, snap))
+            except Exception as e:  # noqa: BLE001 - sem a imagem, o resumo sai igual
+                print(f"AVISO: imagem do resumo {snap['tipo']}-{snap['chave']} não gerada ({type(e).__name__}: {e}).")
     B.resumos_pub = {"semana": [], "mes": []}
     for tipo in B.resumos_pub:
         B.resumos_pub[tipo] = sorted((json.loads(f.read_text(encoding="utf-8")) for f in pasta.glob(f"{tipo}-*.json")), key=lambda s: s["chave"], reverse=True)
@@ -3458,11 +3522,13 @@ def resumo_url(s: dict) -> str:
 
 def pg_resumo(B: Base, s: dict) -> str:
     cam = resumo_url(s)
+    img = BASE + cam + "card.png" if resumo_png(B, s).exists() else None
     ld = '<script type="application/ld+json">' + json.dumps({"@context": "https://schema.org", "@type": "Article", "headline": s["titulo"], "inLanguage": "pt-BR",
                                                             "datePublished": s["gerado_em"], "author": {"@type": "Organization", "name": "Economia em Números", "url": BASE + "/"},
-                                                            "mainEntityOfPage": BASE + cam}, ensure_ascii=False) + "</script>"
-    html_ = pagina(B, cam, f"{s['titulo']} | Economia em Números", s["descricao"], s["corpo"], "/resumo/",
-                   migalhas=[("/resumo/", "Resumos"), (None, s["rotulo"])])
+                                                            "mainEntityOfPage": BASE + cam, **({"image": img} if img else {})},
+                                                           ensure_ascii=False) + "</script>"
+    html_ = pagina(B, cam, f"{s['titulo']} | Economia em Números", s["descricao"], s["corpo"] if img else sem_imagem(s["corpo"]), "/resumo/",
+                   migalhas=[("/resumo/", "Resumos"), (None, s["rotulo"])], imagem=img)
     return html_.replace("</head>", ld + "\n</head>", 1)
 
 
@@ -3553,6 +3619,9 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     for tipo in ("semana", "mes"):
         for s in B.resumos_pub[tipo]:
             paginas.append((resumo_url(s), pg_resumo(B, s)))
+            if resumo_png(B, s).exists():   # a imagem vai ao lado da página: /resumo/<tipo>/<chave>/card.png
+                (saida / resumo_url(s).strip("/")).mkdir(parents=True, exist_ok=True)
+                shutil.copy(resumo_png(B, s), saida / resumo_url(s).strip("/") / "card.png")
     paginas.append(("/dados/", pg_dados(B)))  # por último: lista os CSV de todos os gráficos já montados
     for caminho, conteudo in paginas:
         escrever(saida, caminho, conteudo)
