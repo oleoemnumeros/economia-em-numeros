@@ -35,6 +35,28 @@ class TestSite(unittest.TestCase):
     def ler(self, rel):
         return (self.saida / rel).read_text(encoding="utf-8")
 
+    def test_imagem_do_resumo(self):
+        """Padrão da família: cada resumo com card.png (1200x630), prévia do link e botão "Baixar imagem"; sem imagem, sem o bloco."""
+        paginas = sorted((self.saida / "resumo").glob("*/*/index.html"))
+        self.assertTrue(paginas)
+        com = 0
+        for pg in paginas:
+            h = pg.read_text(encoding="utf-8")
+            png = pg.parent / "card.png"
+            if png.exists():
+                com += 1
+                cam = "/" + str(pg.parent.relative_to(self.saida)).replace("\\", "/") + "/"
+                self.assertIn(f'<meta property="og:image" content="https://economiaemnumeros.com.br{cam}card.png">', h)
+                self.assertIn("Baixar imagem", h)
+                try:
+                    from PIL import Image
+                    self.assertEqual(Image.open(png).size, (1200, 630))
+                except ImportError:
+                    pass
+            else:
+                self.assertNotIn("fam-img", h)
+        self.assertGreater(com, 0)
+
     def test_paginas_e_arquivos(self):
         for rel in ["index.html", "juros/index.html", "inflacao/index.html", "calculadora/index.html", "sobre/index.html",
                     "404.html", "sitemap.xml", "robots.txt", "CNAME", "favicon.svg", "assets/estilo.css", "assets/calc.js"]:
