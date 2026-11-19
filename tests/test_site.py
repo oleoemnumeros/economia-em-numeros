@@ -439,6 +439,8 @@ class TestCreditoEIndustriaVarejo(unittest.TestCase):
         hrefs = re.findall(r'<a href="([^"]+)"', topo)
         self.assertEqual([h for h in ordem if h in hrefs], [h for h in hrefs if h in ordem])
         self.assertEqual(hrefs[-2:], ["/calculadora/", "/sobre/"])
+        self.assertEqual(hrefs[:2], ["/", "/resumo/"])                 # padrão da família: Início e Resumos primeiro
+        self.assertIn(">Como funciona</a></nav>", topo + "</nav>")
         d = self.ler("dados/index.html")
         titulos = [t for t in ("Atividade", "Indústria e varejo", "Emprego", "Inflação", "Juros e Copom", "Crédito", "Câmbio", "Setor externo", "Contas públicas")
                    if f"<h2>{t}</h2>" in d]

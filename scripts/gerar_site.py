@@ -32,7 +32,9 @@ FAMILIA = [
 ]
 # Ordem de leitura do analista (menu, rodapé, início, /dados/ e fontes seguem a mesma lógica):
 # atividade → trabalho e renda → preços → juros → crédito → câmbio → setor externo → fiscal.
-NAV_FIM = [("/resumo/", "Resumos"), ("/calculadora/", "Calculadora"), ("/sobre/", "Sobre")]
+# Ordem padrão da Família em Números: Início, Resumos, temas do portal, lugares, ferramentas, Como funciona
+NAV_INICIO = [("/", "Início"), ("/resumo/", "Resumos")]
+NAV_FIM = [("/calculadora/", "Calculadora"), ("/sobre/", "Como funciona")]
 
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 MES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
@@ -449,7 +451,9 @@ class Base:
                 "grupos": grupos, "subs": subs}
 
     def nav(self) -> list:
-        itens = []
+        # temas na ordem de leitura do analista: atividade, emprego e renda, preços, juros, crédito, câmbio, contas do governo;
+        # depois os dados por município
+        itens = list(NAV_INICIO)
         if self.tem_atividade:
             itens.append(("/atividade/", "Atividade"))
         if self.tem_ibge:
@@ -1008,7 +1012,7 @@ def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, 
     gerado = data_br(dt.datetime.fromisoformat(B.d["gerado_em"]).date())
     v = B.d["gerado_em"][:10]
     robots = '<meta name="robots" content="noindex">\n' if noindex else ""
-    rodape = " · ".join(f'<a href="{h}">{"Como funciona" if h == "/sobre/" else t}</a>' for h, t in B.nav()) + ' · <a href="/dados/">Dados em CSV</a> · <a href="/sugestoes/">Sugestões e críticas</a> · <a href="/contato/">Contato</a> · <a href="/privacidade/">Privacidade</a>'
+    rodape = " · ".join(f'<a href="{h}">{t}</a>' for h, t in B.nav() if h != "/") + ' · <a href="/dados/">Dados em CSV</a> · <a href="/sugestoes/">Sugestões e críticas</a> · <a href="/contato/">Contato</a> · <a href="/privacidade/">Privacidade</a>'
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
