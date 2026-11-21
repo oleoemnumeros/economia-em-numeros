@@ -51,8 +51,14 @@ class TestSite(unittest.TestCase):
                 try:
                     from PIL import Image
                     self.assertEqual(Image.open(png).size, (1200, 630))
+                    self.assertEqual(Image.open(pg.parent / "card-instagram.png").size, (1080, 1350))   # Instagram
                 except ImportError:
                     pass
+                self.assertIn('id="post-ig"', h)
+                self.assertIn('data-compartilhar-ig="card-instagram.png"', h)
+                x = re.search(r'<textarea id="post-x"[^>]*>(.*?)</textarea>', h, re.S)
+                if x:
+                    self.assertNotIn("#", x.group(1))   # posts do X sem hashtags
             else:
                 self.assertNotIn("fam-img", h)
         self.assertGreater(com, 0)
