@@ -3189,7 +3189,7 @@ def resumo_semana(B: Base) -> dict | None:
              card(cab("O que o mercado espera") + tab +
                   f'<span class="src">Mediana das projeções, Boletim Focus de {quando}. Fonte: Banco Central do Brasil.</span>') +
              card(cab("E a economia hoje") + "<ul class=\"destaques\">" + "".join(f"<li>{x}</li>" for x in ctx) + "</ul>") +
-             resumo_compartilhar(post, montar_x(f"{BASE}/resumo/semana/{f['data']}/", f"Boletim Focus de {quando}: {manchete}.", [], "#focus #economia"),
+             resumo_compartilhar(post, montar_x(f"{BASE}/resumo/semana/{f['data']}/", f"Boletim Focus de {quando}: {manchete}.", [], ""),
                                  (f"economia-em-numeros-focus-{f['data']}.png", f"Boletim Focus de {quando}: projeções do mercado para Selic, IPCA, PIB e dólar")))
     return {"tipo": "semana", "chave": f["data"], "titulo": manchete, "rotulo": f"Boletim Focus de {quando}", "gerado_em": B.d["gerado_em"],
             "descricao": f"Boletim Focus de {quando}: {manchete}. O que o mercado espera para Selic, inflação, PIB e dólar, e o que mudou na semana.",
@@ -3235,7 +3235,7 @@ def montar_x(url: str, cabeca: str, extras: list[str], tags: str) -> str:
     """Post curto para o X: cabe em 280 caracteres (o link conta 23). Tira os extras, do último para o primeiro, e por fim as hashtags."""
     for n in range(len(extras), -1, -1):
         for com_tags in (True, False):
-            texto = " ".join([cabeca] + extras[:n]) + f"\n\n{url}" + (f"\n{tags}" if com_tags else "")
+            texto = " ".join([cabeca] + extras[:n]) + f"\n\n{url}" + (f"\n{tags}" if com_tags and tags else "")
             if len(texto.replace(url, "x" * PESO_LINK_X)) <= LIMITE_X:
                 return texto
     return f"{cabeca}\n\n{url}"
@@ -3429,7 +3429,7 @@ def resumo_mes(B: Base) -> dict | None:
         extra.append(f"Acumulado em 12 meses: o {'maior' if ext['tipo'] == 'maior' else 'menor'} em {ext['n']} meses.")
     if altas:
         extra.append(f"Maior pressão: {altas[0]['nome'].lower()} ({pct_sinal(altas[0]['v'], 1)}).")
-    post_x = montar_x(url, f"Inflação em {mes_nome(ref)}: IPCA de {pct(im)} no mês e {pct(i12)} em 12 meses.", extra, "#ipca #inflacao")
+    post_x = montar_x(url, f"Inflação em {mes_nome(ref)}: IPCA de {pct(im)} no mês e {pct(i12)} em 12 meses.", extra, "")  # X sem hashtags
     corpo = (card(f'<span class="eyebrow">Resumo do mês · {mes_nome(ref)}</span><h1>{esc(manchete)}</h1><p class="lede">{esc(abertura)}</p>') +
              f'<div class="tiles">{"".join(tiles)}</div>' + tabelas + destaque + ins +
              card(cab("E a economia hoje") + '<ul class="destaques">' + "".join(f"<li>{x}</li>" for x in contexto) + "</ul>") +
@@ -3622,6 +3622,9 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
             if resumo_png(B, s).exists():   # a imagem vai ao lado da página: /resumo/<tipo>/<chave>/card.png
                 (saida / resumo_url(s).strip("/")).mkdir(parents=True, exist_ok=True)
                 shutil.copy(resumo_png(B, s), saida / resumo_url(s).strip("/") / "card.png")
+                ig = resumo_png(B, s).with_name(resumo_png(B, s).stem + "-instagram.png")
+                if ig.exists():
+                    shutil.copy(ig, saida / resumo_url(s).strip("/") / "card-instagram.png")
     paginas.append(("/dados/", pg_dados(B)))  # por último: lista os CSV de todos os gráficos já montados
     for caminho, conteudo in paginas:
         escrever(saida, caminho, conteudo)
