@@ -22,7 +22,7 @@ import json
 import re
 import sys
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from pathlib import Path
 
 
@@ -716,12 +716,68 @@ def bf_meses_candidatos(hoje=None):
     return out[-BF_MAX_MESES:]
 
 
+BF_LEITOR = "https://r.jina.ai/"   # leitor público: busca a página por outro caminho quando o gov.br recusa o GitHub
+BF_LINHAS_LEITOR = 2000             # páginas menores pelo leitor, que corta respostas muito grandes
+_BF_BLOQUEIO = ("ConnectionError", "ConnectTimeout", "ReadTimeout", "SSLError", "ProtocolError", "Connection reset")
+_bf_via_leitor = False              # depois do primeiro bloqueio, a execução inteira usa o caminho alternativo
+
+
+class _RespostaLeitor:
+    """Imita a resposta do requests com o JSON que veio pelo caminho alternativo."""
+
+    def __init__(self, texto, url, status=200, tipo="text/plain"):
+        self.text, self.url, self.status_code, self.headers = texto, url, status, {"content-type": tipo}
+        self.content = texto.encode("utf-8")
+        ini, fim = texto.find("{"), texto.rfind("}")
+        self._json = texto[ini:fim + 1] if 0 <= ini < fim else ""
+
+    def json(self):
+        return json.loads(self._json)
+
+
+def bf_alternativo(url):
+    """Busca a consulta do MI Social sem conexão direta: pela ponte do projeto (RELAY_URL + RELAY_TOKEN), quando existe,
+    ou pelo leitor público r.jina.ai, que devolve o JSON como texto."""
+    import os
+    import requests
+    relay, token = os.environ.get("RELAY_URL", "").strip(), os.environ.get("RELAY_TOKEN", "").strip()
+    ultimo = None
+    for i in range(3):
+        try:
+            if relay and token:
+                r = requests.get(f"{relay.rstrip('/')}/?url={quote(url, safe='')}", headers={"X-Token": token}, timeout=180)
+            else:
+                r = requests.get(BF_LEITOR + url, headers={"X-Return-Format": "text", "Accept": "text/plain"}, timeout=180)
+            if r.status_code == 200:
+                return _RespostaLeitor(r.text, url, tipo=r.headers.get("content-type", "text/plain"))
+            ultimo = f"HTTP {r.status_code}: {r.text[:150]!r}"
+        except requests.RequestException as e:
+            ultimo = repr(e)
+        time.sleep(10 * (i + 1))
+    raise RuntimeError(f"caminho alternativo para {url[:120]} falhou: {ultimo}")
+
+
+def bf_get(params):
+    """Consulta o MI Social. Desde 21/11/2026 o gov.br recusa a conexão vinda do GitHub; nesse caso, refaz a consulta pelo caminho alternativo."""
+    global _bf_via_leitor
+    if not _bf_via_leitor:
+        try:
+            return get(BF_URL, params, tentativas=2, timeout=120)
+        except RuntimeError as e:
+            if not any(s in str(e) for s in _BF_BLOQUEIO):
+                raise
+            _bf_via_leitor = True
+            debug["avisos"].append(f"Bolsa Família: o MDS recusou a conexão direta ({str(e)[:160]}); usando o caminho alternativo")
+    params = {**params, "rows": str(min(int(params["rows"]), BF_LINHAS_LEITOR))}
+    return bf_alternativo(BF_URL + "?" + urlencode(params, doseq=True))
+
+
 def bf_baixa_mes(ym):
     """Todas as linhas município x mês do Bolsa Família no mês `ym` (AAAA-MM): {ibge de 6 dígitos: [famílias, pessoas, R$ repassados]}."""
     out, inicio, total = {}, 0, None
     while True:
-        r = get(BF_URL, {"q": "*", "fq": [f"anomes_s:{ym.replace('-', '')}", "tipo_s:mes_mu"], "wt": "json", "omitHeader": "true",
-                         "fl": BF_CAMPOS, "rows": str(BF_LINHAS), "start": str(inicio), "sort": "codigo_ibge asc"}, tentativas=3, timeout=120)
+        r = bf_get({"q": "*", "fq": [f"anomes_s:{ym.replace('-', '')}", "tipo_s:mes_mu"], "wt": "json", "omitHeader": "true",
+                    "fl": BF_CAMPOS, "rows": str(BF_LINHAS), "start": str(inicio), "sort": "codigo_ibge asc"})
         try:
             corpo = r.json()
         except ValueError:
