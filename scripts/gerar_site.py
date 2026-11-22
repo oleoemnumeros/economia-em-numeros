@@ -3029,7 +3029,7 @@ def pg_mun(B: Base, m: dict) -> str:
     corpo = (f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B, "Busque outra cidade")}'
              f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{mun_links_irmaos(B, m)}'
              + card(mun_texto(B) + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
-    desc = (f"{nome}: {nf(m['pop'], 0)} habitantes, PIB de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
+    desc = (f"A população de {nome} é de {nf(m['pop'], 0)} habitantes ({x['pop_ano']}) e o PIB é de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
             + (f", receita da prefeitura de {brl_abrev(c['rec']['total'])} e gastos por área" if c else "") + ". Dados oficiais do IBGE e do Tesouro Nacional.")
     cidade = []
     if m["links"].get("voo"):
@@ -3038,7 +3038,8 @@ def pg_mun(B: Base, m: dict) -> str:
         cidade.append(("comex", m["links"]["comex"], f"O que {m['nome']} exporta e importa", "Produtos e países do comércio exterior da cidade"))
     if m["links"].get("oleo"):
         cidade.append(("oleo", m["links"]["oleo"], f"Royalties de petróleo em {m['nome']}", "Quanto a prefeitura recebe de royalties e participação especial"))
-    return pagina(B, mun_url(m), f"{nome}: PIB de {brl_abrev(m['pib'])}, população e contas da prefeitura", desc, corpo, "/municipios/",
+    # título no formato da busca ("população de Itumbiara", "PIB de Porto Alegre")
+    return pagina(B, mun_url(m), f"População e PIB de {nome}: {nf(m['pop'], 0)} habitantes e PIB de {brl_abrev(m['pib'])}", desc, corpo, "/municipios/",
                   [("/municipios/", "Municípios"), (f"/municipios/{uf['slug']}/", uf["nome"]), (None, m["nome"])], continuar=cidade)
 
 
