@@ -30,6 +30,10 @@ jobs:
   atualizar:
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    # Ponte opcional para o gov.br (o mesmo Cloudflare Worker do Óleo em Números). Sem os segredos, o robô usa o leitor público.
+    env:
+      RELAY_URL: ${{ secrets.RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.RELAY_TOKEN }}
     # O site é publicado direto pelo Actions; as páginas (docs/) não ficam no repositório.
     environment:
       name: github-pages

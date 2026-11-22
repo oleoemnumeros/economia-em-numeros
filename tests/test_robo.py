@@ -585,6 +585,40 @@ class TestBolsaFamilia(unittest.TestCase):
         self.assertEqual(out["ultimo"], "2026-10")
         self.assertTrue(any("sem dados" in a and "2026-11" in a for a in dbg["avisos"]))
 
+    def test_gov_br_bloqueado_usa_o_caminho_alternativo(self):
+        """21/11/2026: o MDS passou a recusar a conexão do GitHub. A consulta vai pelo leitor, que devolve o JSON como texto."""
+        pub = ["2026-09", "2026-10"]
+        direto = self._get(pub)
+        urls = []
+
+        def bloqueado(url, params=None, **kw):
+            if "/t/6579/" in url:
+                return direto(url, params, **kw)
+            raise RuntimeError(f"{url} falhou: ConnectionError(ProtocolError('Connection aborted.', ConnectionResetError(104)))")
+
+        def leitor(url):
+            from urllib.parse import parse_qs, urlparse
+            urls.append(url)
+            q = parse_qs(urlparse(url).query)
+            corpo = direto(r.BF_URL, {"fq": q["fq"], "start": q["start"][0], "rows": q["rows"][0]}).json()
+            return r._RespostaLeitor("Title: \n\nURL Source: " + url + "\n\n" + json.dumps(corpo), url)
+
+        with mock.patch.object(r, "bf_alternativo", leitor), mock.patch.object(r, "_bf_via_leitor", False):
+            out, dbg = self._roda(bloqueado, hoje=dt.date(2026, 10, 20), inicio="2026-09")
+        d = json.loads(self.arq.read_text(encoding="utf-8"))
+        self.assertEqual(len(d["meses"]["2026-10"]), 5670)
+        self.assertEqual(out["ultimo"], "2026-10")
+        self.assertTrue(urls and all("rows=2000" in u and "fq=anomes_s%3A" in u and "fq=tipo_s%3Ames_mu" in u for u in urls))
+        self.assertTrue(any("caminho alternativo" in a for a in dbg["avisos"]))
+
+    def test_erro_que_nao_e_bloqueio_nao_usa_o_caminho_alternativo(self):
+        def falha(url, params=None, **kw):
+            raise RuntimeError("HTTP 500: erro interno")
+        with mock.patch.object(r, "get", falha), mock.patch.object(r, "_bf_via_leitor", False), \
+                mock.patch.object(r, "bf_alternativo", lambda u: self.fail("não devia usar o leitor")):
+            with self.assertRaises(RuntimeError):
+                r.bf_get({"rows": "10"})
+
     def test_pagina_quando_a_api_devolve_menos_que_o_total(self):
         pub = ["2026-09", "2026-10"]
         self._roda(self._get(pub, linhas_por_pagina=1000), hoje=dt.date(2026, 10, 20), inicio="2026-09")
