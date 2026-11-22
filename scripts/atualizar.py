@@ -757,6 +757,21 @@ def bf_alternativo(url):
     raise RuntimeError(f"caminho alternativo para {url[:120]} falhou: {ultimo}")
 
 
+def bf_confere_aviso(params):
+    """O MDS tira o MI Social do ar redirecionando para gov.br/mds/pt-br/avisos, e o www.gov.br recusa o GitHub: o redirecionamento
+    vira erro de conexão. Sem seguir o redirecionamento, dá para ver o aviso e tratar como manutenção (aí entra o Portal da Transparência)."""
+    import requests
+    try:
+        r = requests.get(BF_URL, params=params, headers=UA, timeout=30, allow_redirects=False)
+    except requests.RequestException:
+        return
+    destino = r.headers.get("location", "")
+    if r.status_code in (301, 302, 303, 307, 308) and "/avisos" in destino:
+        erro = RespostaNaoJson(f"MI Social fora do ar: redireciona para {destino[:150]}")
+        erro.manutencao = True
+        raise erro
+
+
 def bf_get(params):
     """Consulta o MI Social. Desde 21/11/2026 o gov.br recusa a conexão vinda do GitHub; nesse caso, refaz a consulta pelo caminho alternativo."""
     global _bf_via_leitor
@@ -766,6 +781,7 @@ def bf_get(params):
         except RuntimeError as e:
             if not any(s in str(e) for s in _BF_BLOQUEIO):
                 raise
+            bf_confere_aviso(params)
             _bf_via_leitor = True
             debug["avisos"].append(f"Bolsa Família: o MDS recusou a conexão direta ({str(e)[:160]}); usando o caminho alternativo")
     params = {**params, "rows": str(min(int(params["rows"]), BF_LINHAS_LEITOR))}
@@ -783,7 +799,7 @@ def bf_baixa_mes(ym):
         except ValueError:
             erro = RespostaNaoJson(f"MI Social não devolveu JSON (HTTP {r.status_code}, {r.headers.get('content-type')}, {len(r.content)} bytes, "
                                    f"endereço final {r.url[:300]}): {r.text[:300]!r}")
-            erro.manutencao = "gov.br/mds/pt-br/avisos" in str(r.url)
+            erro.manutencao = "gov.br/mds/pt-br/avisos" in str(r.url) or "COMUNICADO DE SERVIÇO" in (r.text or "")
             raise erro from None
         resp = (corpo or {}).get("response") or {}
         docs = resp.get("docs") or []

@@ -603,13 +603,37 @@ class TestBolsaFamilia(unittest.TestCase):
             corpo = direto(r.BF_URL, {"fq": q["fq"], "start": q["start"][0], "rows": q["rows"][0]}).json()
             return r._RespostaLeitor("Title: \n\nURL Source: " + url + "\n\n" + json.dumps(corpo), url)
 
-        with mock.patch.object(r, "bf_alternativo", leitor), mock.patch.object(r, "_bf_via_leitor", False):
+        with mock.patch.object(r, "bf_alternativo", leitor), mock.patch.object(r, "_bf_via_leitor", False), \
+                mock.patch.object(r, "bf_confere_aviso", lambda p: None):
             out, dbg = self._roda(bloqueado, hoje=dt.date(2026, 10, 20), inicio="2026-09")
         d = json.loads(self.arq.read_text(encoding="utf-8"))
         self.assertEqual(len(d["meses"]["2026-10"]), 5670)
         self.assertEqual(out["ultimo"], "2026-10")
         self.assertTrue(urls and all("rows=2000" in u and "fq=anomes_s%3A" in u and "fq=tipo_s%3Ames_mu" in u for u in urls))
         self.assertTrue(any("caminho alternativo" in a for a in dbg["avisos"]))
+
+    def test_aviso_do_mds_atras_do_bloqueio_vira_manutencao(self):
+        """22/11/2026: o MI Social redireciona para gov.br/mds/pt-br/avisos, e o www.gov.br recusa o GitHub. Sem seguir o
+        redirecionamento, o robô vê o aviso e trata como manutenção (vai para o Portal), em vez de cair em "duas falhas seguidas"."""
+        class Redireciona:
+            status_code, headers = 302, {"location": "https://www.gov.br/mds/pt-br/avisos"}
+
+        def bloqueado(url, params=None, **kw):
+            raise RuntimeError("x falhou: ConnectionError(ProtocolError('Connection aborted.'))")
+        import requests
+        with mock.patch.object(r, "get", bloqueado), mock.patch.object(r, "_bf_via_leitor", False), \
+                mock.patch.object(requests, "get", lambda *a, **k: Redireciona()), \
+                mock.patch.object(r, "bf_alternativo", lambda u: self.fail("não devia usar o leitor")):
+            with self.assertRaises(r.RespostaNaoJson) as ctx:
+                r.bf_baixa_mes("2026-10")
+        self.assertTrue(ctx.exception.manutencao)
+
+    def test_pagina_de_aviso_pelo_leitor_tambem_e_manutencao(self):
+        aviso = r._RespostaLeitor("Página Inicial\n Avisos\n\nCOMUNICADO DE SERVIÇO\n\nServiço indisponível", r.BF_URL)
+        with mock.patch.object(r, "bf_get", lambda p: aviso):
+            with self.assertRaises(r.RespostaNaoJson) as ctx:
+                r.bf_baixa_mes("2026-10")
+        self.assertTrue(ctx.exception.manutencao)
 
     def test_erro_que_nao_e_bloqueio_nao_usa_o_caminho_alternativo(self):
         def falha(url, params=None, **kw):
