@@ -291,3 +291,8 @@ details.mais+details.mais{border-top:1px solid var(--line)}
 .jt th{white-space:normal;vertical-align:bottom;line-height:1.25}
 .jt td:first-child{min-width:96px}
 .jt th,.jt td{padding-left:6px;padding-right:6px}
+.jt-mini td,.jt-mini th{font-size:.82rem;padding-left:3px;padding-right:3px}
+.jt-mini td:first-child{min-width:70px}
+.jt{display:contents}
+.mm{display:block;white-space:normal;hyphens:manual;-webkit-hyphens:manual}
+.mm+.mm{margin-top:2px}
