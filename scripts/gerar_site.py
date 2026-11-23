@@ -2967,6 +2967,29 @@ def mun_comparacao(B: Base, m: dict) -> str:
     return tabela(["", esc(m["nome"]), esc(nome_uf), "Brasil"], linhas, ["l", "r", "r", "r"])
 
 
+def mun_mesmo_porte(B: Base, m: dict, n: int = 8) -> str:
+    """Cidades do mesmo estado com população mais próxima: liga as fichas entre si (o Google acha e valoriza as páginas)."""
+    idx = getattr(B, "_porte_uf", None)
+    if idx is None:
+        idx = {}
+        for cod in B.mun["fichas"]:
+            mm = B.mun["mun"][cod]
+            idx.setdefault(mm["uf2"], []).append(mm)
+        for lst in idx.values():
+            lst.sort(key=lambda mm: -mm["pop"])
+        B._porte_uf = idx
+    lst = idx.get(m["uf2"], [])
+    i = next((k for k, mm in enumerate(lst) if mm["cod"] == m["cod"]), None)
+    if i is None or len(lst) < 2:
+        return ""
+    ini = max(0, min(i - n // 2, len(lst) - n - 1))
+    viz = [mm for mm in lst[ini:ini + n + 1] if mm["cod"] != m["cod"]][:n]
+    linhas = [[f'<a href="{mun_url(mm)}">{esc(mm["nome"])}</a>', nf(mm["pop"], 0), brl_abrev(mm["pib"]), nf(mm["pc"], 0)] for mm in viz]
+    uf = B.mun["uf"][m["uf2"]]
+    return card(cab(f'Cidades {uf_de(m["uf2"], esc(uf["nome"]))} do mesmo porte', f'<span class="src">PIB de {esc(B.mun["pib_ano"])}</span>')
+                + tabela(["Cidade", "Habitantes", "PIB", "PIB per capita (R$)"], linhas, ["l", "r", "r", "r"]))
+
+
 def mun_links_irmaos(B: Base, m: dict) -> str:
     itens = []
     if m["links"].get("comex"):
@@ -2998,7 +3021,7 @@ def pg_mun(B: Base, m: dict) -> str:
         fun0 = next(iter(c["des"]["funcoes"]))
         lede += (f' Em {c["ano"]}, a prefeitura arrecadou {brl_abrev(t)}, dos quais {nf(bl["transf"] / t * 100, 0)}% vieram de transferências de outros governos, '
                  f'e a área em que mais gastou foi {esc(fun0)}.')
-    hero = card(f'<span class="eyebrow">Município · {esc(uf["nome"])}</span><h1>{esc(m["nome"])} ({m["sigla"]}): PIB, população e contas da prefeitura</h1><p class="lede">{lede}</p>')
+    hero = card(f'<span class="eyebrow">Município · {esc(uf["nome"])}</span><h1>População e PIB de {esc(m["nome"])} ({m["sigla"]})</h1><p class="lede">{lede}</p>')
     pcv = (m["pc"] / x["br"]["pc"] - 1) * 100
     tiles = [tile("População", nf(m["pop"], 0), "habitantes", f'<span class="chg flat">● {m["pos_pop"]}º {uf_de(m["uf2"], esc(uf["nome"]))}</span>', "a"),
              tile(f'PIB de {x["pib_ano"]}', *brl_partes(m["pib"]), f'<span class="chg flat">● {m["pos_pib"]}º {uf_de(m["uf2"], esc(uf["nome"]))} · {m["pos_pib_br"]}º do Brasil</span>', "b"),
@@ -3027,7 +3050,7 @@ def pg_mun(B: Base, m: dict) -> str:
                      'Assim que houver dado, a ficha mostra de onde vem e para onde vai o dinheiro.</p>')
         dest = aviso
     corpo = (f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B, "Busque outra cidade")}'
-             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{mun_links_irmaos(B, m)}'
+             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{mun_mesmo_porte(B, m)}{mun_links_irmaos(B, m)}'
              + card(mun_texto(B) + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
     desc = (f"A população de {nome} é de {nf(m['pop'], 0)} habitantes ({x['pop_ano']}) e o PIB é de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
             + (f", receita da prefeitura de {brl_abrev(c['rec']['total'])} e gastos por área" if c else "") + ". Dados oficiais do IBGE e do Tesouro Nacional.")

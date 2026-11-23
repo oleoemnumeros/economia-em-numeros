@@ -1445,7 +1445,9 @@ class TestMunicipios(unittest.TestCase):
 
     def test_ficha_com_contas(self):
         h = self.ler("municipios/bahia/salvador/index.html")
-        self.assertIn("<h1>Salvador (BA): PIB, população e contas da prefeitura</h1>", h)
+        self.assertIn("<h1>População e PIB de Salvador (BA)</h1>", h)
+        self.assertIn("do mesmo porte</h2>", h)  # liga as fichas da mesma UF entre si
+        self.assertIn('href="/municipios/bahia/feira-de-santana/"', h)
         self.assertIn("2.417.000 habitantes", h)
         for sec in ("De onde vem o PIB de Salvador", "De onde vem o dinheiro da prefeitura de Salvador", "Para onde vai o dinheiro da prefeitura de Salvador", "Principais tributos e repasses"):
             self.assertIn(sec, h)
