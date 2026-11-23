@@ -1756,6 +1756,71 @@ def municipios():
     return {"fichas": len(sel), "com_contas": com_contas}
 
 
+JUROS_ARQ = RAIZ / "data" / "juros.json"
+JUROS_D = "https://olinda.bcb.gov.br/olinda/servico/taxaJuros/versao/v2/odata/TaxasJurosDiariaPorInicioPeriodo"
+JUROS_M = "https://olinda.bcb.gov.br/olinda/servico/taxaJuros/versao/v2/odata/TaxasJurosMensalPorMes"
+
+
+def _juros_ultimo(url: str, campo: str, ate: str = "") -> str:
+    """Valor mais recente de `campo` (InicioPeriodo ou anoMes), opcionalmente até a data `ate`."""
+    params = {"$top": "1", "$format": "json", "$orderby": f"{campo} desc", "$select": campo}
+    if ate:
+        params["$filter"] = f"{campo} le '{ate}'"
+    v = get(consulta(url, params), tentativas=3).json().get("value", [])
+    if not v:
+        raise RuntimeError(f"juros: {campo} vazio em {url.rsplit('/', 1)[-1]}")
+    return str(v[0][campo])
+
+
+def _juros_linhas(url: str, campo: str, valor: str) -> list:
+    """Todas as linhas de uma publicação: [segmento, modalidade, posição, instituição, cnpj8, % ao mês, % ao ano]."""
+    v = get(consulta(url, {"$top": "20000", "$format": "json", "$filter": f"{campo} eq '{valor}'"}), tentativas=3, timeout=120).json().get("value", [])
+    out = []
+    for x in v:
+        am, aa = x.get("TaxaJurosAoMes"), x.get("TaxaJurosAoAno")
+        if am is None or not x.get("InstituicaoFinanceira"):
+            continue
+        out.append([x.get("Segmento") or "", x.get("Modalidade") or "", x.get("Posicao"), x["InstituicaoFinanceira"].strip(),
+                    str(x.get("cnpj8") or ""), round(float(am), 4), round(float(aa or 0), 4)])
+    return out
+
+
+def juros():
+    """Taxa de juros de cada banco em cada modalidade de crédito (Banco Central): a publicação mais recente
+    (média dos últimos 5 dias úteis) e a de cerca de 4 semanas antes, para mostrar se subiu ou caiu.
+    Modalidades que só têm média mensal vêm da série mensal. Fica em data/juros.json."""
+    ini = _juros_ultimo(JUROS_D, "InicioPeriodo")
+    atual = _juros_linhas(JUROS_D, "InicioPeriodo", ini)
+    if len(atual) < 50:
+        raise RuntimeError(f"juros: só {len(atual)} linhas em {ini}")
+    try:
+        v = get(consulta(JUROS_D, {"$top": "1", "$format": "json", "$filter": f"InicioPeriodo eq '{ini}'", "$select": "FimPeriodo"}),
+                tentativas=2).json().get("value", [])
+        fim = str(v[0].get("FimPeriodo") or ini) if v else ini
+    except Exception:  # noqa: BLE001 - o fim do período é só rótulo
+        fim = ini
+    saida = {"inicio": ini, "fim": fim, "atual": atual}
+    try:
+        d0 = (dt.date.fromisoformat(ini[:10]) - dt.timedelta(days=28)).isoformat()
+        ini_ant = _juros_ultimo(JUROS_D, "InicioPeriodo", d0)
+        saida["inicio_anterior"], saida["anterior"] = ini_ant, _juros_linhas(JUROS_D, "InicioPeriodo", ini_ant)
+    except Exception as e:  # noqa: BLE001
+        debug["avisos"].append(f"juros: sem a publicação de 4 semanas antes ({str(e)[:150]})")
+    try:
+        mes = _juros_ultimo(JUROS_M, "anoMes")
+        diarias = {m for _, m, *_ in atual}
+        mensal = [x for x in _juros_linhas(JUROS_M, "anoMes", mes) if x[1] not in diarias]
+        saida["mes"], saida["mensal"] = mes, mensal
+    except Exception as e:  # noqa: BLE001
+        debug["avisos"].append(f"juros: série mensal falhou ({str(e)[:150]})")
+    mods = sorted({(s, m) for s, m, *_ in atual})
+    debug["juros"] = {"inicio": ini, "linhas": len(atual), "anterior": len(saida.get("anterior", [])), "mensal": len(saida.get("mensal", [])),
+                      "modalidades": [f"{s} | {m}" for s, m in mods], "mensais": sorted({m for _, m, *_ in saida.get("mensal", [])}),
+                      "exemplo": atual[:3]}
+    JUROS_ARQ.write_text(json.dumps(saida, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    return {"inicio": ini, "linhas": len(atual)}
+
+
 def main():
     antigo = json.loads(DADOS.read_text(encoding="utf-8")) if DADOS.exists() else {}
     novo = dict(antigo)
@@ -1790,6 +1855,14 @@ def main():
         debug["erros"].append(f"bolsa_familia: {e}")
         print(f"FALHA em bolsa_familia ({time.time() - t1:.0f}s): {e}", file=sys.stderr, flush=True)
     debug.setdefault("tempos", {})["bolsa_familia"] = round(time.time() - t1, 1)
+    t1 = time.time()
+    try:  # Juros por banco também fica em arquivo próprio (data/juros.json)
+        juros()
+        print(f"ok: juros ({time.time() - t1:.0f}s)", flush=True)
+    except Exception as e:  # noqa: BLE001
+        debug["erros"].append(f"juros: {e}")
+        print(f"FALHA em juros ({time.time() - t1:.0f}s): {e}", file=sys.stderr, flush=True)
+    debug.setdefault("tempos", {})["juros"] = round(time.time() - t1, 1)
     t1 = time.time()
     try:  # Municípios (PIB, população, contas das prefeituras) também fica em arquivo próprio
         municipios()

@@ -1334,3 +1334,55 @@ class TestGetTentaDeNovo(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestJuros(unittest.TestCase):
+    """Juros por banco (Banco Central, API taxaJuros v2): última publicação, a de 4 semanas antes e a série mensal."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.arq = Path(self.tmp.name) / "juros.json"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _get(self):
+        def linha(ini, mod, pos, banco, am, seg="PESSOA FÍSICA"):
+            return {"InicioPeriodo": ini, "FimPeriodo": "2026-11-20", "Segmento": seg, "Modalidade": mod, "Posicao": pos,
+                    "InstituicaoFinanceira": banco, "cnpj8": "00000000", "TaxaJurosAoMes": am, "TaxaJurosAoAno": round(((1 + am / 100) ** 12 - 1) * 100, 2)}
+        base = [linha("2026-11-14", "Crédito pessoal não consignado - Prefixado", i + 1, f"BANCO {i}", 2 + i / 10) for i in range(40)]
+        base += [linha("2026-11-14", "Cheque especial - Prefixado", i + 1, f"BANCO {i}", 7 + i / 10) for i in range(20)]
+        antes = [dict(x, InicioPeriodo="2026-10-16", TaxaJurosAoMes=x["TaxaJurosAoMes"] + 0.1) for x in base]
+
+        def fake(url, params=None, **kw):
+            q = url
+            if "TaxasJurosMensalPorMes" in q:
+                if "%24select=anoMes" in q or "$select=anoMes" in q:
+                    return FakeResp({"value": [{"anoMes": "2026-10"}]})
+                return FakeResp({"value": [{"Mes": "Out-2026", "anoMes": "2026-10", "Modalidade": "Cartão de crédito - rotativo total - Prefixado",
+                                            "Posicao": 1, "InstituicaoFinanceira": "BANCO 1", "cnpj8": "1", "TaxaJurosAoMes": 14.5, "TaxaJurosAoAno": 409.0},
+                                           {"Mes": "Out-2026", "anoMes": "2026-10", "Modalidade": "Cheque especial - Prefixado",
+                                            "Posicao": 1, "InstituicaoFinanceira": "BANCO 1", "cnpj8": "1", "TaxaJurosAoMes": 7.0, "TaxaJurosAoAno": 125.0}]})
+            if "select=FimPeriodo" in q:
+                return FakeResp({"value": [{"FimPeriodo": "2026-11-20"}]})
+            if "select=InicioPeriodo" in q:
+                ate = "le%20'2026-10" in q
+                return FakeResp({"value": [{"InicioPeriodo": "2026-10-16" if ate else "2026-11-14"}]})
+            if "2026-10-16" in q:
+                return FakeResp({"value": antes})
+            return FakeResp({"value": base})
+        return fake
+
+    def test_baixa_atual_anterior_e_mensal_sem_repetir_modalidade(self):
+        dbg = {"avisos": [], "erros": []}
+        with mock.patch.object(r, "get", self._get()), mock.patch.object(r, "JUROS_ARQ", self.arq), mock.patch.object(r, "debug", dbg):
+            out = r.juros()
+        d = json.loads(self.arq.read_text(encoding="utf-8"))
+        self.assertEqual(out["inicio"], "2026-11-14")
+        self.assertEqual((d["fim"], d["inicio_anterior"], d["mes"]), ("2026-11-20", "2026-10-16", "2026-10"))
+        self.assertEqual(len(d["atual"]), 60)
+        self.assertEqual(len(d["anterior"]), 60)
+        self.assertEqual(d["atual"][0][:4], ["PESSOA FÍSICA", "Crédito pessoal não consignado - Prefixado", 1, "BANCO 0"])
+        # cheque especial já está na série diária: da mensal só entra o rotativo do cartão
+        self.assertEqual([x[1] for x in d["mensal"]], ["Cartão de crédito - rotativo total - Prefixado"])
+        self.assertEqual(dbg["juros"]["linhas"], 60)
