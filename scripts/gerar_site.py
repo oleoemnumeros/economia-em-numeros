@@ -467,6 +467,8 @@ class Base:
         if self.tem_bf:
             itens.append(("/bolsa-familia/", "Bolsa Família"))
         itens += [("/inflacao/", "Inflação"), ("/juros/", "Juros e Copom")]
+        if getattr(self, "juros", None):
+            itens.append(("/juros-dos-bancos/", "Juros dos bancos"))
         if self.tem_credito:
             itens.append(("/credito/", "Crédito"))
         if self.tem_cambio:
@@ -1243,7 +1245,7 @@ def pg_juros(B: Base) -> str:
                  "Essa meta serve de referência para os juros de financiamentos e de aplicações de renda fixa: quando ela sobe, o crédito tende a ficar mais caro e a inflação perde força; quando cai, ocorre o contrário.</p>"
                  "<p>Em cada reunião, o comitê pode elevar, reduzir ou manter a meta. O comunicado com a decisão sai no fim do segundo dia, e a ata, com a análise do comitê, "
                  "é publicada na terça-feira seguinte. Os números desta página vêm do Banco Central do Brasil.</p>")
-    corpo = f'{hero}{graf}<div class="cols">{cal}{decs}</div>{cards_atas(B)}{focus}{texto}'
+    corpo = f'{hero}{graf}{juros_chamada(B)}<div class="cols">{cal}{decs}</div>{cards_atas(B)}{focus}{texto}'
     return pagina(B, "/juros/", "Selic e Copom: meta atual, calendário e decisões das reuniões",
                   f"Meta da Selic em {pct(B.selic, 2)} ao ano. Histórico de decisões do Copom, calendário das próximas reuniões e expectativas do Boletim Focus.",
                   corpo, "/juros/", [(None, "Juros e Copom")])
@@ -1585,7 +1587,7 @@ def pg_credito(B: Base) -> str:
                  '<p>O Banco Central divulga as estatísticas de crédito todo mês. Para acompanhar a Selic, veja <a href="/juros/">Juros e Copom</a>. '
                  "Este portal mostra dados e não é recomendação de crédito nem de investimento.</p>")
     foc = blocos_focus(B, {k: FOCUS_PRINCIPAL[k] for k in ("Selic", "IPCA")}, "O que o mercado espera para a Selic e a inflação (Boletim Focus)")
-    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{colunas([g1, g2, g3, g4])}{colunas([tab, foc])}{texto}'
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{juros_chamada(B)}{colunas([g1, g2, g3, g4])}{colunas([tab, foc])}{texto}'
     return pagina(B, "/credito/", f"Crédito e inadimplência das famílias: juros de {pct(jl['v'], 1)} ao ano no crédito livre",
                   f"Juros do crédito livre de {pct(jl['v'], 1)} ao ano e inadimplência de {pct(ip['v'], 1)} entre pessoas físicas em {mes_nome(jl['mes'])}. "
                   "Endividamento e comprometimento da renda das famílias, com dados do Banco Central.",
@@ -3583,8 +3585,283 @@ def resumos_home(B: Base) -> str:
 LLMS_TXT = '# Economia em Números\n\n> Indicadores da economia brasileira (juros, inflação, emprego, atividade, câmbio, contas públicas, crédito) e dados por município, como Bolsa Família e PIB, em páginas simples e atualizadas a partir de fontes oficiais.\n\nCada indicador tem página própria com valor mais recente, variação, série histórica e link para a fonte oficial. As páginas de município juntam população, PIB, contas da prefeitura, emprego formal e Bolsa Família.\n\n## Principais páginas\n- [Resumo](__BASE__/resumo/): os principais números da economia hoje\n- [Juros e Selic](__BASE__/juros/): meta da Selic, decisões e atas do Copom, expectativas do Boletim Focus\n- [Inflação](__BASE__/inflacao/): IPCA do Brasil, por região e por grupo e item\n- [Emprego](__BASE__/emprego/): desocupação (PNAD) e vagas formais (Novo Caged)\n- [Atividade](__BASE__/atividade/): PIB e IBC-Br\n- [Indústria e varejo](__BASE__/industria-e-varejo/): produção industrial e vendas no varejo\n- [Câmbio](__BASE__/cambio/): dólar\n- [Crédito](__BASE__/credito/): crédito e inadimplência das famílias\n- [Contas públicas](__BASE__/contas-publicas/)\n- [Setor externo](__BASE__/setor-externo/)\n- [Bolsa Família por município](__BASE__/bolsa-familia/): famílias e valor pago em cada município\n- [Municípios](__BASE__/municipios/): PIB, população e contas das prefeituras\n- [Calculadora](__BASE__/calculadora/): correção de valores por indicadores\n- [Dados abertos](__BASE__/dados/): tabelas para baixar\n- [Como funciona](__BASE__/sobre/): fonte de cada série\n\n## Fontes\n- IBGE (SIDRA), Banco Central (SGS, Focus, Copom), Ministério do Trabalho e Emprego (Novo Caged), MDS e CGU (Bolsa Família) e Tesouro Nacional (Siconfi).\n- A lista completa de séries e tabelas está em __BASE__/sobre/.\n\n## Como citar\n- Cite o nome do portal e o link da página usada. Os dados são públicos e os links levam à fonte oficial.\n- Cada página mostra o período dos dados. Informe o período ao usar um número.\n- O portal é independente e não tem ligação com governo, empresas ou instituições financeiras.\n\n## Família em Números\nPortais independentes de dados públicos do Brasil: Óleo em Números (https://oleoemnumeros.com.br), Comex em Números (https://comexemnumeros.com.br), Voo em Números (https://vooemnumeros.com.br) e Economia em Números (https://economiaemnumeros.com.br).\n\n## Contato\n- Erros, sugestões e pedidos de dados: __BASE__/contato/\n'
 
 
+# ---------------------------------------------------------------- Juros dos bancos (Banco Central, taxaJuros v2)
+
+JUROS_NOMES_BANCO = {
+    "BCO DO BRASIL S.A.": "Banco do Brasil", "CAIXA ECONOMICA FEDERAL": "Caixa", "BCO BRADESCO S.A.": "Bradesco", "ITAÚ UNIBANCO S.A.": "Itaú",
+    "BCO SANTANDER (BRASIL) S.A.": "Santander", "NU FINANCEIRA S.A. CFI": "Nubank", "BANCO INTER": "Inter", "BCO C6 S.A.": "C6 Bank",
+    "BCO C6 CONSIG": "C6 Consig", "PICPAY BANK - BANCO MÚLTIPLO S.A": "PicPay", "MERCADO CRÉDITO SCFI S.A.": "Mercado Pago",
+    "BANCO PAN": "Banco Pan", "PAN FINAN": "Pan Financeira", "BCO BMG S.A.": "BMG", "BCO DO ESTADO DO RS S.A.": "Banrisul",
+    "BCO DO NORDESTE DO BRASIL S.A.": "Banco do Nordeste", "BCO DA AMAZONIA S.A.": "Banco da Amazônia", "BRB - BCO DE BRASILIA S.A.": "BRB",
+    "BCO DO EST. DE SE S.A.": "Banese", "BCO DO EST. DO PA S.A.": "Banpará", "BCO BANESTES S.A.": "Banestes", "BANCO SICOOB S.A.": "Sicoob",
+    "BANCO COOPERATIVO SICREDI": "Sicredi", "BANCO BTG PACTUAL S.A.": "BTG Pactual", "BCO XP S.A.": "XP", "BCO SAFRA S.A.": "Safra",
+    "BCO DAYCOVAL S.A": "Daycoval", "BCO AGIBANK S.A.": "Agibank", "BANCO ORIGINAL": "Original", "BANCO DIGIO": "Digio", "BCO BV S.A.": "BV",
+    "BCO VOTORANTIM S.A.": "Banco Votorantim", "BCO CREFISA S.A.": "Crefisa", "CREFISA S.A. CFI": "Crefisa Financeira", "NEON FINANCEIRA - SCFI S.A.": "Neon",
+    "BCO MERCANTIL DO BRASIL S.A.": "Mercantil do Brasil", "BANCO BRADESCARD": "Bradescard", "BCO BRADESCO FINANC. S.A.": "Bradesco Financiamentos",
+    "ITAÚ UNIBANCO HOLDING S.A.": "Itaú Unibanco Holding", "SANTANDER SCFI S.A.": "Santander Financiamentos", "BCO CSF S.A.": "Banco Carrefour",
+    "LUIZACRED S.A. SCFI": "Luizacred", "MAGALUPAY SCFI S.A.": "MagaluPay", "99PAY SCFI": "99Pay", "STONE CFI S.A.": "Stone",
+    "CLOUDWALK FINANCEIRA S.A. CFI": "InfinitePay (CloudWalk)", "PORTOSEG S.A. CFI": "Porto Seguro", "BANCO GENIAL": "Genial", "BCO PINE S.A.": "Pine",
+    "BCO SOFISA S.A.": "Sofisa", "BCO ABC BRASIL S.A.": "ABC Brasil", "BCO CITIBANK S.A.": "Citibank", "BCO HSBC S.A.": "HSBC",
+    "BCO J.P. MORGAN S.A.": "J.P. Morgan", "APE POUPEX": "Poupex", "BCO DES. DE MG S.A.": "BDMG", "PARANA BCO S.A.": "Paraná Banco",
+    "BCO TOYOTA DO BRASIL S.A.": "Banco Toyota", "BCO VOLKSWAGEN S.A": "Banco Volkswagen", "BCO GM S.A.": "Banco GM", "BCO HONDA S.A.": "Banco Honda",
+    "BCO STELLANTIS S.A.": "Banco Stellantis", "BCO MERCEDES-BENZ S.A.": "Banco Mercedes-Benz", "BCO YAMAHA MOTOR S.A.": "Banco Yamaha",
+    "BCO RCI BRASIL S.A.": "Banco RCI (Renault/Nissan)", "BANCO HYUNDAI CAPITAL BRASIL": "Banco Hyundai", "BMW SA CFI": "BMW Financeira",
+    "BANCO JOHN DEERE S.A.": "Banco John Deere", "BCO CATERPILLAR S.A.": "Banco Caterpillar", "BANCO CNH INDUSTRIAL CAPITAL S.A": "Banco CNH",
+    "DEUTSCHE BANK S.A.BCO ALEMAO": "Deutsche Bank", "BOFA MERRILL LYNCH BM S.A.": "Bank of America", "SCOTIABANK BRASIL": "Scotiabank",
+    "BCO CRÉDIT AGRICOLE BR S.A.": "Crédit Agricole", "BBVA BRASIL BI S.A.": "BBVA", "BCO BNP PARIBAS BRASIL S A": "BNP Paribas",
+    "BCO. J.SAFRA S.A.": "Banco J. Safra", "PEFISA S.A. - C.F.I.": "Pefisa", "FIN. ITAU CBD CFI": "Financeira Itaú CBD", "SUMUP SCFI S.A": "SumUp",
+    "VIA CERTA FINANCIADORA S.A. - CFI": "Via Certa Financiadora", "SCFI EFÍ S.A.": "Efí", "BCO RIBEIRAO PRETO S.A.": "Banco Ribeirão Preto",
+    "BCO INDUSCRED DE INVESTIM. S/A": "Banco Induscred", "BCO MUFG BRASIL S.A.": "Banco MUFG", "BCO XCMG BRASIL S.A.": "Banco XCMG",
+    "BCO RABOBANK INTL BRASIL S.A.": "Rabobank", "BCO SUMITOMO MITSUI BRASIL S.A.": "Banco Sumitomo Mitsui", "BCO TRIANGULO S.A.": "Banco Triângulo",
+}
+JUROS_TITULO = {"emprestimo-pessoal": "empréstimo pessoal", "consignado-inss": "consignado", "consignado-clt": "consignado",
+                "consignado-servidor-publico": "consignado", "cartao-de-credito-rotativo": "cartão", "cartao-de-credito-parcelado": "cartão",
+                "cheque-especial": "cheque especial", "financiamento-de-veiculos": "financiamento de veículos"}
+JUROS_ATIPICA = 0.2   # taxa abaixo de 20% da mediana: em geral poucas operações ou crédito especial; fica no ranking, marcada
+JUROS_MOD = {  # modalidade do Banco Central -> (slug, nome curto, nome com artigo para títulos)
+    "Crédito pessoal não consignado - Prefixado": ("emprestimo-pessoal", "Empréstimo pessoal", "do empréstimo pessoal"),
+    "Crédito pessoal consignado INSS - Prefixado": ("consignado-inss", "Consignado INSS", "do consignado INSS"),
+    "Crédito pessoal consignado privado - Prefixado": ("consignado-clt", "Consignado CLT (privado)", "do consignado CLT"),
+    "Crédito pessoal consignado público - Prefixado": ("consignado-servidor-publico", "Consignado de servidor público", "do consignado de servidor público"),
+    "Cartão de crédito - rotativo total - Prefixado": ("cartao-de-credito-rotativo", "Rotativo do cartão de crédito", "do rotativo do cartão de crédito"),
+    "Cartão de crédito - parcelado - Prefixado": ("cartao-de-credito-parcelado", "Parcelamento da fatura do cartão", "do parcelamento da fatura do cartão"),
+    "Cheque especial - Prefixado": ("cheque-especial", "Cheque especial", "do cheque especial"),
+    "Aquisição de veículos - Prefixado": ("financiamento-de-veiculos", "Financiamento de veículos", "do financiamento de veículos"),
+    "Arrendamento mercantil de veículos - Prefixado": ("leasing-de-veiculos", "Leasing de veículos", "do leasing de veículos"),
+    "Aquisição de outros bens - Prefixado": ("financiamento-de-outros-bens", "Financiamento de outros bens", "do financiamento de outros bens"),
+    "Desconto de cheques - Prefixado": ("desconto-de-cheques", "Desconto de cheques", "do desconto de cheques"),
+}
+JUROS_ORDEM_PF = ["emprestimo-pessoal", "consignado-inss", "consignado-clt", "consignado-servidor-publico", "cartao-de-credito-rotativo",
+                  "cartao-de-credito-parcelado", "cheque-especial", "financiamento-de-veiculos", "leasing-de-veiculos",
+                  "financiamento-de-outros-bens", "desconto-de-cheques"]
+JUROS_SIMULA = {"emprestimo-pessoal", "consignado-inss", "consignado-clt", "consignado-servidor-publico", "financiamento-de-veiculos",
+                "financiamento-de-outros-bens", "cartao-de-credito-parcelado"}
+JUROS_URL = "/juros-dos-bancos/"
+
+
+def juros_nome_banco(n: str) -> str:
+    """Nome curto e legível: o Banco Central publica a razão social abreviada ("BCO DO BRASIL S.A.")."""
+    if n in JUROS_NOMES_BANCO:
+        return JUROS_NOMES_BANCO[n]
+    t = re.sub(r"\s*[-–]?\s*\b(S\.?\s?/?A\.?|SA|S A|BM|CFI|C\.F\.I\.|SCFI|BI|AM)\b\.?", " ", n)
+    t = re.sub(r"\bBCO\.?\b", "Banco", t)
+    t = re.sub(r"\s+", " ", t).strip(" -.")
+    pequenas = {"de", "do", "da", "dos", "das", "e"}
+    out = []
+    for i, w in enumerate(t.split(" ")):
+        lw = w.lower()
+        out.append(lw if (i and lw in pequenas) else (w if len(w) <= 3 and w.isupper() and w not in ("BCO",) else w[:1].upper() + w[1:].lower()))
+    return " ".join(out) or n
+
+
+def juros_mod_info(seg: str, mod: str):
+    if seg.upper().startswith("PESSOA F") and mod in JUROS_MOD:
+        return JUROS_MOD[mod]
+    base = re.sub(r" - Prefixado$", "", mod)
+    base = base.replace(" - Pós-fixado referenciado em juros flutuantes", " (pós-fixado)").replace(" - Pós-fixado referenciado em moeda estrangeira", " (em moeda estrangeira)")
+    base = base.replace("com prazo até 365 dias", "até 1 ano").replace("com prazo superior a 365 dias", "acima de 1 ano")
+    if seg.upper().startswith("PESSOA J"):
+        return ("empresas-" + slugify(base), f"Empresas: {base}", f"de {base[:1].lower() + base[1:]} para empresas")
+    return (slugify(base), base, f"de {base[:1].lower() + base[1:]}")
+
+
+def juros_prepara(j: dict) -> dict:
+    """Agrupa as linhas por modalidade (com o nome que as pessoas usam) e por banco."""
+    def chave(seg, mod):
+        return juros_mod_info(seg, mod)[0]
+    ant = {}
+    for seg, mod, _pos, inst, _c, am, _aa in j.get("anterior", []):
+        ant[(chave(seg, mod), inst)] = am
+    mods, bancos = {}, {}
+    for seg, mod, _pos, inst, cnpj, am, aa in j["atual"]:
+        slug, nome, art = juros_mod_info(seg, mod)
+        m = mods.setdefault(slug, {"slug": slug, "nome": nome, "art": art, "pf": seg.upper().startswith("PESSOA F"), "orig": mod, "linhas": []})
+        b_nome = juros_nome_banco(inst)
+        b_slug = slugify(b_nome) or slugify(inst)
+        m["linhas"].append({"banco": b_nome, "bslug": b_slug, "am": am, "aa": aa, "ant": ant.get((slug, inst))})
+        b = bancos.setdefault(b_slug, {"slug": b_slug, "nome": b_nome, "razao": inst, "cnpj8": cnpj, "itens": []})
+        b["itens"].append(slug)
+    for m in mods.values():
+        m["linhas"].sort(key=lambda x: x["am"])
+        for i, x in enumerate(m["linhas"], 1):
+            x["pos"] = i
+        v = [x["am"] for x in m["linhas"]]
+        m["n"], m["min"], m["max"] = len(v), v[0], v[-1]
+        m["med"] = v[len(v) // 2] if len(v) % 2 else (v[len(v) // 2 - 1] + v[len(v) // 2]) / 2
+        for x in m["linhas"]:
+            x["atipica"] = m["n"] >= 5 and x["am"] < m["med"] * JUROS_ATIPICA
+        m["barato"] = next((x for x in m["linhas"] if not x["atipica"]), m["linhas"][0])
+    imob = []
+    for _seg, mod, _pos, inst, _c, am, aa in j.get("mensal", []):
+        if mod.startswith("Financiamento imobiliário"):
+            imob.append({"mod": mod, "banco": juros_nome_banco(inst), "bslug": slugify(juros_nome_banco(inst)), "am": am, "aa": aa})
+    ini, fim = dt.date.fromisoformat(j["inicio"][:10]), dt.date.fromisoformat(j["fim"][:10])
+    return {"mods": mods, "bancos": bancos, "imob": imob, "mes_imob": j.get("mes"), "ini": ini, "fim": fim,
+            "periodo": f"{ini.day:02d}/{ini.month:02d} a {fim.day:02d}/{fim.month:02d}/{fim.year}",
+            "mes": f"{MESES[fim.month - 1]} de {fim.year}", "ini_ant": j.get("inicio_anterior")}
+
+
+def _pct(v, d=2) -> str:
+    return nf(v, d) + "%"
+
+
+def _parcela(pv, taxa_am, n) -> float:
+    i = taxa_am / 100
+    return pv / n if i == 0 else pv * i / (1 - (1 + i) ** -n)
+
+
+def juros_nota(J) -> str:
+    return (f'<span class="src">Banco Central. Taxa média cobrada por cada instituição nas operações feitas de {J["periodo"]}, '
+            f'com juros e encargos. É uma média: a taxa oferecida a você depende do seu perfil e do prazo.</span>')
+
+
+def juros_chamada(B: Base) -> str:
+    """Card que leva às taxas de cada banco (páginas de Selic e de crédito)."""
+    J = getattr(B, "juros", None)
+    if not J:
+        return ""
+    ep = J["mods"].get("emprestimo-pessoal")
+    txt = (f'No empréstimo pessoal, a taxa vai de {_pct(ep["barato"]["am"])} a {_pct(ep["max"])} ao mês, conforme o banco. ' if ep else "")
+    return card(cab("Juros de cada banco") + f'<p>{txt}Veja o ranking do mais barato ao mais caro no empréstimo pessoal, consignado, cartão, cheque especial e financiamento.</p>'
+                f'<p><a href="{JUROS_URL}">Comparar os juros dos bancos →</a></p>')
+
+
+def pg_juros_hub(B: Base) -> str:
+    J = B.juros
+    pf = [J["mods"][s] for s in JUROS_ORDEM_PF if s in J["mods"]]
+    pj = sorted((m for m in J["mods"].values() if not m["pf"]), key=lambda m: m["nome"])
+    ep = J["mods"].get("emprestimo-pessoal")
+    lede = (f'A taxa de cada banco em cada tipo de crédito, do mais barato ao mais caro, com dados do Banco Central ({J["periodo"]}). '
+            + (f'No empréstimo pessoal, a taxa vai de <strong>{_pct(ep["barato"]["am"])}</strong> ({esc(ep["barato"]["banco"])}) a <strong>{_pct(ep["max"])}</strong> ao mês '
+               f'({esc(ep["linhas"][-1]["banco"])}), entre {ep["n"]} instituições.' if ep else ""))
+    hero = card(f'<span class="eyebrow">Juros dos bancos</span><h1>Juros dos bancos: quem cobra menos em cada tipo de crédito</h1><p class="lede">{lede}</p>')
+
+    def linhas(ms):
+        out = []
+        for m in ms:
+            b0, b1 = m["barato"], m["linhas"][-1]
+            out.append([f'<a href="{JUROS_URL}{m["slug"]}/">{esc(m["nome"])}</a>', f'{esc(b0["banco"])} <span class="small">{_pct(b0["am"])}</span>',
+                        _pct(m["med"]), f'{esc(b1["banco"])} <span class="small">{_pct(b1["am"])}</span>', str(m["n"])])
+        return out
+    cab_ = ["Tipo de crédito", "Mais barato (% ao mês)", "Mediana", "Mais caro", "Instituições"]
+    t1 = card(cab("Para você (pessoa física)", f'<span class="src">{J["periodo"]}</span>') + tabela(cab_, linhas(pf), ["l", "l", "r", "l", "r"]) + juros_nota(J))
+    extra = ""
+    if J["imob"]:
+        extra = card(cab("Financiamento imobiliário", f'<span class="src">média de {mes_nome(J["mes_imob"])}</span>' if J["mes_imob"] else "") +
+                     f'<p><a href="{JUROS_URL}financiamento-imobiliario/">Veja a taxa de cada banco no financiamento da casa própria →</a></p>')
+    t2 = card(cab("Para empresas (pessoa jurídica)") + tabela(cab_, linhas(pj), ["l", "l", "r", "l", "r"])) if pj else ""
+    grandes = ["banco-do-brasil", "caixa", "bradesco", "itau", "santander", "nubank", "inter", "c6-bank", "picpay", "mercado-pago", "banrisul", "bmg", "banco-pan", "btg-pactual"]
+    bl = [J["bancos"][s] for s in grandes if s in J["bancos"]]
+    resto = sorted((b for s, b in J["bancos"].items() if s not in grandes), key=lambda b: b["nome"].lower())
+    t3 = card(cab("Juros de cada banco") + '<div class="chips">' + "".join(f'<a class="chip" href="{JUROS_URL}banco/{b["slug"]}/">{esc(b["nome"])}</a>' for b in bl) + "</div>" +
+              '<ul class="list">' + "".join(f'<li><a href="{JUROS_URL}banco/{b["slug"]}/"><span>{esc(b["nome"])}</span><span>{len(set(b["itens"]))} tipos</span></a></li>' for b in resto) + "</ul>")
+    corpo = f"{hero}{t1}{extra}{t3}{t2}"
+    return pagina(B, JUROS_URL, f"Juros dos bancos em {J['mes']}: quem cobra menos no empréstimo, consignado, cartão e cheque especial",
+                  f"Taxa de juros de cada banco em cada tipo de crédito, do mais barato ao mais caro: empréstimo pessoal, consignado, rotativo do cartão, cheque especial e financiamento. Dados do Banco Central, {J['periodo']}.",
+                  corpo, JUROS_URL, [(None, "Juros dos bancos")])
+
+
+def pg_juros_mod(B: Base, m: dict) -> str:
+    J = B.juros
+    L = m["linhas"]
+    b0, b1 = m["barato"], L[-1]
+    n_at = sum(1 for x in L if x["atipica"])
+    lede = (f'Entre {m["n"]} instituições, a taxa média {esc(m["art"])} foi de <strong>{_pct(b0["am"])} ao mês</strong> no {esc(b0["banco"])}, o mais barato, '
+            f'a <strong>{_pct(b1["am"])} ao mês</strong> no {esc(b1["banco"])}, o mais caro ({J["periodo"]}). A metade dos bancos cobra até {_pct(m["med"])} ao mês.')
+    hero = card(f'<span class="eyebrow">Juros dos bancos · {"pessoa física" if m["pf"] else "empresas"}</span><h1>Juros {esc(m["art"])} por banco: do mais barato ao mais caro</h1><p class="lede">{lede}</p>')
+    tiles = [tile("Mais barato", _pct(b0["am"]), "ao mês", f'<span class="small">{esc(b0["banco"])}</span>', "g"),
+             tile("Mediana dos bancos", _pct(m["med"]), "ao mês", "", "a"),
+             tile("Mais caro", _pct(b1["am"]), "ao mês", f'<span class="small">{esc(b1["banco"])}</span>', "k"),
+             tile("Instituições", str(m["n"]), "", "", "b")]
+    linhas = []
+    for x in L:
+        var = chg(x["am"] - x["ant"], 2, " p.p.") if x["ant"] is not None else '<span class="small">–</span>'
+        marca = ' <span class="small" title="Taxa muito abaixo das outras">*</span>' if x["atipica"] else ""
+        linhas.append([str(x["pos"]), f'<a href="{JUROS_URL}banco/{x["bslug"]}/">{esc(x["banco"])}</a>{marca}', _pct(x["am"]), _pct(x["aa"], 1), var])
+    rk = card(cab(f'Ranking {esc(m["art"])}', f'<span class="src">{J["periodo"]}</span>') +
+              tabela(["#", "Instituição", "% ao mês", "% ao ano", "vs. 4 semanas antes"], linhas, ["l", "l", "r", "r", "r"]) +
+              (f'<span class="src">* Taxa muito abaixo das demais (menos de um quinto da mediana). Costuma vir de poucas operações ou de crédito com condição especial; '
+               f'por isso o "mais barato" desta página é o primeiro sem essa marca.</span>' if n_at else "") + juros_nota(J))
+    sim = ""
+    if m["slug"] in JUROS_SIMULA:
+        pv, n = (40000, 48) if "veiculos" in m["slug"] else (10000, 12)
+        p0, p1, pm = _parcela(pv, b0["am"], n), _parcela(pv, b1["am"], n), _parcela(pv, m["med"], n)
+        sim = card(cab(f"Quanto isso muda a parcela: R$ {nf(pv, 0)} em {n} meses") +
+                   tabela(["Banco", "Taxa ao mês", "Parcela", "Total pago"],
+                          [[esc(b0["banco"]) + " (mais barato)", _pct(b0["am"]), "R$ " + nf(p0, 2), "R$ " + nf(p0 * n, 2)],
+                           ["Mediana dos bancos", _pct(m["med"]), "R$ " + nf(pm, 2), "R$ " + nf(pm * n, 2)],
+                           [esc(b1["banco"]) + " (mais caro)", _pct(b1["am"]), "R$ " + nf(p1, 2), "R$ " + nf(p1 * n, 2)]], ["l", "r", "r", "r"]) +
+                   f'<span class="src">Parcelas fixas (tabela Price) com a taxa média de cada banco. A diferença entre o mais barato e o mais caro é de R$ {nf((p1 - p0) * n, 2)} no total.</span>')
+    outras = [J["mods"][s] for s in JUROS_ORDEM_PF if s in J["mods"] and s != m["slug"]] if m["pf"] else []
+    ver = card(cab("Outros tipos de crédito") + '<div class="chips">' + "".join(f'<a class="chip" href="{JUROS_URL}{o["slug"]}/">{esc(o["nome"])}</a>' for o in outras) +
+               f'<a class="chip" href="{JUROS_URL}">Todos</a></div>') if outras else ""
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{rk}{sim}{ver}'
+    t = f"Juros {m['art']} por banco em {J['mes']}: do mais barato ao mais caro"
+    return pagina(B, f"{JUROS_URL}{m['slug']}/", t,
+                  f"{m['nome']}: taxa de {m['n']} bancos, de {_pct(b0['am'])} ao mês ({b0['banco']}) a {_pct(b1['am'])} ({b1['banco']}). Ranking com dados do Banco Central, {J['periodo']}.",
+                  corpo, JUROS_URL, [(JUROS_URL, "Juros dos bancos"), (None, m["nome"])])
+
+
+def pg_juros_imob(B: Base) -> str:
+    J = B.juros
+    grupos = {}
+    for x in J["imob"]:
+        grupos.setdefault(x["mod"], []).append(x)
+    cards = []
+    for mod in sorted(grupos):
+        L = sorted(grupos[mod], key=lambda x: x["aa"])
+        nome = mod.replace("Financiamento imobiliário com ", "").replace(" - Prefixado", ", prefixado").replace(" - Pós-fixado referenciado em ", ", corrigido pelo ")
+        cards.append(card(cab(esc(nome[:1].upper() + nome[1:])) + tabela(["#", "Instituição", "% ao ano", "% ao mês"],
+                          [[str(i), esc(x["banco"]), _pct(x["aa"]), _pct(x["am"])] for i, x in enumerate(L, 1)], ["l", "l", "r", "r"])))
+    mes = mes_nome(J["mes_imob"]) if J["mes_imob"] else ""
+    hero = card(f'<span class="eyebrow">Juros dos bancos · casa própria</span><h1>Juros do financiamento imobiliário por banco</h1>'
+                f'<p class="lede">Taxa média de cada banco no financiamento da casa própria em {mes}, separada por tipo: taxas reguladas (SFH, com limite de juros) e de mercado; prefixada ou corrigida pela TR ou pelo IPCA.</p>')
+    corpo = hero + "".join(cards) + card('<span class="src">Banco Central, médias mensais. Além dos juros, o custo total do financiamento inclui seguros e tarifas.</span>')
+    return pagina(B, f"{JUROS_URL}financiamento-imobiliario/", f"Juros do financiamento imobiliário por banco em {mes}",
+                  f"Taxa de juros de cada banco no financiamento da casa própria em {mes}: Caixa, Banco do Brasil, Itaú, Bradesco, Santander e outros. Dados do Banco Central.",
+                  corpo, JUROS_URL, [(JUROS_URL, "Juros dos bancos"), (None, "Financiamento imobiliário")])
+
+
+def pg_juros_banco(B: Base, b: dict) -> str:
+    J = B.juros
+    linhas, melhores = [], []
+    ordem = {s: i for i, s in enumerate(JUROS_ORDEM_PF)}
+    slugs = sorted(set(b["itens"]), key=lambda s: (not J["mods"][s]["pf"], ordem.get(s, 99), J["mods"][s]["nome"]))
+    for s in slugs:
+        m = J["mods"][s]
+        x = next(x for x in m["linhas"] if x["bslug"] == b["slug"])
+        dif = x["am"] - m["med"]
+        comp = f'<span class="chg {"down" if dif < 0 else "up" if dif > 0 else "flat"}">{"abaixo" if dif < 0 else "acima" if dif > 0 else "igual"} da mediana</span>'
+        linhas.append([f'<a href="{JUROS_URL}{s}/">{esc(m["nome"])}</a>', _pct(x["am"]), _pct(x["aa"], 1), f'{x["pos"]}º de {m["n"]}', comp])
+        if x["pos"] <= 3 and m["n"] >= 5 and m["pf"] and not x["atipica"]:
+            melhores.append(f'{m["nome"][:1].lower() + m["nome"][1:]} ({x["pos"]}º mais barato)')
+    imob = [x for x in J["imob"] if x["bslug"] == b["slug"]]
+    pfs = []
+    for s in slugs:
+        if s in JUROS_TITULO and JUROS_TITULO[s] not in pfs:
+            pfs.append(JUROS_TITULO[s])
+    pfs = pfs[:3]
+    art = "da" if b["nome"].lower().startswith("caixa") else "do"
+    lede = (f'O Banco Central informa as taxas {art} {esc(b["nome"])} em {len(slugs)} tipos de crédito ({J["periodo"]}).'
+            + (f' Está entre os mais baratos em {", ".join(esc(t) for t in melhores[:3])}.' if melhores else ""))
+    hero = card(f'<span class="eyebrow">Juros dos bancos · instituição</span><h1>Juros {"do " if not b["nome"].lower().startswith(("caixa",)) else "da "}{esc(b["nome"])}</h1>'
+                f'<p class="lede">{lede}</p><p class="small">Razão social: {esc(b["razao"])}</p>')
+    t = card(cab("Taxa em cada tipo de crédito", f'<span class="src">{J["periodo"]}</span>') +
+             tabela(["Tipo de crédito", "% ao mês", "% ao ano", "Posição (do mais barato)", "Comparação"], linhas, ["l", "r", "r", "r", "l"]) + juros_nota(J))
+    ti = ""
+    if imob:
+        ti = card(cab("Financiamento imobiliário", f'<span class="src">média de {mes_nome(J["mes_imob"])}</span>' if J["mes_imob"] else "") +
+                  tabela(["Tipo", "% ao ano"], [[esc(x["mod"].replace("Financiamento imobiliário com ", "")), _pct(x["aa"])] for x in imob], ["l", "r"]))
+    titulo = f"Juros {art} {b['nome']} em {J['mes']}" + (": " + (", ".join(pfs[:-1]) + " e " + pfs[-1] if len(pfs) > 1 else pfs[0]) if pfs else "")
+    corpo = f"{hero}{t}{ti}"
+    return pagina(B, f"{JUROS_URL}banco/{b['slug']}/", titulo,
+                  f"Taxa de juros {art} {b['nome']} em cada tipo de crédito e a posição entre os bancos, com dados do Banco Central ({J['periodo']}).",
+                  corpo, JUROS_URL, [(JUROS_URL, "Juros dos bancos"), (None, b["nome"])])
+
+
 def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None,
-          resumos_path: Path = RAIZ / "data" / "copom_resumos.json", bf_path: Path | None = None, mun_path: Path | None = None) -> list:
+          resumos_path: Path = RAIZ / "data" / "copom_resumos.json", bf_path: Path | None = None, mun_path: Path | None = None,
+          juros_path: Path | None = None) -> list:
     dados = json.loads(dados_path.read_text(encoding="utf-8"))
     cal = json.loads(calendario_path.read_text(encoding="utf-8"))
     resumos = json.loads(resumos_path.read_text(encoding="utf-8")) if resumos_path.exists() else {}
@@ -3592,6 +3869,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     bf = json.loads(Path(bf_path).read_text(encoding="utf-8")) if bf_path and Path(bf_path).exists() else None
     mun = json.loads(Path(mun_path).read_text(encoding="utf-8")) if mun_path and Path(mun_path).exists() else None
     B = Base(dados, cal, hoje, resumos, bf, mun)
+    B.juros = juros_prepara(json.loads(Path(juros_path).read_text(encoding="utf-8"))) if juros_path and Path(juros_path).exists() else None
     resumos_preparar(B, dados_path.parent / "resumos")
     if saida.exists():
         shutil.rmtree(saida)
@@ -3613,6 +3891,14 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
         paginas.append(("/setor-externo/", pg_setor_externo(B)))
     if B.tem_fiscal:
         paginas.append(("/contas-publicas/", pg_fiscal(B)))
+    if B.juros:
+        paginas.append((JUROS_URL, pg_juros_hub(B)))
+        for m in B.juros["mods"].values():
+            paginas.append((f"{JUROS_URL}{m['slug']}/", pg_juros_mod(B, m)))
+        if B.juros["imob"]:
+            paginas.append((f"{JUROS_URL}financiamento-imobiliario/", pg_juros_imob(B)))
+        for b in B.juros["bancos"].values():
+            paginas.append((f"{JUROS_URL}banco/{b['slug']}/", pg_juros_banco(B, b)))
     extras = []   # páginas escritas na hora (são milhares: não vale guardar todas na memória)
     if B.tem_bf:
         paginas.append(("/bolsa-familia/", pg_bf(B)))
@@ -3706,8 +3992,9 @@ def main():
     ap.add_argument("--calendario", default=str(RAIZ / "data" / "copom_calendario.json"))
     ap.add_argument("--bolsa-familia", default=str(RAIZ / "data" / "bolsa_familia.json"))
     ap.add_argument("--municipios", default=str(RAIZ / "data" / "municipios.json"))
+    ap.add_argument("--juros", default=str(RAIZ / "data" / "juros.json"))
     a = ap.parse_args()
-    caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario), bf_path=Path(a.bolsa_familia), mun_path=Path(a.municipios))
+    caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario), bf_path=Path(a.bolsa_familia), mun_path=Path(a.municipios), juros_path=Path(a.juros))
     print(f"{len(caminhos)} páginas geradas em {a.saida}")
 
 
