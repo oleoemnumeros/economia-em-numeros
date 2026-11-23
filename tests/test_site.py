@@ -1726,3 +1726,23 @@ class TestResumoMensalTexto(unittest.TestCase):
         t = g.resumo_ipca_insight(B, d)
         self.assertIn("respondeu por 73% do IPCA do mês", t)
         self.assertIn("dentro do intervalo da meta", t)
+
+
+class TestJurosDosBancos(unittest.TestCase):
+    def test_juros_prepara_marca_atipica_e_nomeia_bancos(self):
+        import gerar_site as g
+        taxas = [("BCO SOFISA S.A.", 0.06), ("BCO SAFRA S.A.", 1.63), ("CAIXA ECONOMICA FEDERAL", 3.2),
+                 ("BCO DO BRASIL S.A.", 4.1), ("NU FINANCEIRA S.A. CFI", 6.2), ("SUMUP SCFI S.A", 21.4)]
+        linhas = [["PESSOA FÍSICA", "Crédito pessoal não consignado - Prefixado", i + 1, n, "1", am, 0.0] for i, (n, am) in enumerate(taxas)]
+        linhas.append(["PESSOA FÍSICA", "Cheque especial - Prefixado", 1, "CAIXA ECONOMICA FEDERAL", "1", 7.5, 138.0])
+        j = {"inicio": "2026-10-30", "fim": "2026-11-06", "atual": linhas, "anterior": [l[:5] + [l[5] + 0.1, l[6]] for l in linhas], "mes": "2026-10",
+             "mensal": [["", "Financiamento imobiliário com taxas reguladas - Pós-fixado referenciado em TR", 1, "CAIXA ECONOMICA FEDERAL", "1", 0.7, 8.7]]}
+        J = g.juros_prepara(j)
+        ep = J["mods"]["emprestimo-pessoal"]
+        self.assertTrue(ep["linhas"][0]["atipica"])          # 0,06% ao mês fica marcada
+        self.assertEqual(ep["barato"]["banco"], "Safra")      # o "mais barato" é o primeiro típico
+        self.assertAlmostEqual(ep["linhas"][1]["ant"], 1.73)  # comparação com 4 semanas antes
+        self.assertEqual(J["bancos"]["caixa"]["nome"], "Caixa")
+        self.assertEqual(J["mes"], "novembro de 2026")
+        self.assertEqual(g.juros_nome_banco("BCO INDUSTRIAL DO BRASIL S.A."), "Banco Industrial do Brasil")
+        self.assertAlmostEqual(g._parcela(10000, 2, 12), 945.60, places=2)

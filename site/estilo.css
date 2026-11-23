@@ -276,3 +276,7 @@ footer .familia p a{color:var(--ink);text-decoration:underline;text-underline-of
 .compartilhe h3 { margin: 16px 0 8px; font-size: 1rem; }
 .links-resumo { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; }
 .links-resumo a { display: inline-flex; align-items: center; min-height: 44px; }
+/* Juros dos bancos: atalhos para bancos e tipos de crédito */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px}
+.chip{display:inline-flex;align-items:center;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font-size:.9rem;font-weight:500;text-decoration:none}
+.chip:hover{border-color:var(--eco)}
