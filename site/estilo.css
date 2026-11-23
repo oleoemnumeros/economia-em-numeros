@@ -280,3 +280,14 @@ footer .familia p a{color:var(--ink);text-decoration:underline;text-underline-of
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px}
 .chip{display:inline-flex;align-items:center;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font-size:.9rem;font-weight:500;text-decoration:none}
 .chip:hover{border-color:var(--eco)}
+/* bloco que abre ao clicar ("ver mais") */
+details.mais>summary{cursor:pointer;font-weight:600;color:var(--eco-t);padding:10px 0;list-style:none;display:flex;align-items:center;gap:8px}
+details.mais>summary::-webkit-details-marker{display:none}
+details.mais>summary::before{content:"+";display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:1px solid var(--line);border-radius:50%;font-weight:700}
+details.mais[open]>summary::before{content:"−"}
+details.mais+details.mais{border-top:1px solid var(--line)}
+.mais-in{padding:4px 0 8px}
+.mais-in h3{margin:16px 0 6px}
+.jt th{white-space:normal;vertical-align:bottom;line-height:1.25}
+.jt td:first-child{min-width:96px}
+.jt th,.jt td{padding-left:6px;padding-right:6px}
