@@ -3726,80 +3726,117 @@ def juros_chamada(B: Base) -> str:
                 f'<p><a href="{JUROS_URL}">Comparar os juros dos bancos →</a></p>')
 
 
+JUROS_GRANDES = ["banco-do-brasil", "caixa", "bradesco", "itau", "santander", "btg-pactual"]
+JUROS_PRINCIPAIS = ["emprestimo-pessoal", "consignado-inss", "consignado-clt", "cartao-de-credito-rotativo", "cheque-especial", "financiamento-de-veiculos"]
+JUROS_CURTO = {"emprestimo-pessoal": "Empréstimo pessoal", "consignado-inss": "Consignado INSS", "consignado-clt": "Consignado CLT",
+               "cartao-de-credito-rotativo": "Rotativo do cartão", "cheque-especial": "Cheque especial", "financiamento-de-veiculos": "Veículos"}
+
+
+def _mais(titulo: str, inner: str) -> str:
+    """Bloco que abre ao clicar: o detalhe fica disponível sem poluir a página."""
+    return f'<details class="mais"><summary>{titulo}</summary><div class="mais-in">{inner}</div></details>'
+
+
+def _grandes_da(m: dict) -> list:
+    por = {x["bslug"]: x for x in m["linhas"]}
+    return [por[s] for s in JUROS_GRANDES if s in por]
+
+
+def _nome_grande(x) -> str:
+    return f'<a href="{JUROS_URL}banco/{x["bslug"]}/"><strong>{esc(x["banco"])}</strong></a>'
+
+
 def pg_juros_hub(B: Base) -> str:
     J = B.juros
-    pf = [J["mods"][s] for s in JUROS_ORDEM_PF if s in J["mods"]]
-    pj = sorted((m for m in J["mods"].values() if not m["pf"]), key=lambda m: m["nome"])
+    principais = [J["mods"][s] for s in JUROS_PRINCIPAIS if s in J["mods"]]
     ep = J["mods"].get("emprestimo-pessoal")
-    lede = (f'A taxa de cada banco em cada tipo de crédito, do mais barato ao mais caro, com dados do Banco Central ({J["periodo"]}). '
-            + (f'No empréstimo pessoal, a taxa vai de <strong>{_pct(ep["barato"]["am"])}</strong> ({esc(ep["barato"]["banco"])}) a <strong>{_pct(ep["max"])}</strong> ao mês '
-               f'({esc(ep["linhas"][-1]["banco"])}), entre {ep["n"]} instituições.' if ep else ""))
-    hero = card(f'<span class="eyebrow">Juros dos bancos</span><h1>Juros dos bancos: quem cobra menos em cada tipo de crédito</h1><p class="lede">{lede}</p>')
-
-    def linhas(ms):
-        out = []
-        for m in ms:
-            b0, b1 = m["barato"], m["linhas"][-1]
-            out.append([f'<a href="{JUROS_URL}{m["slug"]}/">{esc(m["nome"])}</a>', f'{esc(b0["banco"])} <span class="small">{_pct(b0["am"])}</span>',
-                        _pct(m["med"]), f'{esc(b1["banco"])} <span class="small">{_pct(b1["am"])}</span>', str(m["n"])])
-        return out
-    cab_ = ["Tipo de crédito", "Mais barato (% ao mês)", "Mediana", "Mais caro", "Instituições"]
-    t1 = card(cab("Para você (pessoa física)", f'<span class="src">{J["periodo"]}</span>') + tabela(cab_, linhas(pf), ["l", "l", "r", "l", "r"]) + juros_nota(J))
-    extra = ""
-    if J["imob"]:
-        extra = card(cab("Financiamento imobiliário", f'<span class="src">média de {mes_nome(J["mes_imob"])}</span>' if J["mes_imob"] else "") +
-                     f'<p><a href="{JUROS_URL}financiamento-imobiliario/">Veja a taxa de cada banco no financiamento da casa própria →</a></p>')
-    t2 = card(cab("Para empresas (pessoa jurídica)") + tabela(cab_, linhas(pj), ["l", "l", "r", "l", "r"])) if pj else ""
-    grandes = ["banco-do-brasil", "caixa", "bradesco", "itau", "santander", "nubank", "inter", "c6-bank", "picpay", "mercado-pago", "banrisul", "bmg", "banco-pan", "btg-pactual"]
-    bl = [J["bancos"][s] for s in grandes if s in J["bancos"]]
-    resto = sorted((b for s, b in J["bancos"].items() if s not in grandes), key=lambda b: b["nome"].lower())
-    t3 = card(cab("Juros de cada banco") + '<div class="chips">' + "".join(f'<a class="chip" href="{JUROS_URL}banco/{b["slug"]}/">{esc(b["nome"])}</a>' for b in bl) + "</div>" +
-              '<ul class="list">' + "".join(f'<li><a href="{JUROS_URL}banco/{b["slug"]}/"><span>{esc(b["nome"])}</span><span>{len(set(b["itens"]))} tipos</span></a></li>' for b in resto) + "</ul>")
-    corpo = f"{hero}{t1}{extra}{t3}{t2}"
-    return pagina(B, JUROS_URL, f"Juros dos bancos em {J['mes']}: quem cobra menos no empréstimo, consignado, cartão e cheque especial",
-                  f"Taxa de juros de cada banco em cada tipo de crédito, do mais barato ao mais caro: empréstimo pessoal, consignado, rotativo do cartão, cheque especial e financiamento. Dados do Banco Central, {J['periodo']}.",
+    lede = "Quanto os grandes bancos cobram em cada tipo de crédito, com dados do Banco Central (" + J["periodo"] + ")."
+    if ep:
+        g = sorted(_grandes_da(ep), key=lambda x: x["am"])
+        if g:
+            lede += (f' No empréstimo pessoal, o mais barato entre os grandes é o <strong>{esc(g[0]["banco"])}</strong> ({_pct(g[0]["am"])} ao mês) '
+                     f'e o mais caro, o <strong>{esc(g[-1]["banco"])}</strong> ({_pct(g[-1]["am"])}).')
+    hero = card(f'<span class="eyebrow">Juros dos bancos</span><h1>Juros dos bancos: quanto cobram Banco do Brasil, Caixa, Bradesco, Itaú, Santander e BTG</h1><p class="lede">{lede}</p>')
+    # grandes bancos lado a lado, só nos juros mais buscados
+    cols = [J["mods"][s] for s in ("emprestimo-pessoal", "consignado-inss", "cheque-especial") if s in J["mods"]]  # 3 colunas cabem no celular
+    linhas = []
+    for s in JUROS_GRANDES:
+        b = J["bancos"].get(s)
+        if not b:
+            continue
+        cel = [f'<a href="{JUROS_URL}banco/{s}/"><strong>{esc(b["nome"])}</strong></a>']
+        for m in cols:
+            x = next((x for x in m["linhas"] if x["bslug"] == s), None)
+            cel.append(_pct(x["am"]) if x else '<span class="small">–</span>')
+        linhas.append(cel)
+    med = ['<span class="small">Mediana do mercado</span>'] + [f'<span class="small">{_pct(m["med"])}</span>' for m in cols]
+    t1 = card(cab("Grandes bancos lado a lado", '<span class="src">% ao mês</span>') +
+              '<div class="jt">' + tabela(["Banco"] + [f'<a href="{JUROS_URL}{m["slug"]}/">{JUROS_CURTO[m["slug"]]}</a>' for m in cols], linhas + [med], ["l"] + ["r"] * len(cols)) + "</div>" +
+              '<span class="src">“–”: o banco não informou operações nesse tipo de crédito no período.</span>' + juros_nota(J))
+    # juros mais buscados: um botão para cada
+    t2 = card(cab("Escolha o tipo de crédito") + '<div class="chips">' +
+              "".join(f'<a class="chip" href="{JUROS_URL}{m["slug"]}/">{esc(m["nome"])}</a>' for m in principais) +
+              (f'<a class="chip" href="{JUROS_URL}financiamento-imobiliario/">Financiamento imobiliário</a>' if J["imob"] else "") + "</div>")
+    outros_pf = [J["mods"][s] for s in JUROS_ORDEM_PF if s in J["mods"] and s not in JUROS_PRINCIPAIS]
+    pj = sorted((m for m in J["mods"].values() if not m["pf"]), key=lambda m: m["nome"])
+    def lista(ms):
+        return '<ul class="list">' + "".join(f'<li><a href="{JUROS_URL}{m["slug"]}/"><span>{esc(m["nome"])}</span><span>{m["n"]} instituições</span></a></li>' for m in ms) + "</ul>"
+    outros = _mais("Outros tipos de crédito", (lista(outros_pf) if outros_pf else "") + ("<h3>Para empresas</h3>" + lista(pj) if pj else ""))
+    resto = sorted((b for s, b in J["bancos"].items() if s not in JUROS_GRANDES), key=lambda b: b["nome"].lower())
+    todos = _mais(f"Todas as {len(J['bancos'])} instituições", '<ul class="list">' + "".join(
+        f'<li><a href="{JUROS_URL}banco/{b["slug"]}/"><span>{esc(b["nome"])}</span><span>{len(set(b["itens"]))} tipos</span></a></li>' for b in resto) + "</ul>")
+    corpo = f"{hero}{t1}{t2}{card(outros + todos)}"
+    return pagina(B, JUROS_URL, f"Juros dos bancos em {J['mes']}: Banco do Brasil, Caixa, Bradesco, Itaú, Santander e BTG",
+                  f"Taxa de juros dos grandes bancos no empréstimo pessoal, consignado, cartão, cheque especial e financiamento, comparada com o mercado. Dados do Banco Central, {J['periodo']}.",
                   corpo, JUROS_URL, [(None, "Juros dos bancos")])
 
 
 def pg_juros_mod(B: Base, m: dict) -> str:
     J = B.juros
     L = m["linhas"]
-    b0, b1 = m["barato"], L[-1]
-    n_at = sum(1 for x in L if x["atipica"])
-    lede = (f'Entre {m["n"]} instituições, a taxa média {esc(m["art"])} foi de <strong>{_pct(b0["am"])} ao mês</strong> no {esc(b0["banco"])}, o mais barato, '
-            f'a <strong>{_pct(b1["am"])} ao mês</strong> no {esc(b1["banco"])}, o mais caro ({J["periodo"]}). A metade dos bancos cobra até {_pct(m["med"])} ao mês.')
-    hero = card(f'<span class="eyebrow">Juros dos bancos · {"pessoa física" if m["pf"] else "empresas"}</span><h1>Juros {esc(m["art"])} por banco: do mais barato ao mais caro</h1><p class="lede">{lede}</p>')
-    tiles = [tile("Mais barato", _pct(b0["am"]), "ao mês", f'<span class="small">{esc(b0["banco"])}</span>', "g"),
-             tile("Mediana dos bancos", _pct(m["med"]), "ao mês", "", "a"),
-             tile("Mais caro", _pct(b1["am"]), "ao mês", f'<span class="small">{esc(b1["banco"])}</span>', "k"),
-             tile("Instituições", str(m["n"]), "", "", "b")]
+    g = sorted(_grandes_da(m), key=lambda x: x["am"])
+    b0 = m["barato"]
+    simula = m["slug"] in JUROS_SIMULA
+    pv, n = ((40000, 48) if "veiculos" in m["slug"] else (10000, 12)) if simula else (0, 0)
+    if g:
+        lede = (f'Entre os grandes bancos, o {esc(m["nome"][:1].lower() + m["nome"][1:])} mais barato é o do <strong>{esc(g[0]["banco"])}</strong>, '
+                f'com <strong>{_pct(g[0]["am"])} ao mês</strong>, e o mais caro é o do <strong>{esc(g[-1]["banco"])}</strong>, com <strong>{_pct(g[-1]["am"])}</strong>. '
+                f'No mercado todo, a taxa começa em {_pct(b0["am"])} ({esc(b0["banco"])}). Dados do Banco Central, {J["periodo"]}.')
+    else:
+        lede = f'A taxa {esc(m["art"])} começa em <strong>{_pct(b0["am"])} ao mês</strong> ({esc(b0["banco"])}), entre {m["n"]} instituições. Dados do Banco Central, {J["periodo"]}.'
+    hero = card(f'<span class="eyebrow">Juros dos bancos · {"pessoa física" if m["pf"] else "empresas"}</span><h1>Juros {esc(m["art"])} nos grandes bancos</h1><p class="lede">{lede}</p>')
+    blocos = []
+    if g:
+        cab_g = ["Banco", "% ao mês", "Posição"] + ([f"Parcela de R$ {nf(pv / 1000, 0)} mil em {n}x"] if simula else [])
+        lin = []
+        for x in g:
+            l = [_nome_grande(x), f'<strong>{_pct(x["am"])}</strong>', f'{x["pos"]}º de {m["n"]}']
+            if simula:
+                l.append("R$ " + nf(_parcela(pv, x["am"], n), 2))
+            lin.append(l)
+        mb = [f'<span class="small">Mais barato do mercado: {esc(b0["banco"])}</span>', _pct(b0["am"]), f'{b0["pos"]}º'] + \
+             (["R$ " + nf(_parcela(pv, b0["am"], n), 2)] if simula else [])
+        blocos.append(card(cab("Grandes bancos", f'<span class="src">{J["periodo"]}</span>') +
+                           '<div class="jt">' + tabela(cab_g, lin + [mb], ["l", "r", "r"] + (["r"] if simula else [])) + "</div>" +
+                           (f'<span class="src">Parcela fixa (tabela Price) com a taxa média de cada banco.</span>' if simula else "") + juros_nota(J)))
     linhas = []
     for x in L:
         var = chg(x["am"] - x["ant"], 2, " p.p.") if x["ant"] is not None else '<span class="small">–</span>'
         marca = ' <span class="small" title="Taxa muito abaixo das outras">*</span>' if x["atipica"] else ""
-        linhas.append([str(x["pos"]), f'<a href="{JUROS_URL}banco/{x["bslug"]}/">{esc(x["banco"])}</a>{marca}', _pct(x["am"]), _pct(x["aa"], 1), var])
-    rk = card(cab(f'Ranking {esc(m["art"])}', f'<span class="src">{J["periodo"]}</span>') +
-              tabela(["#", "Instituição", "% ao mês", "% ao ano", "vs. 4 semanas antes"], linhas, ["l", "l", "r", "r", "r"]) +
-              (f'<span class="src">* Taxa muito abaixo das demais (menos de um quinto da mediana). Costuma vir de poucas operações ou de crédito com condição especial; '
-               f'por isso o "mais barato" desta página é o primeiro sem essa marca.</span>' if n_at else "") + juros_nota(J))
-    sim = ""
-    if m["slug"] in JUROS_SIMULA:
-        pv, n = (40000, 48) if "veiculos" in m["slug"] else (10000, 12)
-        p0, p1, pm = _parcela(pv, b0["am"], n), _parcela(pv, b1["am"], n), _parcela(pv, m["med"], n)
-        sim = card(cab(f"Quanto isso muda a parcela: R$ {nf(pv, 0)} em {n} meses") +
-                   tabela(["Banco", "Taxa ao mês", "Parcela", "Total pago"],
-                          [[esc(b0["banco"]) + " (mais barato)", _pct(b0["am"]), "R$ " + nf(p0, 2), "R$ " + nf(p0 * n, 2)],
-                           ["Mediana dos bancos", _pct(m["med"]), "R$ " + nf(pm, 2), "R$ " + nf(pm * n, 2)],
-                           [esc(b1["banco"]) + " (mais caro)", _pct(b1["am"]), "R$ " + nf(p1, 2), "R$ " + nf(p1 * n, 2)]], ["l", "r", "r", "r"]) +
-                   f'<span class="src">Parcelas fixas (tabela Price) com a taxa média de cada banco. A diferença entre o mais barato e o mais caro é de R$ {nf((p1 - p0) * n, 2)} no total.</span>')
-    outras = [J["mods"][s] for s in JUROS_ORDEM_PF if s in J["mods"] and s != m["slug"]] if m["pf"] else []
-    ver = card(cab("Outros tipos de crédito") + '<div class="chips">' + "".join(f'<a class="chip" href="{JUROS_URL}{o["slug"]}/">{esc(o["nome"])}</a>' for o in outras) +
-               f'<a class="chip" href="{JUROS_URL}">Todos</a></div>') if outras else ""
-    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{rk}{sim}{ver}'
-    t = f"Juros {m['art']} por banco em {J['mes']}: do mais barato ao mais caro"
-    return pagina(B, f"{JUROS_URL}{m['slug']}/", t,
-                  f"{m['nome']}: taxa de {m['n']} bancos, de {_pct(b0['am'])} ao mês ({b0['banco']}) a {_pct(b1['am'])} ({b1['banco']}). Ranking com dados do Banco Central, {J['periodo']}.",
-                  corpo, JUROS_URL, [(JUROS_URL, "Juros dos bancos"), (None, m["nome"])])
+        nome = _nome_grande(x) if x["bslug"] in JUROS_GRANDES else f'<a href="{JUROS_URL}banco/{x["bslug"]}/">{esc(x["banco"])}</a>'
+        linhas.append([str(x["pos"]), nome + marca, _pct(x["am"]), _pct(x["aa"], 1), var])
+    nota_at = ('<span class="src">* Taxa muito abaixo das demais (menos de um quinto da mediana): costuma vir de poucas operações ou de crédito com condição especial.</span>'
+               if any(x["atipica"] for x in L) else "")
+    blocos.append(card(_mais(f"Ranking completo: as {m['n']} instituições, do mais barato ao mais caro",
+                             tabela(["#", "Instituição", "% ao mês", "% ao ano", "vs. 4 semanas antes"], linhas, ["l", "l", "r", "r", "r"]) + nota_at)))
+    outras = [J["mods"][s] for s in JUROS_PRINCIPAIS if s in J["mods"] and s != m["slug"]]
+    blocos.append(card(cab("Outros juros") + '<div class="chips">' + "".join(f'<a class="chip" href="{JUROS_URL}{o["slug"]}/">{esc(o["nome"])}</a>' for o in outras) +
+                       f'<a class="chip" href="{JUROS_URL}">Ver todos</a></div>'))
+    corpo = hero + "".join(blocos)
+    t = f"Juros {m['art']} no Banco do Brasil, Caixa, Itaú, Bradesco, Santander e BTG em {J['mes']}" if g else f"Juros {m['art']} por banco em {J['mes']}"
+    desc = (f"{m['nome']}: taxa de juros dos grandes bancos ({', '.join(x['banco'] + ' ' + _pct(x['am']) for x in g[:3])}…) e ranking de {m['n']} instituições. Banco Central, {J['periodo']}."
+            if g else f"{m['nome']}: taxa de {m['n']} instituições, do mais barato ao mais caro. Banco Central, {J['periodo']}.")
+    return pagina(B, f"{JUROS_URL}{m['slug']}/", t, desc, corpo, JUROS_URL, [(JUROS_URL, "Juros dos bancos"), (None, m["nome"])])
 
 
 def pg_juros_imob(B: Base) -> str:
@@ -3807,56 +3844,76 @@ def pg_juros_imob(B: Base) -> str:
     grupos = {}
     for x in J["imob"]:
         grupos.setdefault(x["mod"], []).append(x)
-    cards = []
+    mes = mes_nome(J["mes_imob"]) if J["mes_imob"] else ""
+
+    def nome_mod(mod):
+        s = mod.replace("Financiamento imobiliário com ", "").replace(" - Prefixado", ", prefixado").replace(" - Pós-fixado referenciado em ", ", corrigido pelo ")
+        return s[:1].upper() + s[1:]
+    # destaque: grandes bancos na modalidade mais comum (taxas reguladas, TR = SFH da Caixa e dos bancões)
+    linhas = []
+    for s in JUROS_GRANDES:
+        xs = [x for x in J["imob"] if x["bslug"] == s]
+        if not xs:
+            continue
+        melhor = min(xs, key=lambda x: x["aa"])
+        linhas.append([f'<a href="{JUROS_URL}banco/{s}/"><strong>{esc(melhor["banco"])}</strong></a>', f'<strong>{_pct(melhor["aa"])}</strong>', esc(nome_mod(melhor["mod"]))])
+    linhas.sort(key=lambda l: float(re.sub(r"[^\d,]", "", l[1]).replace(",", ".")))
+    hero = card(f'<span class="eyebrow">Juros dos bancos · casa própria</span><h1>Juros do financiamento imobiliário nos grandes bancos</h1>'
+                f'<p class="lede">Menor taxa média de cada grande banco no financiamento da casa própria em {mes}, com dados do Banco Central.</p>')
+    destaque = card(cab("Grandes bancos", f'<span class="src">{mes}</span>') + tabela(["Banco", "% ao ano", "Tipo"], linhas, ["l", "r", "l"]) +
+                    '<span class="src">Além dos juros, o custo total do financiamento inclui seguros e tarifas.</span>') if linhas else ""
+    det = ""
     for mod in sorted(grupos):
         L = sorted(grupos[mod], key=lambda x: x["aa"])
-        nome = mod.replace("Financiamento imobiliário com ", "").replace(" - Prefixado", ", prefixado").replace(" - Pós-fixado referenciado em ", ", corrigido pelo ")
-        cards.append(card(cab(esc(nome[:1].upper() + nome[1:])) + tabela(["#", "Instituição", "% ao ano", "% ao mês"],
-                          [[str(i), esc(x["banco"]), _pct(x["aa"]), _pct(x["am"])] for i, x in enumerate(L, 1)], ["l", "l", "r", "r"])))
-    mes = mes_nome(J["mes_imob"]) if J["mes_imob"] else ""
-    hero = card(f'<span class="eyebrow">Juros dos bancos · casa própria</span><h1>Juros do financiamento imobiliário por banco</h1>'
-                f'<p class="lede">Taxa média de cada banco no financiamento da casa própria em {mes}, separada por tipo: taxas reguladas (SFH, com limite de juros) e de mercado; prefixada ou corrigida pela TR ou pelo IPCA.</p>')
-    corpo = hero + "".join(cards) + card('<span class="src">Banco Central, médias mensais. Além dos juros, o custo total do financiamento inclui seguros e tarifas.</span>')
-    return pagina(B, f"{JUROS_URL}financiamento-imobiliario/", f"Juros do financiamento imobiliário por banco em {mes}",
+        det += f"<h3>{esc(nome_mod(mod))}</h3>" + tabela(["#", "Instituição", "% ao ano", "% ao mês"],
+                                                         [[str(i), (f'<strong>{esc(x["banco"])}</strong>' if x["bslug"] in JUROS_GRANDES else esc(x["banco"])), _pct(x["aa"]), _pct(x["am"])]
+                                                          for i, x in enumerate(L, 1)], ["l", "l", "r", "r"])
+    corpo = hero + destaque + card(_mais("Todos os bancos, por tipo de financiamento", det))
+    return pagina(B, f"{JUROS_URL}financiamento-imobiliario/", f"Juros do financiamento imobiliário na Caixa, Banco do Brasil, Itaú, Bradesco e Santander em {mes}",
                   f"Taxa de juros de cada banco no financiamento da casa própria em {mes}: Caixa, Banco do Brasil, Itaú, Bradesco, Santander e outros. Dados do Banco Central.",
                   corpo, JUROS_URL, [(JUROS_URL, "Juros dos bancos"), (None, "Financiamento imobiliário")])
 
 
 def pg_juros_banco(B: Base, b: dict) -> str:
     J = B.juros
-    linhas, melhores = [], []
+    art = "da" if b["nome"].lower().startswith("caixa") else "do"
     ordem = {s: i for i, s in enumerate(JUROS_ORDEM_PF)}
     slugs = sorted(set(b["itens"]), key=lambda s: (not J["mods"][s]["pf"], ordem.get(s, 99), J["mods"][s]["nome"]))
-    for s in slugs:
+
+    def linha(s):
         m = J["mods"][s]
         x = next(x for x in m["linhas"] if x["bslug"] == b["slug"])
         dif = x["am"] - m["med"]
         comp = f'<span class="chg {"down" if dif < 0 else "up" if dif > 0 else "flat"}">{"abaixo" if dif < 0 else "acima" if dif > 0 else "igual"} da mediana</span>'
-        linhas.append([f'<a href="{JUROS_URL}{s}/">{esc(m["nome"])}</a>', _pct(x["am"]), _pct(x["aa"], 1), f'{x["pos"]}º de {m["n"]}', comp])
-        if x["pos"] <= 3 and m["n"] >= 5 and m["pf"] and not x["atipica"]:
-            melhores.append(f'{m["nome"][:1].lower() + m["nome"][1:]} ({x["pos"]}º mais barato)')
+        return [f'<a href="{JUROS_URL}{s}/">{esc(m["nome"])}</a>', f'<strong>{_pct(x["am"])}</strong>', _pct(x["aa"], 1), f'{x["pos"]}º de {m["n"]}', comp]
+    cab_ = ["Tipo de crédito", "% ao mês", "% ao ano", "Posição (do mais barato)", "Comparação"]
+    al = ["l", "r", "r", "r", "l"]
+    princ = [s for s in JUROS_PRINCIPAIS if s in slugs]
+    outros = [s for s in slugs if s not in princ]
     imob = [x for x in J["imob"] if x["bslug"] == b["slug"]]
+    lede = f'Taxa média {art} {esc(b["nome"])} nos juros mais procurados e a posição entre os bancos, com dados do Banco Central ({J["periodo"]}).'
+    hero = card(f'<span class="eyebrow">Juros dos bancos · instituição</span><h1>Juros {art} {esc(b["nome"])}</h1><p class="lede">{lede}</p>')
+    blocos = []
+    if princ:
+        blocos.append(card(cab("Juros mais procurados", f'<span class="src">{J["periodo"]}</span>') + tabela(cab_, [linha(s) for s in princ], al) + juros_nota(J)))
+    if imob:
+        blocos.append(card(cab("Financiamento imobiliário", f'<span class="src">média de {mes_nome(J["mes_imob"])}</span>' if J["mes_imob"] else "") +
+                           tabela(["Tipo", "% ao ano"], [[esc(x["mod"].replace("Financiamento imobiliário com ", "")), _pct(x["aa"])] for x in imob], ["l", "r"])))
+    if outros:
+        blocos.append(card(_mais(f"Outros tipos de crédito ({len(outros)})", tabela(cab_, [linha(s) for s in outros], al) + ("" if princ else juros_nota(J)))))
+    grandes = [J["bancos"][s] for s in JUROS_GRANDES if s in J["bancos"] and s != b["slug"]]
+    blocos.append(card(cab("Compare com os grandes bancos") + '<div class="chips">' +
+                       "".join(f'<a class="chip" href="{JUROS_URL}banco/{g["slug"]}/">{esc(g["nome"])}</a>' for g in grandes) +
+                       f'<a class="chip" href="{JUROS_URL}">Todos os bancos</a></div>'))
     pfs = []
     for s in slugs:
         if s in JUROS_TITULO and JUROS_TITULO[s] not in pfs:
             pfs.append(JUROS_TITULO[s])
     pfs = pfs[:3]
-    art = "da" if b["nome"].lower().startswith("caixa") else "do"
-    lede = (f'O Banco Central informa as taxas {art} {esc(b["nome"])} em {len(slugs)} tipos de crédito ({J["periodo"]}).'
-            + (f' Está entre os mais baratos em {", ".join(esc(t) for t in melhores[:3])}.' if melhores else ""))
-    hero = card(f'<span class="eyebrow">Juros dos bancos · instituição</span><h1>Juros {"do " if not b["nome"].lower().startswith(("caixa",)) else "da "}{esc(b["nome"])}</h1>'
-                f'<p class="lede">{lede}</p><p class="small">Razão social: {esc(b["razao"])}</p>')
-    t = card(cab("Taxa em cada tipo de crédito", f'<span class="src">{J["periodo"]}</span>') +
-             tabela(["Tipo de crédito", "% ao mês", "% ao ano", "Posição (do mais barato)", "Comparação"], linhas, ["l", "r", "r", "r", "l"]) + juros_nota(J))
-    ti = ""
-    if imob:
-        ti = card(cab("Financiamento imobiliário", f'<span class="src">média de {mes_nome(J["mes_imob"])}</span>' if J["mes_imob"] else "") +
-                  tabela(["Tipo", "% ao ano"], [[esc(x["mod"].replace("Financiamento imobiliário com ", "")), _pct(x["aa"])] for x in imob], ["l", "r"]))
     titulo = f"Juros {art} {b['nome']} em {J['mes']}" + (": " + (", ".join(pfs[:-1]) + " e " + pfs[-1] if len(pfs) > 1 else pfs[0]) if pfs else "")
-    corpo = f"{hero}{t}{ti}"
     return pagina(B, f"{JUROS_URL}banco/{b['slug']}/", titulo,
                   f"Taxa de juros {art} {b['nome']} em cada tipo de crédito e a posição entre os bancos, com dados do Banco Central ({J['periodo']}).",
-                  corpo, JUROS_URL, [(JUROS_URL, "Juros dos bancos"), (None, b["nome"])])
+                  hero + "".join(blocos), JUROS_URL, [(JUROS_URL, "Juros dos bancos"), (None, b["nome"])])
 
 
 def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None,
