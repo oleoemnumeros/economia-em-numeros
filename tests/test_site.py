@@ -461,13 +461,14 @@ class TestCreditoEIndustriaVarejo(unittest.TestCase):
         self.assertLess(t.index("<h2>Crédito</h2>"), t.index("<h2>Câmbio</h2>"))
 
     def test_menu_e_dados_seguem_a_ordem_de_leitura_do_analista(self):
-        ordem = ["/atividade/", "/industria-e-varejo/", "/emprego/", "/inflacao/", "/juros/", "/credito/", "/cambio/",
-                 "/setor-externo/", "/contas-publicas/", "/calculadora/", "/sobre/"]
+        # menu pela procura do público (no celular só os primeiros itens aparecem); temas de analista no fim
+        ordem = ["/inflacao/", "/juros/", "/cambio/", "/emprego/", "/calculadora/", "/atividade/", "/industria-e-varejo/", "/credito/",
+                 "/setor-externo/", "/contas-publicas/", "/sobre/"]
         topo = self.ler("index.html")
         topo = topo[topo.index("<nav"):topo.index("</nav>")]
         hrefs = re.findall(r'<a href="([^"]+)"', topo)
         self.assertEqual([h for h in ordem if h in hrefs], [h for h in hrefs if h in ordem])
-        self.assertEqual(hrefs[-2:], ["/calculadora/", "/sobre/"])
+        self.assertEqual(hrefs[-1], "/sobre/")
         self.assertEqual(hrefs[:2], ["/", "/resumo/"])                 # padrão da família: Início e Resumos primeiro
         self.assertIn(">Como funciona</a></nav>", topo + "</nav>")
         d = self.ler("dados/index.html")
@@ -976,8 +977,7 @@ class TestBolsaFamilia(unittest.TestCase):
         topo = self.ler("index.html")
         topo = topo[topo.index("<nav"):topo.index("</nav>")]
         hrefs = re.findall(r'<a href="([^"]+)"', topo)
-        self.assertEqual(hrefs[hrefs.index("/emprego/") + 1], "/bolsa-familia/")
-        self.assertEqual(hrefs[hrefs.index("/bolsa-familia/") + 1], "/inflacao/")
+        self.assertLess(hrefs.index("/bolsa-familia/"), hrefs.index("/emprego/"))   # menu pela procura do público
         d = self.ler("dados/index.html")
         self.assertLess(d.index("<strong>Emprego por estado</strong>"), d.index("<h2>Bolsa Família</h2>"))
         self.assertLess(d.index("<h2>Bolsa Família</h2>"), d.index("<h2>Inflação</h2>"))
@@ -1434,7 +1434,7 @@ class TestMunicipios(unittest.TestCase):
         topo = self.ler("index.html")
         hrefs = re.findall(r'<a href="([^"]+)"', topo[topo.index("<nav"):topo.index("</nav>")])
         self.assertIn("/municipios/", hrefs)
-        self.assertEqual(hrefs[hrefs.index("/contas-publicas/") + 1], "/municipios/")
+        self.assertEqual(hrefs[2], "/municipios/")   # logo depois de Início e Resumos
         self.assertIn("Buscar uma cidade", topo)
         self.assertIn("Fichas de <strong>12 cidades</strong>", topo)
         self.assertIn("Siconfi", self.ler("sobre/index.html"))

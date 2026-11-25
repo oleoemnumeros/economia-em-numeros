@@ -37,8 +37,6 @@ FAMILIA = [
 # Ordem de leitura do analista (menu, rodapé, início, /dados/ e fontes seguem a mesma lógica):
 # atividade → trabalho e renda → preços → juros → crédito → câmbio → setor externo → fiscal.
 # Ordem padrão da Família em Números: Início, Resumos, temas do portal, lugares, ferramentas, Como funciona
-NAV_INICIO = [("/", "Início"), ("/resumo/", "Resumos")]
-NAV_FIM = [("/calculadora/", "Calculadora"), ("/sobre/", "Como funciona")]
 
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 MES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
@@ -455,31 +453,31 @@ class Base:
                 "grupos": grupos, "subs": subs}
 
     def nav(self) -> list:
-        # temas na ordem de leitura do analista: atividade, emprego e renda, preços, juros, crédito, câmbio, contas do governo;
-        # depois os dados por município
-        itens = list(NAV_INICIO)
+        # ordem pelo que o público mais procura (no celular só cabem 4 ou 5 itens na tela); temas de analista depois
+        itens = [("/", "Início"), ("/resumo/", "Resumos")]  # padrão da família: Início e Resumos primeiro
+        if self.tem_mun:
+            itens.append(("/municipios/", "Municípios"))
+        itens += [("/inflacao/", "Inflação"), ("/juros/", "Juros e Copom")]
+        if self.tem_cambio:
+            itens.append(("/cambio/", "Câmbio"))
+        if self.tem_bf:
+            itens.append(("/bolsa-familia/", "Bolsa Família"))
+        if self.tem_emprego:
+            itens.append(("/emprego/", "Emprego"))
+        itens.append(("/calculadora/", "Calculadora"))
         if self.tem_atividade:
             itens.append(("/atividade/", "Atividade"))
         if self.tem_ibge:
             itens.append(("/industria-e-varejo/", "Indústria e varejo"))
-        if self.tem_emprego:
-            itens.append(("/emprego/", "Emprego"))
-        if self.tem_bf:
-            itens.append(("/bolsa-familia/", "Bolsa Família"))
-        itens += [("/inflacao/", "Inflação"), ("/juros/", "Juros e Copom")]
-        if getattr(self, "juros", None):
-            itens.append(("/juros-dos-bancos/", "Juros dos bancos"))
         if self.tem_credito:
             itens.append(("/credito/", "Crédito"))
-        if self.tem_cambio:
-            itens.append(("/cambio/", "Câmbio"))
+        if getattr(self, "juros", None):
+            itens.append(("/juros-dos-bancos/", "Juros dos bancos"))
         if self.tem_externo:
             itens.append(("/setor-externo/", "Setor externo"))
         if self.tem_fiscal:
             itens.append(("/contas-publicas/", "Contas públicas"))
-        if self.tem_mun:
-            itens.append(("/municipios/", "Municípios"))
-        return itens + NAV_FIM
+        return itens + [("/sobre/", "Como funciona")]
 
     # Câmbio ---------------------------------------------------------------
     def cambio_stats(self) -> dict:
@@ -1003,8 +1001,41 @@ def continue_html(B: Base, caminho: str, extra=None) -> str:
             f'<ul class="cont-grid">{"".join(cartoes)}</ul></section>')
 
 
+def com_atalhos(corpo: str, caminho: str, prefixos, atalhos) -> str:
+    """Páginas longas ganham, logo depois do topo, uma fila de atalhos para as seções ("Nesta página")."""
+    if not caminho.startswith(tuple(prefixos)) or caminho.count("/") < 3:
+        return corpo
+    itens, usados, n = [], set(), [0]
+
+    def troca(m):
+        txt = re.sub(r"<[^>]+>", "", m.group(2))
+        for chave, rot in atalhos:
+            if txt.lower().startswith(chave.lower()) and rot not in usados:
+                usados.add(rot)
+                n[0] += 1
+                ide = f"s{n[0]}"
+                itens.append(f'<a href="#{ide}">{rot}</a>')
+                return f'<h2{m.group(1)} id="{ide}">{m.group(2)}</h2>'
+        return m.group(0)
+    novo = re.sub(r'<h2((?:(?!id=)[^>])*)>(.*?)</h2>', troca, corpo)
+    if len(itens) < 4:
+        return corpo
+    fila = f'<nav class="atalhos" aria-label="Nesta página"><span>Nesta página</span>{"".join(itens)}</nav>'
+    i = novo.find("</section>")
+    if i < 0:
+        i = novo.find("</div>")
+    return novo[:i + len("</section>" if novo[i:i + 10] == "</section>" else "</div>")] + "\n" + fila + novo[i + len("</section>" if novo[i:i + 10] == "</section>" else "</div>"):] if i >= 0 else novo
+
+
+ATALHOS = [("De onde vem o PIB", "PIB"), ("Para onde vai o dinheiro", "Gastos"), ("Comparação", "Comparação"), ("Principais tributos", "Receitas"),
+           ("Cidades", "Cidades parecidas"), ("Como ler", "Como ler")]
+PREF_ATALHOS = ("/municipios/",)
+
+
 def pagina(B: Base, caminho, titulo, descricao, corpo, ativo="", migalhas=None, noindex=False, continuar=None, imagem=None) -> str:
     url = BASE + caminho
+    if caminho.count("/") >= 4:
+        corpo = com_atalhos(corpo, caminho, PREF_ATALHOS, ATALHOS)
     nav = "".join(f'<a href="{h}"' + (' aria-current="page"' if h == ativo else "") + f">{t}</a>" for h, t in B.nav())
     bc = ""
     ld = ""
@@ -3051,8 +3082,8 @@ def pg_mun(B: Base, m: dict) -> str:
         aviso = card('<h2>Contas da prefeitura</h2><p>A prefeitura ainda não tem as contas anuais utilizáveis no Tesouro Nacional, ou entregou fora do padrão. '
                      'Assim que houver dado, a ficha mostra de onde vem e para onde vai o dinheiro.</p>')
         dest = aviso
-    corpo = (f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B, "Busque outra cidade")}'
-             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{mun_mesmo_porte(B, m)}{mun_links_irmaos(B, m)}'
+    corpo = (f'{hero}<div class="tiles">{"".join(tiles)}</div>'
+             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{mun_busca_html(B, "Busque outra cidade")}{mun_mesmo_porte(B, m)}{mun_links_irmaos(B, m)}'
              + card(mun_texto(B) + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
     desc = (f"A população de {nome} é de {nf(m['pop'], 0)} habitantes ({x['pop_ano']}) e o PIB é de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
             + (f", receita da prefeitura de {brl_abrev(c['rec']['total'])} e gastos por área" if c else "") + ". Dados oficiais do IBGE e do Tesouro Nacional.")

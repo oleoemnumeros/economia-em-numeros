@@ -296,3 +296,10 @@ details.mais+details.mais{border-top:1px solid var(--line)}
 .jt{display:contents}
 .mm{display:block;white-space:normal;hyphens:manual;-webkit-hyphens:manual}
 .mm+.mm{margin-top:2px}
+
+/* atalhos "Nesta página" */
+.atalhos{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;margin:-4px 0 6px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.atalhos::-webkit-scrollbar{display:none}
+.atalhos span{flex:0 0 auto;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:.7;align-self:center}
+.atalhos a{flex:0 0 auto;padding:7px 12px;border:1px solid rgba(128,128,128,.4);border-radius:999px;background:var(--card,#fff);font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap}
+h2[id],section[id]{scroll-margin-top:96px}
