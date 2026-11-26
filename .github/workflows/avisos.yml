@@ -1,0 +1,31 @@
+name: Avisar resumo novo (para postar nas redes)
+
+# Confere de hora em hora os cinco portais da família. Quando sai um resumo novo (semanal ou mensal),
+# abre uma issue com a imagem e os textos do X, Instagram e LinkedIn, mencionando @oleoemnumeros:
+# o GitHub manda e-mail e notificação no app. Script: scripts/avisos_resumos.py
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: avisos-resumos
+  cancel-in-progress: false
+
+jobs:
+  avisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Procurar resumos novos e avisar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/avisos_resumos.py
