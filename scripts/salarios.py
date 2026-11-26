@@ -89,6 +89,12 @@ def ler_mes(ym: str, pasta: Path):
     for c in ("horas", "sal"):
         if df[c].dtype == object:
             df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", "."), errors="coerce")
+    if not getattr(ler_mes, "_mostrou", False):  # diagnóstico do primeiro mês
+        ler_mes._mostrou = True
+        log("  tipos:", dict(df.dtypes.astype(str)))
+        for c in ("saldo", "unid", "interm", "parcial", "aprendiz", "tipomov"):
+            log(f"  {c}:", df[c].value_counts().head(6).to_dict())
+        log("  horas:", df.horas.describe().round(1).to_dict(), "| sal:", df.sal.describe().round(0).to_dict())
     ok = ((df.saldo == 1) & (df.unid == 5) & (df.interm == 0) & (df.parcial == 0) & (df.aprendiz == 0)
           & (~df.tipomov.isin([35, 70])) & (df.horas >= 30) & (df.sal >= 800) & (df.sal <= 200000))
     df = df.loc[ok, ["uf", "mun", "cbo", "sal"]].copy()
@@ -100,7 +106,8 @@ def ler_mes(ym: str, pasta: Path):
 def main():
     forcar = "--forcar" in sys.argv
     ftp = conectar()
-    meses = meses_disponiveis(ftp)[-12:]
+    import os
+    meses = meses_disponiveis(ftp)[-int(os.environ.get("MESES", "12")):]
     antigo = json.loads(SAIDA.read_text(encoding="utf-8")) if SAIDA.exists() else {}
     if not forcar and antigo.get("meses") == meses:
         log("Sem mês novo no Novo Caged:", meses[-1])
@@ -138,6 +145,8 @@ def main():
         k = str(int(t.mun))
         if k in out_mun:
             out_mun[k]["c"][t.cbo] = [int(t.n), r(t.p50)]
+    if not out_br:
+        raise SystemExit("Nenhuma profissão calculada: algo mudou no arquivo do Caged (veja o diagnóstico acima). Nada foi salvo.")
     usados = set(out_br) | {c for v in out_mun.values() for c in v["c"]}
     saida = {"fonte": "Ministério do Trabalho e Emprego, Novo Caged (microdados de movimentação)",
              "gerado_em": dt.date.today().isoformat(), "meses": meses, "total": int(len(df)),

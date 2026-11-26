@@ -10,6 +10,10 @@ on:
         description: "Refazer mesmo sem mês novo"
         type: boolean
         default: false
+      meses:
+        description: "Quantos meses (teste)"
+        required: false
+        default: "12"
 
 permissions:
   contents: write
@@ -31,6 +35,8 @@ jobs:
       - name: Instalar dependências
         run: pip install pandas==2.2.3 numpy==2.1.3 openpyxl==3.1.5
       - name: Calcular salários
+        env:
+          MESES: ${{ inputs.meses || '12' }}
         run: python scripts/salarios.py ${{ (github.event_name == 'workflow_dispatch' && inputs.forcar) && '--forcar' || '' }}
       - name: Salvar e publicar
         env:
