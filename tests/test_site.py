@@ -96,7 +96,7 @@ class TestSite(unittest.TestCase):
 
     def test_canonical_e_sitemap(self):
         s = self.ler("sitemap.xml")
-        self.assertEqual(s.count("<url>"), 8 + 16 + 1 + 27 + 2 + 1 + 1 + 2 + 1 + 3)  # + resumos: lista, semana e mês
+        self.assertEqual(s.count("<url>"), 8 + 16 + 1 + 27 + 2 + 1 + 1 + 2 + 1 + 3 + 1)  # + reajuste de aluguel; + resumos: lista, semana e mês
         self.assertNotIn("404", s)
         self.assertIn('<link rel="canonical" href="https://economiaemnumeros.com.br/inflacao/salvador/">', self.ler("inflacao/salvador/index.html"))
         self.assertIn('content="noindex"', self.ler("404.html"))
@@ -136,7 +136,7 @@ class TestSite(unittest.TestCase):
         t = self.ler("calculadora/index.html")
         m = re.search(r'<script type="application/json" id="dados-calc">(.*?)</script>', t, re.S)
         dados = json.loads(m.group(1))
-        self.assertEqual(set(dados), {"ipca", "igpm", "inpc", "cdi"})
+        self.assertEqual(set(dados), {"ipca", "igpm", "inpc", "igpdi", "cdi"})
         for chave in ("ipca", "igpm", "inpc", "cdi"):
             self.assertEqual(dados[chave][0][0], "2000-01", chave)
             self.assertEqual(dados[chave][-1][0], "2026-09", chave)
@@ -148,6 +148,20 @@ class TestSite(unittest.TestCase):
         self.assertIn("resultado é bruto, sem desconto de Imposto de Renda", t)
         self.assertIn("aviso destaque", t)
         self.assertIn("assets/calc.js", t)
+
+    def test_reajuste_de_aluguel(self):
+        self.assertAlmostEqual(g.acum12({f"2025-{m:02d}": 1.0 for m in range(1, 13)}, "2025-12"), (1.01 ** 12 - 1) * 100)
+        self.assertIsNone(g.acum12({"2025-12": 1.0}, "2025-12"))
+        self.assertEqual(g.mes_mais("2026-12", 1), "2027-01")
+        self.assertEqual(g.mes_mais("2026-01", -1), "2025-12")
+        t = self.ler("calculadora/reajuste-de-aluguel/index.html")
+        dados = json.loads(re.search(r'<script type="application/json" id="dados-aluguel">(.*?)</script>', t, re.S).group(1))
+        self.assertEqual(dados["aniv"], "2026-10")  # último IGP-M do exemplo: set/2026
+        self.assertIn("igpm", dados["series"])
+        self.assertIn("Índice de reajuste por mês de aniversário", t)
+        self.assertIn("assets/aluguel.js", t)
+        self.assertIn("imoveisemnumeros.com.br/financiamento/", t)
+        self.assertIn("/calculadora/reajuste-de-aluguel/", self.ler("calculadora/index.html"))
 
     def test_calculadora_some_indices_sem_dado(self):
         with tempfile.TemporaryDirectory() as t:
@@ -315,7 +329,7 @@ class TestSemDadosNovos(unittest.TestCase):
                 dados.pop(k)
             (d / "dados.json").write_text(json.dumps(dados), encoding="utf-8")
             cam = g.gerar(d / "dados.json", d / "docs", resumos_path=d / "nao_existe.json")
-            self.assertEqual(len(cam), 28)  # sem Emprego/Atividade/Indústria/Crédito/Câmbio/Contas públicas: 8 básicas (com /sugestoes/, /contato/ e /privacidade/) + 16 áreas + /dados/ + 3 de resumos (lista, semana, mês)
+            self.assertEqual(len(cam), 29)  # + reajuste de aluguel; sem Emprego/Atividade/Indústria/Crédito/Câmbio/Contas públicas: 8 básicas (com /sugestoes/, /contato/ e /privacidade/) + 16 áreas + /dados/ + 3 de resumos (lista, semana, mês)
             self.assertFalse((d / "docs" / "emprego").exists())
             for rel in ("index.html", "juros/index.html"):
                 t = (d / "docs" / rel).read_text(encoding="utf-8")

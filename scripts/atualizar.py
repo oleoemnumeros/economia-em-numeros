@@ -11,7 +11,7 @@ Baixa as séries públicas e grava data/dados.json:
   - Contas públicas (Banco Central): dívida bruta (SGS 13762), dívida líquida (4513), resultado primário (5793) e nominal (5727), em % do PIB
   - Setor externo: conta corrente (SGS 22701, 24419, 23079), investimento direto no país (22885), reservas internacionais (13621) e balança comercial (Secex/MDIC, pelo Comex em Números)
   - Bolsa Família por município (MDS, API MI Social + população do IBGE), gravado à parte em data/bolsa_familia.json
-  - Calculadora: IGP-M mensal (FGV, SGS 189), INPC mensal (IBGE, SGS 188) e CDI acumulado no mês (SGS 4391), para corrigir valores e calcular rendimento bruto
+  - Calculadora: IGP-M mensal (FGV, SGS 189), IGP-DI mensal (FGV, SGS 190), INPC mensal (IBGE, SGS 188) e CDI acumulado no mês (SGS 4391), para corrigir valores e calcular rendimento bruto
 
 Roda no GitHub Actions (a rede do ambiente de desenvolvimento não alcança essas APIs).
 Se uma fonte opcional falhar, o robô mantém o dado anterior daquela fonte e segue.
@@ -152,6 +152,11 @@ def igpm():
 def inpc():
     """INPC mensal (IBGE, via Banco Central, SGS 188), % ao mês. Usado só na calculadora (correção)."""
     return _mensal_sgs("INPC", 188, dt.date(2000, 1, 1), (-2, 5))
+
+
+def igpdi():
+    """IGP-DI mensal (FGV, via Banco Central, SGS 190), % ao mês. Usado na calculadora e no reajuste de aluguel."""
+    return _mensal_sgs("IGP-DI", 190, dt.date(2000, 1, 1), (-6, 8))
 
 
 def cdi():
@@ -1878,7 +1883,7 @@ def main():
                              ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False), ("fiscal", fiscal, False),
                              ("credito", credito, False), ("industria", producao_industrial, False), ("varejo", varejo, False),
                              ("externo", setor_externo, False), ("balanca", balanca, False),
-                             ("igpm", igpm, False), ("inpc", inpc, False), ("cdi", cdi, False)]:
+                             ("igpm", igpm, False), ("inpc", inpc, False), ("igpdi", igpdi, False), ("cdi", cdi, False)]:
         if not essencial and time.time() - t0 > ORCAMENTO_S:
             debug["erros"].append(f"{nome}: pulada, o robô já passou de {ORCAMENTO_S // 60} minutos (mantém o dado anterior)")
             print(f"PULADA {nome}: orçamento de tempo esgotado", file=sys.stderr, flush=True)

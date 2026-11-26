@@ -207,6 +207,7 @@ class Base:
         self.ipca_m = {k: float(v) for k, v in dados["ipca"]["mensal"]}
         self.igpm_m = {k: float(v) for k, v in (dados.get("igpm") or {}).get("mensal", [])}
         self.inpc_m = {k: float(v) for k, v in (dados.get("inpc") or {}).get("mensal", [])}
+        self.igpdi_m = {k: float(v) for k, v in (dados.get("igpdi") or {}).get("mensal", [])}
         self.cdi_m = {k: float(v) for k, v in (dados.get("cdi") or {}).get("mensal", [])}
         self.ipca_12 = {k: float(v) for k, v in dados["ipca"]["acum12"]}
         self.ref = max(self.ipca_12)
@@ -931,6 +932,7 @@ PORTAIS = {
     "comex": ("Comex em Números", "https://comexemnumeros.com.br", "#1F85D0"),
     "voo": ("Voo em Números", "https://vooemnumeros.com.br", "#4FB8EE"),
     "economia": ("Economia em Números", BASE, "#D9A514"),
+    "imoveis": ("Imóveis em Números", "https://imoveisemnumeros.com.br", "#7A52C7"),
 }
 ESTE = "economia"
 # páginas do próprio site: caminho -> (título, descrição); só entram se a página existe (ver B.nav())
@@ -958,7 +960,7 @@ CONTINUA = {
                              ("comex", "/produtos/", "O que o Brasil vende ao mundo", "Os produtos mais exportados e importados"), "/emprego/"],
     "/salarios/": ["/emprego/", "/municipios/", "/inflacao/", "/calculadora/"],
     "/emprego/": ["/salarios/", "/atividade/", "/municipios/", ("comex", "/estados/", "Comércio exterior por estado", "O que cada estado vende e compra do exterior"), "/inflacao/"],
-    "/inflacao/": ["/juros/", "/calculadora/", ("oleo", "/precos/", "Preço da gasolina e do diesel", "Preços nos postos, por estado e município"), "/cambio/"],
+    "/inflacao/": [("economia", "/calculadora/reajuste-de-aluguel/", "Reajuste de aluguel", "Quanto sobe o seu aluguel no aniversário do contrato"), "/juros/", "/calculadora/", ("oleo", "/precos/", "Preço da gasolina e do diesel", "Preços nos postos, por estado e município"), "/cambio/"],
     "/juros/": ["/inflacao/", "/credito/", "/calculadora/", ("comex", "/", "O comércio exterior do Brasil", "Quanto o país exporta e importa, mês a mês")],
     "/credito/": ["/juros/", "/inflacao/", "/emprego/", ("voo", "/", "Voos no horário?", "Pontualidade e cancelamentos por companhia e aeroporto")],
     "/cambio/": [("comex", "/exportacao/", "O que o Brasil exporta", "Os produtos que rendem dólares ao país"), "/setor-externo/", "/inflacao/", "/juros/"],
@@ -968,7 +970,8 @@ CONTINUA = {
     "/municipios/": [("oleo", "/royalties/", "Royalties de petróleo por cidade", "Quanto cada município recebe da produção de petróleo e gás"),
                      ("comex", "/municipios/", "Comércio exterior por cidade", "O que cada município exporta e importa"),
                      ("voo", "/aeroportos/", "Aeroportos e voos por cidade", "Atrasos e cancelamentos no aeroporto de cada cidade"), "/emprego/"],
-    "/calculadora/": ["/inflacao/", "/juros/", ("comex", "/", "O comércio exterior do Brasil", "Quanto o país exporta e importa, mês a mês"),
+    "/calculadora/": [("economia", "/calculadora/", "Calculadora de correção monetária", "Corrija qualquer valor pela inflação, mês a mês"),
+                      ("economia", "/calculadora/reajuste-de-aluguel/", "Reajuste de aluguel", "Quanto sobe o seu aluguel no aniversário do contrato"), "/inflacao/", "/juros/", ("comex", "/", "O comércio exterior do Brasil", "Quanto o país exporta e importa, mês a mês"),
                       ("voo", "/", "Voos no horário?", "Pontualidade e cancelamentos por companhia e aeroporto")],
     "/bolsa-familia/": ["/municipios/", "/emprego/", "/inflacao/", ("comex", "/", "O comércio exterior do Brasil", "Quanto o país exporta e importa, mês a mês")],
 }
@@ -2171,11 +2174,12 @@ _INDICES_CALC = {  # chave -> (rótulo no seletor, nome por extenso, fonte, sér
     "ipca": ("IPCA (IBGE)", "IPCA", "IBGE, via Banco Central", "433", "IPCA para a inflação do dia a dia"),
     "igpm": ("IGP-M (FGV)", "IGP-M", "FGV, via Banco Central", "189", "IGP-M para aluguéis e muitos contratos"),
     "inpc": ("INPC (IBGE)", "INPC", "IBGE, via Banco Central", "188", "INPC para reajustes de salário e benefícios"),
+    "igpdi": ("IGP-DI (FGV)", "IGP-DI", "FGV, via Banco Central", "190", "IGP-DI para alguns contratos e tarifas"),
 }
 
 
 def pg_calc(B: Base) -> str:
-    series = {"ipca": sorted(B.ipca_m.items()), "igpm": sorted(B.igpm_m.items()), "inpc": sorted(B.inpc_m.items()), "cdi": sorted(B.cdi_m.items())}
+    series = {"ipca": sorted(B.ipca_m.items()), "igpm": sorted(B.igpm_m.items()), "inpc": sorted(B.inpc_m.items()), "igpdi": sorted(B.igpdi_m.items()), "cdi": sorted(B.cdi_m.items())}
     dados = json.dumps(series, separators=(",", ":"))
     disponiveis = [v[1] for k, v in _INDICES_CALC.items() if series[k]]
     opcoes_indice = "".join(f'<option value="{k}">{esc(v[0])}</option>' for k, v in _INDICES_CALC.items() if series[k])
@@ -2185,7 +2189,7 @@ def pg_calc(B: Base) -> str:
                  f" de janeiro de 2000 a {mes_nome(B.ref)}. Calculadora gratuita, com índices oficiais.")
     hero = card('<span class="eyebrow">Ferramenta</span><h1>Calculadora: correção monetária' + (' e rendimento no CDI' if series["cdi"] else '') + '</h1>'
                 '<p class="lede">Descubra quanto um valor de um mês passado vale hoje, corrigido pela inflação oficial' +
-                (', ou quanto renderia aplicado a um percentual do CDI.</p>' if series["cdi"] else '.</p>'))
+                (', ou quanto renderia aplicado a um percentual do CDI.</p>' if series["cdi"] else '.</p>') + link_aluguel(B))
     usos = ", ".join(v[4] for k, v in _INDICES_CALC.items() if series[k])
     correcao = card('<h2>Correção monetária</h2>'
                 f'<p class="lede">Escolha o índice: {usos}.</p>'
@@ -2219,6 +2223,102 @@ def pg_calc(B: Base) -> str:
     script = f'<script type="application/json" id="dados-calc">{dados}</script><script src="/assets/calc.js" defer></script>'
     return pagina(B, "/calculadora/", titulo, descricao,
                   hero + correcao + rendimento + como + script, "/calculadora/", [(None, "Calculadora")])
+
+
+# ------------------------------------------------------------------ reajuste de aluguel
+ALUGUEL_URL = "/calculadora/reajuste-de-aluguel/"
+_INDICES_ALUGUEL = [("igpm", "IGP-M", "FGV", "189"), ("ipca", "IPCA", "IBGE", "433"), ("inpc", "INPC", "IBGE", "188"), ("igpdi", "IGP-DI", "FGV", "190")]
+
+
+def mes_mais(p: str, k: int) -> str:
+    n = int(p[:4]) * 12 + int(p[5:]) - 1 + k
+    return f"{n // 12:04d}-{n % 12 + 1:02d}"
+
+
+def acum12(m: dict, ate: str):
+    """Variação acumulada (%) nos 12 meses que terminam em `ate` (aaaa-mm); None se faltar algum mês."""
+    f = 1.0
+    for i in range(12):
+        x = mes_mais(ate, -i)
+        if x not in m:
+            return None
+        f *= 1 + m[x] / 100
+    return (f - 1) * 100
+
+
+def aluguel_series(B: Base) -> dict:
+    return {k: getattr(B, k + "_m") for k, *_ in _INDICES_ALUGUEL if getattr(B, k + "_m", None)}
+
+
+def link_aluguel(B: Base) -> str:
+    return (f'<p class="ir-p"><a class="ir" href="{ALUGUEL_URL}" data-goatcounter-click="aluguel-botao">Reajuste de aluguel</a></p>'
+            if B.igpm_m else "")
+
+
+def pg_aluguel(B: Base) -> str:
+    S = aluguel_series(B)
+    nomes = {k: n for k, n, *_ in _INDICES_ALUGUEL if k in S}
+    ig = S["igpm"]
+    ult = max(ig)
+    aniv = mes_mais(ult, 1)
+    v_ig = acum12(ig, ult)
+    ult_ip = max(S["ipca"]) if "ipca" in S else None
+    v_ip = acum12(S["ipca"], ult) if ult_ip and ult in S["ipca"] else None
+    lede = (f"Quem tem contrato com aniversário em <strong>{mes_nome(aniv)}</strong> e reajuste pelo IGP-M paga "
+            f"<strong>{sinal(v_ig)}%</strong>, o IGP-M acumulado nos 12 meses até {mes_nome(ult)}.")
+    if v_ip is not None:
+        lede += f" Se o índice do contrato for o IPCA, o reajuste é de {sinal(v_ip)}%."
+    hero = card('<span class="eyebrow">Ferramenta</span><h1>Reajuste de aluguel: calculadora pelo IGP-M e pelo IPCA</h1>'
+                f'<p class="lede">{lede}</p>')
+    cores = ["a", "b", "c", "k"]
+    tiles = []
+    for (k, n, fonte, _), cor in zip([x for x in _INDICES_ALUGUEL if x[0] in S], cores):
+        u = max(S[k])
+        v = acum12(S[k], u)
+        if v is not None:
+            tiles.append(tile(f"{n} em 12 meses", sinal(v) + "%", "", f'<span class="chg flat">● até {mes_curto(u)} · {fonte}</span>', cor))
+    meses_ok = [mes_mais(aniv, -i) for i in range(24)]
+    linhas = []
+    for a in meses_ok:
+        ate = mes_mais(a, -1)
+        vals = [acum12(S[k], ate) for k in nomes]
+        if all(x is None for x in vals):
+            continue
+        linhas.append([mes_nome(a).capitalize()] + [("—" if x is None else sinal(x) + "%") for x in vals])
+    tab = card(f"<h2>Índice de reajuste por mês de aniversário</h2>"
+               "<p class=\"small\">Acumulado nos 12 meses até o mês anterior ao aniversário do contrato, a regra mais comum.</p>" +
+               tabela(["Aniversário"] + list(nomes.values()), linhas, ["l"] + ["r"] * len(nomes)))
+    opcoes = "".join(f'<option value="{k}">{esc(n)}</option>' for k, n in nomes.items())
+    calc = card('<h2>Calcule o novo aluguel</h2>'
+                '<div class="calc"><div class="fields">'
+                '<label>Aluguel atual (R$)<input id="al-valor" type="text" inputmode="decimal" value="2.000,00" autocomplete="off"></label>'
+                f'<label>Índice do contrato<select id="al-indice">{opcoes}</select></label>'
+                '<label>Mês do reajuste<select id="al-mes"></select></label>'
+                '<label>Período do índice<select id="al-defas"><option value="1">12 meses até o mês anterior (o mais comum)</option>'
+                '<option value="2">12 meses até dois meses antes</option></select></label>'
+                '<button class="btn" type="button" id="al-calc">Calcular</button></div>'
+                '<div class="result" id="al-res" aria-live="polite"><span class="small">Preencha e clique em Calcular.</span></div></div>'
+                '<p class="small">O período do índice está no contrato. Na dúvida, use o padrão: é o que a maioria dos contratos e das imobiliárias aplica.</p>')
+    como = card("<h2>Como funciona o reajuste</h2>"
+                "<p>O aluguel residencial só pode ser reajustado uma vez por ano, no aniversário do contrato, pelo índice que está escrito nele. "
+                "O IGP-M, da FGV, é o mais usado por tradição; muitos contratos novos usam o IPCA, a inflação oficial. "
+                "A lei não permite reajuste pelo salário mínimo nem pelo dólar (Lei do Inquilinato, Lei 8.245/1991, art. 17).</p>"
+                "<p>O reajuste é a variação acumulada do índice em 12 meses: multiplicam-se as variações mensais, e não se somam. "
+                "Para um contrato que faz aniversário em dezembro, entram as variações de dezembro do ano anterior a novembro, porque o índice de dezembro só sai no fim do mês.</p>"
+                "<p>Quando o acumulado fica negativo, vale o que diz o contrato: alguns mantêm o aluguel, outros aplicam a redução. "
+                "Proprietário e inquilino também podem combinar um percentual menor, ou trocar de índice, por escrito. "
+                "Depois de três anos de contrato ou do último acordo, qualquer um dos dois pode pedir na Justiça a revisão do valor para o preço de mercado (art. 19).</p>"
+                '<p class="small">Índices mensais: ' + "; ".join(f"{n}, {f} (Banco Central, série {c})" for k, n, f, c in _INDICES_ALUGUEL if k in S) +
+                f". Atualização automática; dado mais recente: {mes_nome(ult)} (IGP-M).</p>"
+                '<div class="aviso">A calculadora mostra a conta pelo índice oficial. Ela não substitui o contrato, que pode ter regras próprias.</div>')
+    dados = json.dumps({"series": {k: sorted(v.items()) for k, v in S.items()}, "nomes": nomes, "aniv": aniv}, separators=(",", ":"))
+    script = f'<script type="application/json" id="dados-aluguel">{dados}</script><script src="/assets/aluguel.js?v={B.d["gerado_em"][:10]}" defer></script>'
+    corpo = hero + f'<div class="tiles">{"".join(tiles)}</div>' + calc + tab + como + script
+    imoveis = [("imoveis", "/financiamento/", "Simule o financiamento do imóvel", "Parcelas pelo SAC e pela Price, com os juros de cada banco"),
+               ("imoveis", "/", "Preço real dos imóveis", "Quanto os imóveis são vendidos de verdade, bairro a bairro")]
+    return pagina(B, ALUGUEL_URL, f"Reajuste de aluguel em {mes_nome(aniv)}: calculadora IGP-M e IPCA",
+                  f"Calcule o reajuste do aluguel pelo IGP-M, IPCA, INPC ou IGP-DI. Contratos com aniversário em {mes_nome(aniv)}: IGP-M de {sinal(v_ig)}% em 12 meses. Tabela mês a mês.",
+                  corpo, "/calculadora/", [("/calculadora/", "Calculadora"), (None, "Reajuste de aluguel")], continuar=imoveis)
 
 
 # ------------------------------------------------------------------ setor externo
@@ -3855,7 +3955,7 @@ def resumos_home(B: Base) -> str:
     return f'<div class="cols">{"".join(cards)}</div>' if cards else ""
 
 
-LLMS_TXT = '# Economia em Números\n\n> Indicadores da economia brasileira (juros, inflação, emprego, atividade, câmbio, contas públicas, crédito) e dados por município, como Bolsa Família e PIB, em páginas simples e atualizadas a partir de fontes oficiais.\n\nCada indicador tem página própria com valor mais recente, variação, série histórica e link para a fonte oficial. As páginas de município juntam população, PIB, contas da prefeitura, emprego formal e Bolsa Família.\n\n## Principais páginas\n- [Resumo](__BASE__/resumo/): os principais números da economia hoje\n- [Juros e Selic](__BASE__/juros/): meta da Selic, decisões e atas do Copom, expectativas do Boletim Focus\n- [Histórico do Boletim Focus](__BASE__/juros/focus/): como as projeções do mercado para IPCA, Selic, PIB e dólar mudaram semana a semana\n- [Inflação](__BASE__/inflacao/): IPCA do Brasil, por região e por grupo e item\n- [Emprego](__BASE__/emprego/): desocupação (PNAD) e vagas formais (Novo Caged)\n- [Salário por profissão](__BASE__/salarios/): salário de contratação de cada profissão no Brasil, por estado e cidade (Novo Caged)\n- [Atividade](__BASE__/atividade/): PIB e IBC-Br\n- [Indústria e varejo](__BASE__/industria-e-varejo/): produção industrial e vendas no varejo\n- [Câmbio](__BASE__/cambio/): dólar\n- [Crédito](__BASE__/credito/): crédito e inadimplência das famílias\n- [Contas públicas](__BASE__/contas-publicas/)\n- [Setor externo](__BASE__/setor-externo/)\n- [Bolsa Família por município](__BASE__/bolsa-familia/): famílias e valor pago em cada município\n- [Municípios](__BASE__/municipios/): PIB, população e contas das prefeituras\n- [Calculadora](__BASE__/calculadora/): correção de valores por indicadores\n- [Dados abertos](__BASE__/dados/): tabelas para baixar\n- [Como funciona](__BASE__/sobre/): fonte de cada série\n\n## Fontes\n- IBGE (SIDRA), Banco Central (SGS, Focus, Copom), Ministério do Trabalho e Emprego (Novo Caged), MDS e CGU (Bolsa Família) e Tesouro Nacional (Siconfi).\n- A lista completa de séries e tabelas está em __BASE__/sobre/.\n\n## Como citar\n- Cite o nome do portal e o link da página usada. Os dados são públicos e os links levam à fonte oficial.\n- Cada página mostra o período dos dados. Informe o período ao usar um número.\n- O portal é independente e não tem ligação com governo, empresas ou instituições financeiras.\n\n## Família em Números\nPortais independentes de dados públicos do Brasil: Óleo em Números (https://oleoemnumeros.com.br), Comex em Números (https://comexemnumeros.com.br), Voo em Números (https://vooemnumeros.com.br), Economia em Números (https://economiaemnumeros.com.br) e Imóveis em Números (https://imoveisemnumeros.com.br).\n\n## Contato\n- Erros, sugestões e pedidos de dados: __BASE__/contato/\n'
+LLMS_TXT = '# Economia em Números\n\n> Indicadores da economia brasileira (juros, inflação, emprego, atividade, câmbio, contas públicas, crédito) e dados por município, como Bolsa Família e PIB, em páginas simples e atualizadas a partir de fontes oficiais.\n\nCada indicador tem página própria com valor mais recente, variação, série histórica e link para a fonte oficial. As páginas de município juntam população, PIB, contas da prefeitura, emprego formal e Bolsa Família.\n\n## Principais páginas\n- [Resumo](__BASE__/resumo/): os principais números da economia hoje\n- [Juros e Selic](__BASE__/juros/): meta da Selic, decisões e atas do Copom, expectativas do Boletim Focus\n- [Histórico do Boletim Focus](__BASE__/juros/focus/): como as projeções do mercado para IPCA, Selic, PIB e dólar mudaram semana a semana\n- [Inflação](__BASE__/inflacao/): IPCA do Brasil, por região e por grupo e item\n- [Emprego](__BASE__/emprego/): desocupação (PNAD) e vagas formais (Novo Caged)\n- [Salário por profissão](__BASE__/salarios/): salário de contratação de cada profissão no Brasil, por estado e cidade (Novo Caged)\n- [Atividade](__BASE__/atividade/): PIB e IBC-Br\n- [Indústria e varejo](__BASE__/industria-e-varejo/): produção industrial e vendas no varejo\n- [Câmbio](__BASE__/cambio/): dólar\n- [Crédito](__BASE__/credito/): crédito e inadimplência das famílias\n- [Contas públicas](__BASE__/contas-publicas/)\n- [Setor externo](__BASE__/setor-externo/)\n- [Bolsa Família por município](__BASE__/bolsa-familia/): famílias e valor pago em cada município\n- [Municípios](__BASE__/municipios/): PIB, população e contas das prefeituras\n- [Calculadora](__BASE__/calculadora/): correção de valores por indicadores\n- [Reajuste de aluguel](__BASE__/calculadora/reajuste-de-aluguel/): IGP-M, IPCA, INPC e IGP-DI acumulados em 12 meses para cada mês de aniversário do contrato\n- [Dados abertos](__BASE__/dados/): tabelas para baixar\n- [Como funciona](__BASE__/sobre/): fonte de cada série\n\n## Fontes\n- IBGE (SIDRA), Banco Central (SGS, Focus, Copom), Ministério do Trabalho e Emprego (Novo Caged), MDS e CGU (Bolsa Família) e Tesouro Nacional (Siconfi).\n- A lista completa de séries e tabelas está em __BASE__/sobre/.\n\n## Como citar\n- Cite o nome do portal e o link da página usada. Os dados são públicos e os links levam à fonte oficial.\n- Cada página mostra o período dos dados. Informe o período ao usar um número.\n- O portal é independente e não tem ligação com governo, empresas ou instituições financeiras.\n\n## Família em Números\nPortais independentes de dados públicos do Brasil: Óleo em Números (https://oleoemnumeros.com.br), Comex em Números (https://comexemnumeros.com.br), Voo em Números (https://vooemnumeros.com.br), Economia em Números (https://economiaemnumeros.com.br) e Imóveis em Números (https://imoveisemnumeros.com.br).\n\n## Contato\n- Erros, sugestões e pedidos de dados: __BASE__/contato/\n'
 
 
 # ---------------------------------------------------------------- Juros dos bancos (Banco Central, taxaJuros v2)
@@ -4261,7 +4361,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     if saida.exists():
         shutil.rmtree(saida)
     saida.mkdir(parents=True)
-    paginas = [("/", pg_inicio(B)), ("/juros/", pg_juros(B))] + ([("/juros/focus/", pg_focus_hist(B))] if B.focus_hist else []) + [ ("/inflacao/", pg_inflacao(B)), ("/calculadora/", pg_calc(B)), ("/sobre/", pg_sobre(B)), ("/sugestoes/", pg_sugestoes(B)), ("/contato/", pg_contato(B)), ("/privacidade/", pg_privacidade(B))]
+    paginas = [("/", pg_inicio(B)), ("/juros/", pg_juros(B))] + ([("/juros/focus/", pg_focus_hist(B))] if B.focus_hist else []) + [ ("/inflacao/", pg_inflacao(B)), ("/calculadora/", pg_calc(B))] + ([(ALUGUEL_URL, pg_aluguel(B))] if B.igpm_m else []) + [ ("/sobre/", pg_sobre(B)), ("/sugestoes/", pg_sugestoes(B)), ("/contato/", pg_contato(B)), ("/privacidade/", pg_privacidade(B))]
     if B.sal:
         paginas.append((SAL_URL, pg_sal_hub(B)))
         for c in B.sal["slug"]:
@@ -4337,7 +4437,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     # arquivos estáticos
     (saida / "assets").mkdir()
     v = dados["gerado_em"][:10]
-    for nome in ("estilo.css", "calc.js", "graficos.js", "busca.js", "familia.js", "familia-graficos.js", "familia-compartilhar.js", "familia-busca.js"):
+    for nome in ("estilo.css", "calc.js", "aluguel.js", "graficos.js", "busca.js", "familia.js", "familia-graficos.js", "familia-compartilhar.js", "familia-busca.js"):
         shutil.copy(SITE / nome, saida / "assets" / nome)
     shutil.copy(SITE / "favicon.svg", saida / "favicon.svg")
     if not desenhar_og(B, saida / "assets" / "og.png"):          # sem Pillow, usa a imagem pronta
@@ -4346,7 +4446,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     (saida / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n", encoding="utf-8")
     (saida / "llms.txt").write_text(LLMS_TXT.replace("__BASE__", BASE), encoding="utf-8")
     extras_set = set(extras)
-    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/contas-publicas/": "0.9", "/credito/": "0.9", "/industria-e-varejo/": "0.9", "/setor-externo/": "0.9", "/bolsa-familia/": "0.9", "/municipios/": "0.8", "/inflacao/": "0.9", "/calculadora/": "0.8", "/dados/": "0.5", "/sobre/": "0.3", "/sugestoes/": "0.2", "/contato/": "0.2", "/privacidade/": "0.2"}
+    prio = {"/": "1.0", "/juros/": "0.9", "/emprego/": "0.9", "/atividade/": "0.9", "/cambio/": "0.9", "/contas-publicas/": "0.9", "/credito/": "0.9", "/industria-e-varejo/": "0.9", "/setor-externo/": "0.9", "/bolsa-familia/": "0.9", "/municipios/": "0.8", "/inflacao/": "0.9", "/calculadora/": "0.8", "/calculadora/reajuste-de-aluguel/": "0.8", "/dados/": "0.5", "/sobre/": "0.3", "/sugestoes/": "0.2", "/contato/": "0.2", "/privacidade/": "0.2"}
     todos = [c for c, _ in paginas] + extras
     urls = "".join(f"<url><loc>{BASE}{c}</loc><lastmod>{v}</lastmod><priority>{prio.get(c, '0.4' if c in extras_set else '0.6')}</priority></url>" for c in todos)
     (saida / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>\n", encoding="utf-8")
