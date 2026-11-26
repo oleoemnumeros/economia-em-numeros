@@ -4039,7 +4039,11 @@ def pg_juros_imob(B: Base) -> str:
         det += f"<h3>{esc(imob_nome(mod))}</h3>" + tabela(["#", "Instituição", "% ao ano"],
                                                          [[str(i), (f'<strong>{esc(x["banco"])}</strong>' if x["bslug"] in JUROS_GRANDES else esc(x["banco"])), _pct(x["aa"])]
                                                           for i, x in enumerate(L, 1)], ["l", "l", "r"])
-    corpo = (hero + tiles_ + destaque + card(cab("Menor e maior taxa em cada tipo", f'<span class="src">{mes}</span>') + resumo) +
+    simula = card(cab("Quanto fica a parcela?") +
+                  "<p>Simule o financiamento com a taxa de cada banco: parcela na SAC e na Price, juros totais, renda mínima e quanto precisa de entrada e ITBI. "
+                  "No Imóveis em Números, da mesma família, também dá para ver o preço real do metro quadrado em cada bairro.</p>"
+                  '<p class="ir-p"><a class="ir" href="https://imoveisemnumeros.com.br/financiamento/" data-goatcounter-click="continue/economia-imoveis-simulador">Simular financiamento</a></p>')
+    corpo = (hero + tiles_ + destaque + simula + card(cab("Menor e maior taxa em cada tipo", f'<span class="src">{mes}</span>') + resumo) +
              card(_mais("Todos os bancos, por tipo de financiamento", det)))
     return pagina(B, f"{JUROS_URL}financiamento-imobiliario/", f"Juros do financiamento imobiliário na Caixa, Banco do Brasil, Itaú, Bradesco e Santander em {mes}",
                   f"Taxa de juros de cada banco no financiamento da casa própria em {mes}: menor taxa {P[0]['banco']} ({_pct(P[0]['aa'])} ao ano), maior {P[-1]['banco']}. Dados do Banco Central.",
