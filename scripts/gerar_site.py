@@ -466,6 +466,8 @@ class Base:
             itens.append(("/bolsa-familia/", "Bolsa Família"))
         if self.tem_emprego:
             itens.append(("/emprego/", "Emprego"))
+        if getattr(self, "sal", None):
+            itens.append(("/salarios/", "Salários"))
         itens.append(("/calculadora/", "Calculadora"))
         if self.tem_atividade:
             itens.append(("/atividade/", "Atividade"))
@@ -944,6 +946,7 @@ NO_SITE = {
     "/contas-publicas/": ("Contas públicas", "Resultado fiscal e dívida do governo"),
     "/municipios/": ("PIB e contas da sua cidade", "População, PIB e de onde vem o dinheiro da prefeitura"),
     "/calculadora/": ("Calculadora do IPCA", "Corrija um valor pela inflação, mês a mês"),
+    "/salarios/": ("Salário por profissão", "Quanto paga cada emprego, por estado e cidade"),
 }
 # assunto da página -> páginas do próprio site e de outros portais que continuam a leitura
 CONTINUA = {
@@ -953,7 +956,8 @@ CONTINUA = {
     "/atividade/": ["/industria-e-varejo/", "/emprego/", ("comex", "/produtos/", "O que o Brasil vende ao mundo", "Os produtos mais exportados e importados"), "/setor-externo/"],
     "/industria-e-varejo/": ["/atividade/", ("oleo", "/", "Produção de petróleo e gás", "A indústria extrativa, campo a campo"),
                              ("comex", "/produtos/", "O que o Brasil vende ao mundo", "Os produtos mais exportados e importados"), "/emprego/"],
-    "/emprego/": ["/atividade/", "/municipios/", ("comex", "/estados/", "Comércio exterior por estado", "O que cada estado vende e compra do exterior"), "/inflacao/"],
+    "/salarios/": ["/emprego/", "/municipios/", "/inflacao/", "/calculadora/"],
+    "/emprego/": ["/salarios/", "/atividade/", "/municipios/", ("comex", "/estados/", "Comércio exterior por estado", "O que cada estado vende e compra do exterior"), "/inflacao/"],
     "/inflacao/": ["/juros/", "/calculadora/", ("oleo", "/precos/", "Preço da gasolina e do diesel", "Preços nos postos, por estado e município"), "/cambio/"],
     "/juros/": ["/inflacao/", "/credito/", "/calculadora/", ("comex", "/", "O comércio exterior do Brasil", "Quanto o país exporta e importa, mês a mês")],
     "/credito/": ["/juros/", "/inflacao/", "/emprego/", ("voo", "/", "Voos no horário?", "Pontualidade e cancelamentos por companhia e aeroporto")],
@@ -3134,6 +3138,140 @@ def mun_links_irmaos(B: Base, m: dict) -> str:
                 '<p class="small">Os outros portais da Família em Números têm páginas por cidade quando há dado: comércio exterior, royalties e outros.</p>')
 
 
+# ------------------------------------------------------------------ salário por profissão (Novo Caged)
+SAL_URL = "/salarios/"
+F_SAL = "Ministério do Trabalho e Emprego, Novo Caged"
+
+
+def sal_prepara(S: dict, mun: dict | None) -> dict:
+    """Endereços das profissões e ligação dos municípios (código de 6 dígitos do Caged -> ficha do IBGE)."""
+    nomes = S.get("cbo", {})
+    slugs, usados = {}, set()
+    for c in sorted(S.get("br", {}), key=lambda c: -S["br"][c][0]):
+        base = slugify(nomes.get(c, c)) or c
+        sl = base if base not in usados else f"{base}-{c}"
+        usados.add(sl)
+        slugs[c] = sl
+    m6 = {}
+    if mun:
+        for cod, m in mun["mun"].items():
+            m6[cod[:6]] = m
+    return {**S, "slug": slugs, "m6": m6}
+
+
+def sal_nome(S, c) -> str:
+    n = S["cbo"].get(c, c)
+    return n[:1].upper() + n[1:]
+
+
+def sal_min(nome: str) -> str:
+    """Nome no meio da frase: 'Enfermeiro' -> 'enfermeiro' (siglas ficam como estão)."""
+    return nome[:1].lower() + nome[1:] if len(nome) > 1 and nome[1:2].islower() else nome
+
+
+def sal_url(S, c) -> str:
+    return f"{SAL_URL}{S['slug'][c]}/"
+
+
+def sal_meses_txt(S) -> str:
+    return f"{mes_nome(S['meses'][0][:4] + '-' + S['meses'][0][4:])} a {mes_nome(S['meses'][-1][:4] + '-' + S['meses'][-1][4:])}"
+
+
+def sal_link(S, c) -> str:
+    return f'<a href="{sal_url(S, c)}">{esc(sal_nome(S, c))}</a>' if c in S["slug"] else esc(sal_nome(S, c))
+
+
+def pg_sal_hub(B: Base) -> str:
+    S = B.sal
+    br = S["br"]
+    periodo = sal_meses_txt(S)
+    mais = sorted(br, key=lambda c: -br[c][0])[:40]
+    altos = sorted((c for c in br if br[c][0] >= 200), key=lambda c: -br[c][2])[:25]
+    lista = json.dumps([[sal_nome(S, c), sal_url(S, c), br[c][2]] for c in sorted(br, key=lambda c: -br[c][0])], ensure_ascii=False, separators=(",", ":"))
+    hero = card(f'<span class="eyebrow">Salários · Novo Caged</span><h1>Salário por profissão: quanto paga cada emprego no Brasil</h1>'
+                f'<p class="lede">Salário de contratação de {nf(len(br), 0)} profissões, de {periodo}, a partir de {nf(S["total"] / 1e6, 1)} milhões de admissões com carteira assinada. '
+                'Veja quanto se paga em cada estado e nas cidades que mais contratam.</p>')
+    busca = card('<h2>Busque uma profissão</h2>'
+                 '<div class="search"><input id="sal-busca" type="search" autocomplete="off" placeholder="Ex.: enfermeiro, motorista, eletricista" aria-controls="sal-res"></div>'
+                 '<ul id="sal-res" class="busca-res" aria-live="polite"></ul>'
+                 f'<script>(function(){{var L={lista},i=document.getElementById("sal-busca"),r=document.getElementById("sal-res");'
+                 'function n(s){return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();}'
+                 'i.addEventListener("input",function(){var q=n(i.value.trim());if(q.length<2){r.innerHTML="";return;}'
+                 'var h="";L.filter(function(x){return n(x[0]).indexOf(q)>=0;}).slice(0,15).forEach(function(x){'
+                 'h+=\'<li><a href="\'+x[1]+\'">\'+x[0].replace(/</g,"&lt;")+"</a> · R$ "+x[2].toLocaleString("pt-BR")+"</li>";});'
+                 'r.innerHTML=h||"<li>Nenhuma profissão encontrada.</li>";});})();</script>')
+    t1 = card(cab("Profissões que mais contratam", f'<span class="src">{periodo}</span>') +
+              tabela(["Profissão", "Salário mediano", "Contratações"], [[sal_link(S, c), f"R$ {nf(br[c][2], 0)}", nf(br[c][0], 0)] for c in mais], ["l", "r", "r"]))
+    t2 = card(cab("Maiores salários de contratação", '<span class="src">profissões com pelo menos 200 contratações</span>') +
+              tabela(["Profissão", "Salário mediano", "Contratações"], [[sal_link(S, c), f"R$ {nf(br[c][2], 0)}", nf(br[c][0], 0)] for c in altos], ["l", "r", "r"]))
+    como = card("<h2>Como ler</h2>"
+                "<p>Os números são do <strong>salário de contratação</strong>: o valor registrado quando a pessoa foi admitida com carteira assinada. "
+                "Não é a média de quem já trabalha na profissão, que costuma ser maior por causa do tempo de casa. Entram só contratos com salário mensal "
+                "e jornada de 30 horas ou mais; ficam de fora trabalho intermitente, parcial e aprendiz.</p>"
+                "<p><strong>Mediana</strong> é o valor do meio: metade das contratações pagou menos e metade pagou mais. Ela engana menos que a média, "
+                f"que sobe com poucos salários muito altos. Fonte: {F_SAL} (microdados).</p>")
+    corpo = hero + busca + f'<div class="cols">{t1}{t2}</div>' + como
+    return pagina(B, SAL_URL, "Salário por profissão no Brasil: quanto paga cada emprego (Novo Caged)",
+                  f"Salário de contratação de {nf(len(br), 0)} profissões, por estado e cidade, com dados oficiais do Novo Caged ({periodo}).",
+                  corpo, "/emprego/", [("/emprego/", "Emprego"), (None, "Salários")])
+
+
+def pg_sal(B: Base, c: str) -> str:
+    S = B.sal
+    n, p25, p50, p75 = S["br"][c]
+    nome = sal_nome(S, c)
+    periodo = sal_meses_txt(S)
+    ufs = S["uf"].get(c, {})
+    lu = sorted(ufs.items(), key=lambda kv: -kv[1][1])
+    cidades = []
+    for m6, d in S["mun"].items():
+        v = d["c"].get(c)
+        if v:
+            cidades.append((m6, v))
+    cidades.sort(key=lambda x: -x[1][0])
+    hero = card(f'<span class="eyebrow">Salário · {esc(periodo)}</span><h1>Salário de {esc(sal_min(nome))}: R$ {nf(p50, 0)}</h1>'
+                f'<p class="lede">Metade das {nf(n, 0)} pessoas contratadas como {esc(sal_min(nome))} no Brasil de {periodo} começou ganhando até '
+                f'<strong>R$ {nf(p50, 0)}</strong> por mês. A faixa do meio vai de R$ {nf(p25, 0)} a R$ {nf(p75, 0)}: um quarto ganhou menos e um quarto ganhou mais.</p>')
+    tiles_ = ('<div class="tiles">' + tile("Salário mediano", f"R$ {nf(p50, 0)}", "por mês", "", "a") + tile("Faixa do meio", f"R$ {nf(p25, 0)} a {nf(p75, 0)}", "", "", "g")
+              + tile("Contratações", nf(n, 0), "em 12 meses", "", "k") + "</div>")
+    tu = card(cab("Por estado", '<span class="src">estados com pelo menos 20 contratações</span>') +
+              tabela(["Estado", "Salário mediano", "Contratações"], [[esc(UFS[u][1]) if u in UFS else u, f"R$ {nf(v[1], 0)}", nf(v[0], 0)] for u, v in lu], ["l", "r", "r"])) if lu else ""
+    lc = []
+    for m6, v in cidades[:30]:
+        m = S["m6"].get(m6)
+        if not m:
+            continue
+        nomec = f'{m["nome"]} ({m["sigla"]})'
+        lc.append([f'<a href="{mun_url(m)}">{esc(nomec)}</a>' if m["ficha"] else esc(nomec), f"R$ {nf(v[1], 0)}", nf(v[0], 0)])
+    tc = card(cab("Cidades que mais contrataram", '<span class="src">com pelo menos 10 contratações</span>') +
+              tabela(["Cidade", "Salário mediano", "Contratações"], lc, ["l", "r", "r"])) if lc else ""
+    fam = [x for x in S["br"] if x[:4] == c[:4] and x != c]
+    fam.sort(key=lambda x: -S["br"][x][0])
+    rel = card("<h2>Profissões parecidas</h2><ul class=\"plain\">" + "".join(f'<li>{sal_link(S, x)} · R$ {nf(S["br"][x][2], 0)}</li>' for x in fam[:10]) + "</ul>") if fam else ""
+    nota = card("<p class=\"small\">Salário de contratação com carteira assinada (Novo Caged), contratos com salário mensal e jornada de 30 horas ou mais. "
+                f"Não é a média de quem já trabalha na profissão. Código CBO {c[:4]}-{c[4:]}. Fonte: {F_SAL}. "
+                f'<a href="{SAL_URL}">Ver outras profissões →</a></p>')
+    corpo = hero + tiles_ + f'<div class="cols">{tu}{tc}</div>' + rel + nota
+    return pagina(B, sal_url(S, c), f"Salário de {sal_min(nome)}: R$ {nf(p50, 0)} (mediana de contratação) por estado e cidade",
+                  f"Quanto ganha {sal_min(nome)}: salário mediano de contratação de R$ {nf(p50, 0)} no Brasil ({periodo}), com {nf(n, 0)} contratações. Por estado e nas cidades que mais contratam.",
+                  corpo, "/emprego/", [("/emprego/", "Emprego"), (SAL_URL, "Salários"), (None, nome)])
+
+
+def card_sal_mun(B: Base, m: dict) -> str:
+    S = getattr(B, "sal", None)
+    if not S:
+        return ""
+    d = S["mun"].get(m["cod"][:6])
+    if not d or not d.get("c"):
+        return ""
+    top = list(d["c"].items())[:15]
+    return card(cab(f"Salário de quem foi contratado em {esc(m['nome'])}", f'<span class="src">{sal_meses_txt(S)}</span>') +
+                f'<p>Metade das {nf(d["t"][0], 0)} pessoas contratadas com carteira assinada na cidade começou ganhando até <strong>R$ {nf(d["t"][1], 0)}</strong> por mês. '
+                'Profissões que mais contrataram:</p>' +
+                tabela(["Profissão", "Salário mediano", "Contratações"], [[sal_link(S, cc), f"R$ {nf(v[1], 0)}", nf(v[0], 0)] for cc, v in top], ["l", "r", "r"]) +
+                f'<span class="src">Salário de contratação (Novo Caged), jornada de 30 horas ou mais. Fonte: {F_SAL}. <a href="{SAL_URL}">Salário por profissão no Brasil →</a></span>')
+
+
 def pg_mun(B: Base, m: dict) -> str:
     x = B.mun
     uf = x["uf"][m["uf2"]]
@@ -3176,7 +3314,7 @@ def pg_mun(B: Base, m: dict) -> str:
                      'Assim que houver dado, a ficha mostra de onde vem e para onde vai o dinheiro.</p>')
         dest = aviso
     corpo = (f'{hero}<div class="tiles">{"".join(tiles)}</div>'
-             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{mun_busca_html(B, "Busque outra cidade")}{mun_mesmo_porte(B, m)}{mun_links_irmaos(B, m)}'
+             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{card_sal_mun(B, m)}{mun_busca_html(B, "Busque outra cidade")}{mun_mesmo_porte(B, m)}{mun_links_irmaos(B, m)}'
              + card(mun_texto(B) + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
     desc = (f"A população de {nome} é de {nf(m['pop'], 0)} habitantes ({x['pop_ano']}) e o PIB é de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
             + (f", receita da prefeitura de {brl_abrev(c['rec']['total'])} e gastos por área" if c else "") + ". Dados oficiais do IBGE e do Tesouro Nacional.")
@@ -3706,7 +3844,7 @@ def resumos_home(B: Base) -> str:
     return f'<div class="cols">{"".join(cards)}</div>' if cards else ""
 
 
-LLMS_TXT = '# Economia em Números\n\n> Indicadores da economia brasileira (juros, inflação, emprego, atividade, câmbio, contas públicas, crédito) e dados por município, como Bolsa Família e PIB, em páginas simples e atualizadas a partir de fontes oficiais.\n\nCada indicador tem página própria com valor mais recente, variação, série histórica e link para a fonte oficial. As páginas de município juntam população, PIB, contas da prefeitura, emprego formal e Bolsa Família.\n\n## Principais páginas\n- [Resumo](__BASE__/resumo/): os principais números da economia hoje\n- [Juros e Selic](__BASE__/juros/): meta da Selic, decisões e atas do Copom, expectativas do Boletim Focus\n- [Histórico do Boletim Focus](__BASE__/juros/focus/): como as projeções do mercado para IPCA, Selic, PIB e dólar mudaram semana a semana\n- [Inflação](__BASE__/inflacao/): IPCA do Brasil, por região e por grupo e item\n- [Emprego](__BASE__/emprego/): desocupação (PNAD) e vagas formais (Novo Caged)\n- [Atividade](__BASE__/atividade/): PIB e IBC-Br\n- [Indústria e varejo](__BASE__/industria-e-varejo/): produção industrial e vendas no varejo\n- [Câmbio](__BASE__/cambio/): dólar\n- [Crédito](__BASE__/credito/): crédito e inadimplência das famílias\n- [Contas públicas](__BASE__/contas-publicas/)\n- [Setor externo](__BASE__/setor-externo/)\n- [Bolsa Família por município](__BASE__/bolsa-familia/): famílias e valor pago em cada município\n- [Municípios](__BASE__/municipios/): PIB, população e contas das prefeituras\n- [Calculadora](__BASE__/calculadora/): correção de valores por indicadores\n- [Dados abertos](__BASE__/dados/): tabelas para baixar\n- [Como funciona](__BASE__/sobre/): fonte de cada série\n\n## Fontes\n- IBGE (SIDRA), Banco Central (SGS, Focus, Copom), Ministério do Trabalho e Emprego (Novo Caged), MDS e CGU (Bolsa Família) e Tesouro Nacional (Siconfi).\n- A lista completa de séries e tabelas está em __BASE__/sobre/.\n\n## Como citar\n- Cite o nome do portal e o link da página usada. Os dados são públicos e os links levam à fonte oficial.\n- Cada página mostra o período dos dados. Informe o período ao usar um número.\n- O portal é independente e não tem ligação com governo, empresas ou instituições financeiras.\n\n## Família em Números\nPortais independentes de dados públicos do Brasil: Óleo em Números (https://oleoemnumeros.com.br), Comex em Números (https://comexemnumeros.com.br), Voo em Números (https://vooemnumeros.com.br), Economia em Números (https://economiaemnumeros.com.br) e Imóveis em Números (https://imoveisemnumeros.com.br).\n\n## Contato\n- Erros, sugestões e pedidos de dados: __BASE__/contato/\n'
+LLMS_TXT = '# Economia em Números\n\n> Indicadores da economia brasileira (juros, inflação, emprego, atividade, câmbio, contas públicas, crédito) e dados por município, como Bolsa Família e PIB, em páginas simples e atualizadas a partir de fontes oficiais.\n\nCada indicador tem página própria com valor mais recente, variação, série histórica e link para a fonte oficial. As páginas de município juntam população, PIB, contas da prefeitura, emprego formal e Bolsa Família.\n\n## Principais páginas\n- [Resumo](__BASE__/resumo/): os principais números da economia hoje\n- [Juros e Selic](__BASE__/juros/): meta da Selic, decisões e atas do Copom, expectativas do Boletim Focus\n- [Histórico do Boletim Focus](__BASE__/juros/focus/): como as projeções do mercado para IPCA, Selic, PIB e dólar mudaram semana a semana\n- [Inflação](__BASE__/inflacao/): IPCA do Brasil, por região e por grupo e item\n- [Emprego](__BASE__/emprego/): desocupação (PNAD) e vagas formais (Novo Caged)\n- [Salário por profissão](__BASE__/salarios/): salário de contratação de cada profissão no Brasil, por estado e cidade (Novo Caged)\n- [Atividade](__BASE__/atividade/): PIB e IBC-Br\n- [Indústria e varejo](__BASE__/industria-e-varejo/): produção industrial e vendas no varejo\n- [Câmbio](__BASE__/cambio/): dólar\n- [Crédito](__BASE__/credito/): crédito e inadimplência das famílias\n- [Contas públicas](__BASE__/contas-publicas/)\n- [Setor externo](__BASE__/setor-externo/)\n- [Bolsa Família por município](__BASE__/bolsa-familia/): famílias e valor pago em cada município\n- [Municípios](__BASE__/municipios/): PIB, população e contas das prefeituras\n- [Calculadora](__BASE__/calculadora/): correção de valores por indicadores\n- [Dados abertos](__BASE__/dados/): tabelas para baixar\n- [Como funciona](__BASE__/sobre/): fonte de cada série\n\n## Fontes\n- IBGE (SIDRA), Banco Central (SGS, Focus, Copom), Ministério do Trabalho e Emprego (Novo Caged), MDS e CGU (Bolsa Família) e Tesouro Nacional (Siconfi).\n- A lista completa de séries e tabelas está em __BASE__/sobre/.\n\n## Como citar\n- Cite o nome do portal e o link da página usada. Os dados são públicos e os links levam à fonte oficial.\n- Cada página mostra o período dos dados. Informe o período ao usar um número.\n- O portal é independente e não tem ligação com governo, empresas ou instituições financeiras.\n\n## Família em Números\nPortais independentes de dados públicos do Brasil: Óleo em Números (https://oleoemnumeros.com.br), Comex em Números (https://comexemnumeros.com.br), Voo em Números (https://vooemnumeros.com.br), Economia em Números (https://economiaemnumeros.com.br) e Imóveis em Números (https://imoveisemnumeros.com.br).\n\n## Contato\n- Erros, sugestões e pedidos de dados: __BASE__/contato/\n'
 
 
 # ---------------------------------------------------------------- Juros dos bancos (Banco Central, taxaJuros v2)
@@ -4097,7 +4235,7 @@ def pg_juros_banco(B: Base, b: dict) -> str:
 
 def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None,
           resumos_path: Path = RAIZ / "data" / "copom_resumos.json", bf_path: Path | None = None, mun_path: Path | None = None,
-          juros_path: Path | None = None) -> list:
+          juros_path: Path | None = None, salarios_path: Path | None = None) -> list:
     dados = json.loads(dados_path.read_text(encoding="utf-8"))
     cal = json.loads(calendario_path.read_text(encoding="utf-8"))
     resumos = json.loads(resumos_path.read_text(encoding="utf-8")) if resumos_path.exists() else {}
@@ -4106,11 +4244,17 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     mun = json.loads(Path(mun_path).read_text(encoding="utf-8")) if mun_path and Path(mun_path).exists() else None
     B = Base(dados, cal, hoje, resumos, bf, mun)
     B.juros = juros_prepara(json.loads(Path(juros_path).read_text(encoding="utf-8"))) if juros_path and Path(juros_path).exists() else None
+    _s = json.loads(Path(salarios_path).read_text(encoding="utf-8")) if salarios_path and Path(salarios_path).exists() else None
+    B.sal = sal_prepara(_s, B.mun) if _s and _s.get("br") else None
     resumos_preparar(B, dados_path.parent / "resumos")
     if saida.exists():
         shutil.rmtree(saida)
     saida.mkdir(parents=True)
     paginas = [("/", pg_inicio(B)), ("/juros/", pg_juros(B))] + ([("/juros/focus/", pg_focus_hist(B))] if B.focus_hist else []) + [ ("/inflacao/", pg_inflacao(B)), ("/calculadora/", pg_calc(B)), ("/sobre/", pg_sobre(B)), ("/sugestoes/", pg_sugestoes(B)), ("/contato/", pg_contato(B)), ("/privacidade/", pg_privacidade(B))]
+    if B.sal:
+        paginas.append((SAL_URL, pg_sal_hub(B)))
+        for c in B.sal["slug"]:
+            paginas.append((sal_url(B.sal, c), pg_sal(B, c)))
     if B.tem_emprego:
         paginas.append(("/emprego/", pg_emprego(B)))
         for u in B.uf_lista():
@@ -4229,8 +4373,10 @@ def main():
     ap.add_argument("--bolsa-familia", default=str(RAIZ / "data" / "bolsa_familia.json"))
     ap.add_argument("--municipios", default=str(RAIZ / "data" / "municipios.json"))
     ap.add_argument("--juros", default=str(RAIZ / "data" / "juros.json"))
+    ap.add_argument("--salarios", default=str(RAIZ / "data" / "salarios.json"))
     a = ap.parse_args()
-    caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario), bf_path=Path(a.bolsa_familia), mun_path=Path(a.municipios), juros_path=Path(a.juros))
+    caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario), bf_path=Path(a.bolsa_familia), mun_path=Path(a.municipios), juros_path=Path(a.juros),
+                     salarios_path=Path(a.salarios))
     print(f"{len(caminhos)} páginas geradas em {a.saida}")
 
 

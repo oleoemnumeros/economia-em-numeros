@@ -63,6 +63,42 @@ def nomes_cbo(ftp) -> dict:
     return out
 
 
+TROCA = {"garcom": "garçom", "garcons": "garçons", "ti": "TI", "sus": "SUS", "cnc": "CNC", "clt": "CLT"}
+
+
+def limpador_de_nomes():
+    """A tabela da CBO no arquivo do Caged vem sem acento e com Cada Palavra Maiúscula ('Tecnico de Enfermagem').
+    Devolve uma função que deixa 'Técnico de enfermagem': acentos pelo dicionário de português do pyspellchecker
+    (só troca quando a forma sem acento é rara ou não existe) e '(Desativado em 2010)' sai do nome."""
+    import re
+    import unicodedata
+    from spellchecker import SpellChecker
+    wf = SpellChecker(language="pt").word_frequency
+    sa = lambda t: "".join(ch for ch in unicodedata.normalize("NFD", t) if unicodedata.category(ch) != "Mn")
+    melhor = {}
+    for w, f in wf.items():
+        k = sa(w)
+        if k != w and (k not in melhor or f > melhor[k][1]):
+            melhor[k] = (w, f)
+
+    def palavra(w):
+        lw = w.lower()
+        if lw in TROCA:
+            return TROCA[lw]
+        if w.isupper() and len(w) > 1 and sa(w) == w and lw not in wf:
+            return w  # sigla
+        if lw in melhor and (wf[lw] if lw in wf else 0) < 0.1 * melhor[lw][1]:
+            return melhor[lw][0]
+        return lw
+
+    def limpa(n):
+        n = re.sub(r"\s*\(desativad[oa][^)]*\)", "", str(n), flags=re.I).strip()
+        partes = re.findall(r"[^\W\d_]+|[\W\d_]+", n)
+        t = "".join(palavra(x) if re.match(r"[^\W\d_]", x) else x for x in partes)
+        return t[:1].upper() + t[1:]
+    return limpa
+
+
 def ler_mes(ym: str, pasta: Path):
     """Baixa e lê um mês; devolve um DataFrame só com as admissões que entram na conta."""
     import pandas as pd
@@ -115,6 +151,11 @@ def main():
         return 0
     cbo = nomes_cbo(ftp)
     ftp.quit()
+    try:
+        limpa = limpador_de_nomes()
+        cbo = {c: limpa(n) for c, n in cbo.items()}
+    except Exception as e:  # noqa: BLE001 - sem o dicionário, fica o nome original
+        log("  aviso: não consegui acentuar os nomes:", repr(e)[:200])
     log("Meses:", meses[0], "a", meses[-1], "| profissões na tabela:", len(cbo))
     import pandas as pd
     partes = []
