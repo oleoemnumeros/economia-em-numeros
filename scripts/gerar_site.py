@@ -1141,7 +1141,7 @@ def blocos_focus(B: Base, nomes=None, titulo="Expectativas do mercado (Boletim F
     dia = data_br(dt.date.fromisoformat(f["data"]))
     return card(cab(titulo) +
                 tabela(["Indicador"] + [str(a) for a in anos] + ["Semana"], linhas, ["l"] + ["r"] * (len(anos) + 1)) +
-                f'<span class="src">Mediana das projeções do mercado, Boletim Focus (posição de {dia}). \"Semana\" é a variação da projeção para {anos[0]} desde o boletim anterior.{complemento} Fonte: Banco Central do Brasil.{link_focus_hist(B)}</span>')
+                f'<span class="src">Mediana das projeções do mercado, Boletim Focus (posição de {dia}). \"Semana\" é a variação da projeção para {anos[0]} desde o boletim anterior.{complemento} Fonte: Banco Central do Brasil.</span>' + link_focus_hist(B))
 
 
 # ------------------------------------------------------------------ histórico do Boletim Focus: como o mercado mudou de ideia
@@ -1158,7 +1158,22 @@ def focus_hist_valor(fh: dict, ind: str, ano: int, semanas_atras: int):
 
 
 def link_focus_hist(B: Base) -> str:
-    return ' <a href="/juros/focus/">Veja como as projeções mudaram →</a>' if B.focus_hist else ""
+    return ('<p class="ir-p"><a class="ir" href="/juros/focus/" data-goatcounter-click="focus-historico">Histórico das projeções</a></p>'
+            if B.focus_hist else "")
+
+
+def focus_chamada(B: Base) -> str:
+    """Card na página de Juros que leva ao histórico do Focus, com a mudança da projeção do IPCA em 4 semanas."""
+    fh = B.focus_hist
+    if not fh:
+        return ""
+    ano = B.hoje.year
+    agora, m4 = focus_hist_valor(fh, "IPCA", ano, 0), focus_hist_valor(fh, "IPCA", ano, 4)
+    txt = (f"Há quatro semanas o mercado esperava IPCA de {pct(m4, 2)} para {ano}; no último boletim, {pct(agora, 2)}. "
+           if agora is not None and m4 is not None else "")
+    return card(cab("Histórico do Boletim Focus") +
+                f"<p>{txt}Veja semana a semana como mudaram as projeções para inflação, Selic, PIB, dólar e contas públicas.</p>" +
+                link_focus_hist(B))
 
 
 def pg_focus_hist(B: Base) -> str:
@@ -1354,7 +1369,7 @@ def pg_juros(B: Base) -> str:
                  "Essa meta serve de referência para os juros de financiamentos e de aplicações de renda fixa: quando ela sobe, o crédito tende a ficar mais caro e a inflação perde força; quando cai, ocorre o contrário.</p>"
                  "<p>Em cada reunião, o comitê pode elevar, reduzir ou manter a meta. O comunicado com a decisão sai no fim do segundo dia, e a ata, com a análise do comitê, "
                  "é publicada na terça-feira seguinte. Os números desta página vêm do Banco Central do Brasil.</p>")
-    corpo = f'{hero}{graf}{juros_chamada(B)}<div class="cols">{cal}{decs}</div>{cards_atas(B)}{focus}{texto}'
+    corpo = f'{hero}{graf}{juros_chamada(B)}{focus_chamada(B)}<div class="cols">{cal}{decs}</div>{cards_atas(B)}{focus}{texto}'
     return pagina(B, "/juros/", "Selic e Copom: meta atual, calendário e decisões das reuniões",
                   f"Meta da Selic em {pct(B.selic, 2)} ao ano. Histórico de decisões do Copom, calendário das próximas reuniões e expectativas do Boletim Focus.",
                   corpo, "/juros/", [(None, "Juros e Copom")])

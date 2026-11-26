@@ -167,6 +167,10 @@ a.csv{display:inline-flex;align-items:center;min-height:40px;font-size:.9rem;fon
 a.csv{margin-left:0}
 a.csv::before{content:"\2193";margin-right:.4em}
 a.csv:hover{background:var(--eco);color:var(--eco-sobre)}
+.ir-p{margin:.8em 0 0}
+a.ir{display:inline-flex;align-items:center;min-height:40px;font-size:.92rem;font-weight:600;text-decoration:none;color:var(--eco-sobre);background:var(--eco);border:1px solid var(--eco);border-radius:8px;padding:0 14px;white-space:nowrap}
+a.ir::after{content:"\2192";margin-left:.45em}
+a.ir:hover{filter:brightness(.95)}
 details.dados{border-top:1px solid var(--line);padding-top:10px}
 details.dados summary{cursor:pointer;font-size:.88rem;font-weight:600;color:var(--eco-t)}
 details.dados[open] summary{margin-bottom:8px}
