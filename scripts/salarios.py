@@ -85,7 +85,8 @@ def ler_mes(ym: str, pasta: Path):
     txt = next(p for p in (pasta / ym).rglob("*.txt"))
     df = pd.read_csv(txt, sep=";", decimal=",", usecols=COLS, dtype={"cbo2002ocupação": str}, encoding="utf-8", low_memory=False)
     shutil.rmtree(pasta / ym)
-    df.columns = ["uf", "mun", "saldo", "cbo", "horas", "sal", "unid", "interm", "parcial", "aprendiz", "tipomov"]
+    # o pandas devolve as colunas na ordem do arquivo, não na de COLS: renomeia pelo nome
+    df = df.rename(columns=dict(zip(COLS, ["uf", "mun", "saldo", "cbo", "horas", "sal", "unid", "interm", "parcial", "aprendiz", "tipomov"])))
     for c in ("horas", "sal"):
         if df[c].dtype == object:
             df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", "."), errors="coerce")
