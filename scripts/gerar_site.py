@@ -3148,7 +3148,7 @@ def sal_prepara(S: dict, mun: dict | None) -> dict:
     nomes = S.get("cbo", {})
     slugs, usados = {}, set()
     for c in sorted(S.get("br", {}), key=lambda c: -S["br"][c][0]):
-        base = slugify(nomes.get(c, c)) or c
+        base = slugify(sal_ajusta(nomes.get(c, c))) or c
         sl = base if base not in usados else f"{base}-{c}"
         usados.add(sl)
         slugs[c] = sl
@@ -3159,8 +3159,19 @@ def sal_prepara(S: dict, mun: dict | None) -> dict:
     return {**S, "slug": slugs, "m6": m6}
 
 
+def sal_ajusta(n: str) -> str:
+    """Retoques nos nomes da CBO: acento de Portugal para o do Brasil (eletrónica -> eletrônica), siglas e espaços."""
+    n = re.sub(r"\s+", " ", n).strip()
+    n = re.sub(r"\s*\((a|o|as|os)\)$", "", n)
+    n = re.sub(r"([éó])(?=[mn][aeiou])", lambda m: {"é": "ê", "ó": "ô"}[m.group(1)], n)
+    n = re.sub(r"\b([a-z]{1,3}&[a-z]{1,3})\b", lambda m: m.group(1).upper(), n)
+    for a, b in (("obras publica", "obras pública"), ("pratica de ensino", "prática de ensino")):
+        n = n.replace(a, b)
+    return n
+
+
 def sal_nome(S, c) -> str:
-    n = S["cbo"].get(c, c)
+    n = sal_ajusta(S["cbo"].get(c, c))
     return n[:1].upper() + n[1:]
 
 
@@ -3201,9 +3212,9 @@ def pg_sal_hub(B: Base) -> str:
                  'h+=\'<li><a href="\'+x[1]+\'">\'+x[0].replace(/</g,"&lt;")+"</a> · R$ "+x[2].toLocaleString("pt-BR")+"</li>";});'
                  'r.innerHTML=h||"<li>Nenhuma profissão encontrada.</li>";});})();</script>')
     t1 = card(cab("Profissões que mais contratam", f'<span class="src">{periodo}</span>') +
-              tabela(["Profissão", "Salário mediano", "Contratações"], [[sal_link(S, c), f"R$ {nf(br[c][2], 0)}", nf(br[c][0], 0)] for c in mais], ["l", "r", "r"]))
+              tabela(["Profissão", "Salário mediano", "Contratados"], [[sal_link(S, c), f"R$ {nf(br[c][2], 0)}", nf(br[c][0], 0)] for c in mais], ["l", "r", "r"]))
     t2 = card(cab("Maiores salários de contratação", '<span class="src">profissões com pelo menos 200 contratações</span>') +
-              tabela(["Profissão", "Salário mediano", "Contratações"], [[sal_link(S, c), f"R$ {nf(br[c][2], 0)}", nf(br[c][0], 0)] for c in altos], ["l", "r", "r"]))
+              tabela(["Profissão", "Salário mediano", "Contratados"], [[sal_link(S, c), f"R$ {nf(br[c][2], 0)}", nf(br[c][0], 0)] for c in altos], ["l", "r", "r"]))
     como = card("<h2>Como ler</h2>"
                 "<p>Os números são do <strong>salário de contratação</strong>: o valor registrado quando a pessoa foi admitida com carteira assinada. "
                 "Não é a média de quem já trabalha na profissão, que costuma ser maior por causa do tempo de casa. Entram só contratos com salário mensal "
@@ -3222,7 +3233,7 @@ def pg_sal(B: Base, c: str) -> str:
     nome = sal_nome(S, c)
     periodo = sal_meses_txt(S)
     ufs = S["uf"].get(c, {})
-    lu = sorted(ufs.items(), key=lambda kv: -kv[1][1])
+    lu = sorted([kv for kv in ufs.items() if kv[0] in UFS], key=lambda kv: -kv[1][1])
     cidades = []
     for m6, d in S["mun"].items():
         v = d["c"].get(c)
@@ -3235,7 +3246,7 @@ def pg_sal(B: Base, c: str) -> str:
     tiles_ = ('<div class="tiles">' + tile("Salário mediano", f"R$ {nf(p50, 0)}", "por mês", "", "a") + tile("Faixa do meio", f"R$ {nf(p25, 0)} a {nf(p75, 0)}", "", "", "g")
               + tile("Contratações", nf(n, 0), "em 12 meses", "", "k") + "</div>")
     tu = card(cab("Por estado", '<span class="src">estados com pelo menos 20 contratações</span>') +
-              tabela(["Estado", "Salário mediano", "Contratações"], [[esc(UFS[u][1]) if u in UFS else u, f"R$ {nf(v[1], 0)}", nf(v[0], 0)] for u, v in lu], ["l", "r", "r"])) if lu else ""
+              tabela(["Estado", "Salário mediano", "Contratados"], [[esc(UFS[u][1]) if u in UFS else u, f"R$ {nf(v[1], 0)}", nf(v[0], 0)] for u, v in lu], ["l", "r", "r"])) if lu else ""
     lc = []
     for m6, v in cidades[:30]:
         m = S["m6"].get(m6)
@@ -3244,7 +3255,7 @@ def pg_sal(B: Base, c: str) -> str:
         nomec = f'{m["nome"]} ({m["sigla"]})'
         lc.append([f'<a href="{mun_url(m)}">{esc(nomec)}</a>' if m["ficha"] else esc(nomec), f"R$ {nf(v[1], 0)}", nf(v[0], 0)])
     tc = card(cab("Cidades que mais contrataram", '<span class="src">com pelo menos 10 contratações</span>') +
-              tabela(["Cidade", "Salário mediano", "Contratações"], lc, ["l", "r", "r"])) if lc else ""
+              tabela(["Cidade", "Salário mediano", "Contratados"], lc, ["l", "r", "r"])) if lc else ""
     fam = [x for x in S["br"] if x[:4] == c[:4] and x != c]
     fam.sort(key=lambda x: -S["br"][x][0])
     rel = card("<h2>Profissões parecidas</h2><ul class=\"plain\">" + "".join(f'<li>{sal_link(S, x)} · R$ {nf(S["br"][x][2], 0)}</li>' for x in fam[:10]) + "</ul>") if fam else ""
@@ -3268,7 +3279,7 @@ def card_sal_mun(B: Base, m: dict) -> str:
     return card(cab(f"Salário de quem foi contratado em {esc(m['nome'])}", f'<span class="src">{sal_meses_txt(S)}</span>') +
                 f'<p>Metade das {nf(d["t"][0], 0)} pessoas contratadas com carteira assinada na cidade começou ganhando até <strong>R$ {nf(d["t"][1], 0)}</strong> por mês. '
                 'Profissões que mais contrataram:</p>' +
-                tabela(["Profissão", "Salário mediano", "Contratações"], [[sal_link(S, cc), f"R$ {nf(v[1], 0)}", nf(v[0], 0)] for cc, v in top], ["l", "r", "r"]) +
+                tabela(["Profissão", "Salário mediano", "Contratados"], [[sal_link(S, cc), f"R$ {nf(v[1], 0)}", nf(v[0], 0)] for cc, v in top], ["l", "r", "r"]) +
                 f'<span class="src">Salário de contratação (Novo Caged), jornada de 30 horas ou mais. Fonte: {F_SAL}. <a href="{SAL_URL}">Salário por profissão no Brasil →</a></span>')
 
 
