@@ -224,6 +224,7 @@ class Base:
             ata = f + dt.timedelta(days=(1 - f.weekday()) % 7 or 7)  # primeira terça-feira depois da reunião
             self.reunioes.append({"ini": i, "fim": f, "ata": ata, "num": NUM_PRIMEIRA_REUNIAO + idx})
         self.focus = dados.get("focus")
+        self.focus_hist = dados.get("focus_hist") or None
         self.atas = dados.get("atas") or {}
         self.resumos = (resumos or {}).get("atas", {})
         self.des = dados.get("desocupacao") or None
@@ -1140,7 +1141,83 @@ def blocos_focus(B: Base, nomes=None, titulo="Expectativas do mercado (Boletim F
     dia = data_br(dt.date.fromisoformat(f["data"]))
     return card(cab(titulo) +
                 tabela(["Indicador"] + [str(a) for a in anos] + ["Semana"], linhas, ["l"] + ["r"] * (len(anos) + 1)) +
-                f'<span class="src">Mediana das projeções do mercado, Boletim Focus (posição de {dia}). \"Semana\" é a variação da projeção para {anos[0]} desde o boletim anterior.{complemento} Fonte: Banco Central do Brasil.</span>')
+                f'<span class="src">Mediana das projeções do mercado, Boletim Focus (posição de {dia}). \"Semana\" é a variação da projeção para {anos[0]} desde o boletim anterior.{complemento} Fonte: Banco Central do Brasil.{link_focus_hist(B)}</span>')
+
+
+# ------------------------------------------------------------------ histórico do Boletim Focus: como o mercado mudou de ideia
+FOCUS_HIST_ROT = {**FOCUS_PRINCIPAL, **FOCUS_FISCAL}
+FOCUS_HIST_GRAF = [("IPCA", "focus-ipca", "o IPCA", "% no ano"), ("Selic", "focus-selic", "a Selic ao fim do ano", "% ao ano"),
+                   ("PIB Total", "focus-pib", "o crescimento do PIB", "% no ano"), ("Câmbio", "focus-cambio", "o dólar ao fim do ano", "R$ por US$")]
+
+
+def focus_hist_valor(fh: dict, ind: str, ano: int, semanas_atras: int):
+    """Mediana para `ano` no boletim de `semanas_atras` semanas antes do último (None se não houver)."""
+    serie = (fh.get("ind", {}).get(ind) or {}).get(str(ano)) or []
+    i = len(serie) - 1 - semanas_atras
+    return serie[i] if 0 <= i < len(serie) else None
+
+
+def link_focus_hist(B: Base) -> str:
+    return ' <a href="/juros/focus/">Veja como as projeções mudaram →</a>' if B.focus_hist else ""
+
+
+def pg_focus_hist(B: Base) -> str:
+    fh = B.focus_hist
+    sem = fh["semanas"]
+    ano = B.hoje.year
+    ultimo = dt.date.fromisoformat(sem[-1])
+    # manchete: IPCA do ano, agora x 4 semanas x 1 ano
+    agora, m4, a1 = (focus_hist_valor(fh, "IPCA", ano, k) for k in (0, 4, 52))
+    lede = ""
+    if agora is not None and m4 is not None:
+        direcao = "subiu" if agora > m4 + 0.005 else ("caiu" if agora < m4 - 0.005 else "ficou estável")
+        lede = (f"A projeção do mercado para o IPCA de {ano} {direcao} nas últimas quatro semanas: de {pct(m4, 2)} para "
+                f"<strong>{pct(agora, 2)}</strong>")
+        lede += f", e há um ano era {pct(a1, 2)}." if a1 is not None else "."
+    hero = card(f'<span class="eyebrow">Boletim Focus · histórico</span>'
+                f'<h1>Como o mercado mudou de ideia: histórico do Boletim Focus</h1>'
+                f'<p class="lede">{lede} Abaixo, a mediana das projeções semana a semana para inflação, juros, PIB, dólar e contas públicas.</p>'
+                f'<p class="small">Último boletim: posição de {data_br(ultimo)}.</p>')
+    # tabela antes e agora, para o ano atual e o próximo
+    tabs = []
+    for a in (ano, ano + 1):
+        linhas = []
+        for ind, (rot, fm) in FOCUS_HIST_ROT.items():
+            vals = [focus_hist_valor(fh, ind, a, k) for k in (0, 4, 13, 52)]
+            if vals[0] is None:
+                continue
+            linhas.append([rot] + [fm(v) if v is not None else "–" for v in vals])
+        if linhas:
+            tabs.append(card(cab(f"Projeções para {a}: agora e antes") +
+                             tabela(["Indicador", "Agora", "4 semanas atrás", "3 meses atrás", "1 ano atrás"], linhas, ["l", "r", "r", "r", "r"]) +
+                             '<span class="src">Mediana das projeções das instituições ouvidas pelo Banco Central. Resultados fiscais em % do PIB; negativo é déficit. Fonte: Banco Central do Brasil (Expectativas de Mercado).</span>'))
+    # gráficos: ano atual e próximo, nas semanas em que os dois existem
+    grafs = []
+    for ind, slug, nome, unidade in FOCUS_HIST_GRAF:
+        s1 = (fh["ind"].get(ind) or {}).get(str(ano)) or []
+        s2 = (fh["ind"].get(ind) or {}).get(str(ano + 1)) or []
+        idx = [i for i in range(len(sem)) if i < len(s1) and i < len(s2) and s1[i] is not None and s2[i] is not None]
+        if len(idx) < 8:
+            continue
+        rot = [mes_curto(sem[i][:7]) for i in idx]
+        svg = svg_linhas([{"vals": [s1[i] for i in idx], "cor": "a"}, {"vals": [s2[i] for i in idx], "cor": "b", "tracejada": True}],
+                         rot, f"Projeção do mercado para {nome} de {ano} e {ano + 1}, semana a semana", unidade=unidade)
+        linhas = [[sem[i], s1[i], s2[i]] for i in idx]
+        casas = 2
+        grafs.append(grafico(B, slug, f"Projeção para {nome}: {ano} e {ano + 1}", "Banco Central do Brasil, Boletim Focus",
+                             svg, ["Boletim (posição)", f"Projeção para {ano}", f"Projeção para {ano + 1}"], linhas, "Juros e Copom",
+                             ultimo=data_br(ultimo), casas=casas))
+    texto = card("<h2>Como ler</h2>"
+                 "<p>Toda semana o Banco Central pergunta a cerca de cem bancos, gestoras e consultorias o que esperam para a inflação, os juros, o PIB, "
+                 "o dólar e as contas públicas, e publica a mediana na segunda-feira, no Boletim Focus. Cada ponto dos gráficos é um boletim.</p>"
+                 "<p>Quando a linha sobe, o mercado passou a esperar um número maior. Mudanças rápidas costumam vir depois de uma surpresa: um IPCA acima do esperado, "
+                 "uma decisão do Copom, uma mudança nas contas do governo. Projeção não é previsão garantida: o histórico mostra justamente quanto ela muda.</p>"
+                 '<p>Veja também a <a href="/juros/">Selic e o calendário do Copom</a> e a <a href="/inflacao/">inflação mês a mês</a>.</p>')
+    corpo = hero + "".join(tabs) + "".join(grafs) + texto
+    desc = (f"Histórico do Boletim Focus semana a semana: como mudaram as projeções do mercado para IPCA, Selic, PIB, dólar e contas públicas "
+            f"de {ano} e {ano + 1}. Agora, há 4 semanas, 3 meses e 1 ano. Dados do Banco Central.")
+    return pagina(B, "/juros/focus/", f"Histórico do Boletim Focus: projeções para IPCA, Selic, PIB e dólar semana a semana", desc,
+                  corpo, "/juros/", [("/juros/", "Juros e Copom"), (None, "Histórico do Focus")])
 
 
 def card_copom(B: Base) -> str:
@@ -3614,7 +3691,7 @@ def resumos_home(B: Base) -> str:
     return f'<div class="cols">{"".join(cards)}</div>' if cards else ""
 
 
-LLMS_TXT = '# Economia em Números\n\n> Indicadores da economia brasileira (juros, inflação, emprego, atividade, câmbio, contas públicas, crédito) e dados por município, como Bolsa Família e PIB, em páginas simples e atualizadas a partir de fontes oficiais.\n\nCada indicador tem página própria com valor mais recente, variação, série histórica e link para a fonte oficial. As páginas de município juntam população, PIB, contas da prefeitura, emprego formal e Bolsa Família.\n\n## Principais páginas\n- [Resumo](__BASE__/resumo/): os principais números da economia hoje\n- [Juros e Selic](__BASE__/juros/): meta da Selic, decisões e atas do Copom, expectativas do Boletim Focus\n- [Inflação](__BASE__/inflacao/): IPCA do Brasil, por região e por grupo e item\n- [Emprego](__BASE__/emprego/): desocupação (PNAD) e vagas formais (Novo Caged)\n- [Atividade](__BASE__/atividade/): PIB e IBC-Br\n- [Indústria e varejo](__BASE__/industria-e-varejo/): produção industrial e vendas no varejo\n- [Câmbio](__BASE__/cambio/): dólar\n- [Crédito](__BASE__/credito/): crédito e inadimplência das famílias\n- [Contas públicas](__BASE__/contas-publicas/)\n- [Setor externo](__BASE__/setor-externo/)\n- [Bolsa Família por município](__BASE__/bolsa-familia/): famílias e valor pago em cada município\n- [Municípios](__BASE__/municipios/): PIB, população e contas das prefeituras\n- [Calculadora](__BASE__/calculadora/): correção de valores por indicadores\n- [Dados abertos](__BASE__/dados/): tabelas para baixar\n- [Como funciona](__BASE__/sobre/): fonte de cada série\n\n## Fontes\n- IBGE (SIDRA), Banco Central (SGS, Focus, Copom), Ministério do Trabalho e Emprego (Novo Caged), MDS e CGU (Bolsa Família) e Tesouro Nacional (Siconfi).\n- A lista completa de séries e tabelas está em __BASE__/sobre/.\n\n## Como citar\n- Cite o nome do portal e o link da página usada. Os dados são públicos e os links levam à fonte oficial.\n- Cada página mostra o período dos dados. Informe o período ao usar um número.\n- O portal é independente e não tem ligação com governo, empresas ou instituições financeiras.\n\n## Família em Números\nPortais independentes de dados públicos do Brasil: Óleo em Números (https://oleoemnumeros.com.br), Comex em Números (https://comexemnumeros.com.br), Voo em Números (https://vooemnumeros.com.br), Economia em Números (https://economiaemnumeros.com.br) e Imóveis em Números (https://imoveisemnumeros.com.br).\n\n## Contato\n- Erros, sugestões e pedidos de dados: __BASE__/contato/\n'
+LLMS_TXT = '# Economia em Números\n\n> Indicadores da economia brasileira (juros, inflação, emprego, atividade, câmbio, contas públicas, crédito) e dados por município, como Bolsa Família e PIB, em páginas simples e atualizadas a partir de fontes oficiais.\n\nCada indicador tem página própria com valor mais recente, variação, série histórica e link para a fonte oficial. As páginas de município juntam população, PIB, contas da prefeitura, emprego formal e Bolsa Família.\n\n## Principais páginas\n- [Resumo](__BASE__/resumo/): os principais números da economia hoje\n- [Juros e Selic](__BASE__/juros/): meta da Selic, decisões e atas do Copom, expectativas do Boletim Focus\n- [Histórico do Boletim Focus](__BASE__/juros/focus/): como as projeções do mercado para IPCA, Selic, PIB e dólar mudaram semana a semana\n- [Inflação](__BASE__/inflacao/): IPCA do Brasil, por região e por grupo e item\n- [Emprego](__BASE__/emprego/): desocupação (PNAD) e vagas formais (Novo Caged)\n- [Atividade](__BASE__/atividade/): PIB e IBC-Br\n- [Indústria e varejo](__BASE__/industria-e-varejo/): produção industrial e vendas no varejo\n- [Câmbio](__BASE__/cambio/): dólar\n- [Crédito](__BASE__/credito/): crédito e inadimplência das famílias\n- [Contas públicas](__BASE__/contas-publicas/)\n- [Setor externo](__BASE__/setor-externo/)\n- [Bolsa Família por município](__BASE__/bolsa-familia/): famílias e valor pago em cada município\n- [Municípios](__BASE__/municipios/): PIB, população e contas das prefeituras\n- [Calculadora](__BASE__/calculadora/): correção de valores por indicadores\n- [Dados abertos](__BASE__/dados/): tabelas para baixar\n- [Como funciona](__BASE__/sobre/): fonte de cada série\n\n## Fontes\n- IBGE (SIDRA), Banco Central (SGS, Focus, Copom), Ministério do Trabalho e Emprego (Novo Caged), MDS e CGU (Bolsa Família) e Tesouro Nacional (Siconfi).\n- A lista completa de séries e tabelas está em __BASE__/sobre/.\n\n## Como citar\n- Cite o nome do portal e o link da página usada. Os dados são públicos e os links levam à fonte oficial.\n- Cada página mostra o período dos dados. Informe o período ao usar um número.\n- O portal é independente e não tem ligação com governo, empresas ou instituições financeiras.\n\n## Família em Números\nPortais independentes de dados públicos do Brasil: Óleo em Números (https://oleoemnumeros.com.br), Comex em Números (https://comexemnumeros.com.br), Voo em Números (https://vooemnumeros.com.br), Economia em Números (https://economiaemnumeros.com.br) e Imóveis em Números (https://imoveisemnumeros.com.br).\n\n## Contato\n- Erros, sugestões e pedidos de dados: __BASE__/contato/\n'
 
 
 # ---------------------------------------------------------------- Juros dos bancos (Banco Central, taxaJuros v2)
@@ -4014,7 +4091,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     if saida.exists():
         shutil.rmtree(saida)
     saida.mkdir(parents=True)
-    paginas = [("/", pg_inicio(B)), ("/juros/", pg_juros(B)), ("/inflacao/", pg_inflacao(B)), ("/calculadora/", pg_calc(B)), ("/sobre/", pg_sobre(B)), ("/sugestoes/", pg_sugestoes(B)), ("/contato/", pg_contato(B)), ("/privacidade/", pg_privacidade(B))]
+    paginas = [("/", pg_inicio(B)), ("/juros/", pg_juros(B))] + ([("/juros/focus/", pg_focus_hist(B))] if B.focus_hist else []) + [ ("/inflacao/", pg_inflacao(B)), ("/calculadora/", pg_calc(B)), ("/sobre/", pg_sobre(B)), ("/sugestoes/", pg_sugestoes(B)), ("/contato/", pg_contato(B)), ("/privacidade/", pg_privacidade(B))]
     if B.tem_emprego:
         paginas.append(("/emprego/", pg_emprego(B)))
         for u in B.uf_lista():

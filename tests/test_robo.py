@@ -1386,3 +1386,27 @@ class TestJuros(unittest.TestCase):
         # cheque especial já está na série diária: da mensal só entra o rotativo do cartão
         self.assertEqual([x[1] for x in d["mensal"]], ["Cartão de crédito - rotativo total - Prefixado"])
         self.assertEqual(dbg["juros"]["linhas"], 60)
+
+
+class TestFocusHistorico(unittest.TestCase):
+    def _get(self, url, *a, **k):
+        # dois dias na mesma semana (fica o último), base 0 e base 1 (fica a 0), anos fora da janela ignorados
+        linhas = [
+            {"Data": "2026-11-16", "DataReferencia": "2026", "Mediana": 5.0, "baseCalculo": 0},
+            {"Data": "2026-11-20", "DataReferencia": "2026", "Mediana": 5.2, "baseCalculo": 0},
+            {"Data": "2026-11-20", "DataReferencia": "2026", "Mediana": 9.9, "baseCalculo": 1},
+            {"Data": "2026-11-20", "DataReferencia": "2027", "Mediana": 4.5, "baseCalculo": 0},
+            {"Data": "2026-11-13", "DataReferencia": "2026", "Mediana": 4.9, "baseCalculo": 0},
+            {"Data": "2026-11-20", "DataReferencia": "2030", "Mediana": 3.0, "baseCalculo": 0},
+        ]
+        return FakeResp({"value": linhas})
+
+    def test_uma_mediana_por_semana(self):
+        with mock.patch.object(r, "HOJE", dt.date(2026, 11, 26)), mock.patch.object(r, "get", self._get), \
+                mock.patch.object(r, "debug", {"avisos": [], "erros": []}):
+            out = r.focus_historico()
+        self.assertEqual(out["semanas"], ["2026-11-13", "2026-11-20"])
+        self.assertEqual(out["anos"], [2025, 2026, 2027])
+        self.assertEqual(out["ind"]["IPCA"]["2026"], [4.9, 5.2])
+        self.assertEqual(out["ind"]["IPCA"]["2027"], [None, 4.5])
+        self.assertEqual(out["ind"]["IPCA"]["2025"], [None, None])

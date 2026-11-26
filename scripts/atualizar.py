@@ -347,6 +347,52 @@ def focus():
     return {"data": ultima, "itens": itens}
 
 
+FOCUS_HIST_SEMANAS = 106  # pouco mais de dois anos de boletins
+
+
+def focus_historico():
+    """Histórico das medianas do Focus, uma por semana (a última posição de cada semana, como o boletim de segunda),
+    para o ano passado, o atual e o próximo. Serve para mostrar como o mercado foi mudando de ideia.
+    Saída: {"semanas": [datas], "anos": [a-1, a, a+1], "ind": {indicador: {ano: [mediana ou None por semana]}}}"""
+    url = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais"
+    desde = (HOJE - dt.timedelta(weeks=FOCUS_HIST_SEMANAS + 1)).isoformat()
+    anos = [HOJE.year - 1, HOJE.year, HOJE.year + 1]
+    brutos, falhas = {}, []
+    for ind in FOCUS_IND:
+        params = {"$top": "20000", "$format": "json", "$select": "Data,DataReferencia,Mediana,baseCalculo",
+                  "$filter": f"Indicador eq '{ind}' and Data ge '{desde}'"}
+        try:
+            linhas = get(consulta(url, params), tentativas=3, json=True).json().get("value", [])
+        except Exception as e:  # noqa: BLE001
+            falhas.append(f"{ind}: {str(e)[:160]}")
+            continue
+        base0 = [x for x in linhas if x.get("baseCalculo") in (0, "0", False)]
+        for x in (base0 or linhas):
+            try:
+                ano = int(str(x["DataReferencia"])[:4])
+            except (KeyError, ValueError):
+                continue
+            if ano in anos and x.get("Mediana") is not None:
+                brutos.setdefault(ind, {}).setdefault(ano, {})[str(x["Data"])[:10]] = float(x["Mediana"])
+    if falhas:
+        debug["avisos"].append("Focus histórico: " + " | ".join(falhas))
+    if not brutos:
+        raise RuntimeError("Focus histórico veio vazio")
+    # uma data por semana: a última de cada semana (ISO) que tenha dado em algum indicador
+    todas = sorted({d for por_ano in brutos.values() for serie in por_ano.values() for d in serie})
+    por_semana = {}
+    for d in todas:
+        por_semana[dt.date.fromisoformat(d).isocalendar()[:2]] = d
+    semanas = sorted(por_semana.values())[-FOCUS_HIST_SEMANAS:]
+    out = {}
+    for ind, por_ano in brutos.items():
+        out[ind] = {}
+        for ano in anos:
+            serie = por_ano.get(ano, {})
+            out[ind][str(ano)] = [round(serie[d], 4) if d in serie else None for d in semanas]
+    return {"semanas": semanas, "anos": anos, "ind": out}
+
+
 def arquivo_pdf_existe(url):
     """True se o PDF existe, False se não, None se não deu para verificar (rede, bloqueio)."""
     import requests
@@ -1827,6 +1873,7 @@ def main():
     essenciais_ok = True
     t0 = time.time()
     for nome, fn, essencial in [("selic", selic, True), ("ipca", ipca_brasil, True), ("areas", ipca_areas, False), ("composicao", ipca_composicao, False), ("focus", focus, False),
+                             ("focus_hist", focus_historico, False),
                              ("atas", atas, False), ("desocupacao", desocupacao, False), ("caged", caged, False),
                              ("cambio", cambio, False), ("ibc", ibcbr, False), ("pib", pib, False), ("fiscal", fiscal, False),
                              ("credito", credito, False), ("industria", producao_industrial, False), ("varejo", varejo, False),
