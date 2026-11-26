@@ -1,0 +1,46 @@
+name: Salários por profissão (Novo Caged)
+
+on:
+  # O Ministério do Trabalho publica um mês novo perto do fim do mês seguinte: o robô confere toda semana.
+  schedule:
+    - cron: "17 9 * * 3"
+  workflow_dispatch:
+    inputs:
+      forcar:
+        description: "Refazer mesmo sem mês novo"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: salarios
+  cancel-in-progress: false
+
+jobs:
+  salarios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependências
+        run: pip install pandas==2.2.3 numpy==2.1.3 openpyxl==3.1.5
+      - name: Calcular salários
+        run: python scripts/salarios.py ${{ (github.event_name == 'workflow_dispatch' && inputs.forcar) && '--forcar' || '' }}
+      - name: Salvar e publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "Economia em Números (robô)"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/salarios.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Salários por profissão: $(date -u +%Y-%m-%d)"
+            git pull --rebase && git push
+            gh workflow run atualizar.yml
+          fi
