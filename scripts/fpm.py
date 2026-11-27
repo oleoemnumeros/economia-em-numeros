@@ -1,179 +1,69 @@
-"""Transferências constitucionais da União para os municípios, mês a mês e por decêndio (FPM, ITR, royalties etc.):
-API de Transferências Constitucionais do Tesouro Nacional (apiapex.tesouro.gov.br, sem chave).
+"""SONDAGEM temporária: arquivos de transferências constitucionais por município do Tesouro Transparente (CKAN).
 
-Uma consulta por estado e mês no endpoint de detalhe, que traz os três decêndios (repasses dos dias 10, 20 e 30)
-de cada município e de cada parcela ("FPM", "FUNDEB/FPM", "Royalties/ANP"...). Um estado inteiro num mês tem
-cerca de 3 mil linhas e leva uns 10 segundos.
-
-Saída: data/transferencias/AAAA-MM.json.gz
-  {"mes": "AAAA-MM", "ufs": {"BA": "2026-11-27T12:00:00"}, "mun": {"<código IBGE>": {"<parcela>": [dec1, dec2, dec3, total]}}}
-  data/transferencias/debug.json: parcelas encontradas, erros e o que ficou para a próxima execução.
-
-Meses fechados são baixados uma vez só; o mês atual e o anterior, de novo a cada execução (o Tesouro completa os
-repasses e às vezes corrige). A carga inicial (desde INICIO) não cabe numa execução: o robô respeita o
-ORCAMENTO_S, começa pelos meses mais recentes e continua de onde parou na execução seguinte.
-Uso: python scripts/fpm.py
+Lista os recursos do conjunto de dados, baixa o mais recente e um de 2024 e grava em data/transferencias/sondagem.json
+o cabeçalho, as primeiras linhas, o total de linhas e os valores distintos das colunas com poucos valores.
 """
 from __future__ import annotations
 
-import datetime as dt
-import gzip
+import csv
+import io
 import json
-import os
-import time
-import unicodedata
+from collections import Counter
 from pathlib import Path
+
+import requests
 
 RAIZ = Path(__file__).resolve().parent.parent
 PASTA = RAIZ / "data" / "transferencias"
-BASE = "https://apiapex.tesouro.gov.br/aria/v1/transferencias_constitucionais/custom"
-INICIO = "2023-01"
-ORCAMENTO_S = int(os.environ.get("ORCAMENTO_S", "2400"))
-UA = {"User-Agent": "EconomiaEmNumeros/1.0 (+https://economiaemnumeros.com.br)", "Accept": "application/json"}
-
-UF_SIGLA = {  # nome do estado sem acento e em minúsculas -> sigla
-    "acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM", "bahia": "BA", "ceara": "CE", "distrito federal": "DF",
-    "espirito santo": "ES", "goias": "GO", "maranhao": "MA", "mato grosso": "MT", "mato grosso do sul": "MS",
-    "minas gerais": "MG", "para": "PA", "paraiba": "PB", "parana": "PR", "pernambuco": "PE", "piaui": "PI",
-    "rio de janeiro": "RJ", "rio grande do norte": "RN", "rio grande do sul": "RS", "rondonia": "RO", "roraima": "RR",
-    "santa catarina": "SC", "sao paulo": "SP", "sergipe": "SE", "tocantins": "TO",
-}
+CKAN = "https://www.tesourotransparente.gov.br/ckan/api/3/action/package_show?id=af4e7c47-2132-4d9a-bd7c-34e28a210b03"
+UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
 
 
-def log(*a):
-    print(*a, flush=True)
-
-
-def norm(t: str) -> str:
-    t = unicodedata.normalize("NFKD", str(t or "")).encode("ascii", "ignore").decode().lower().strip()
-    return " ".join(t.split())
-
-
-def num(v) -> float:
-    if v is None or v == "":
-        return 0.0
-    if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).strip()
-    if "," in s:
-        s = s.replace(".", "").replace(",", ".")
-    try:
-        return float(s)
-    except ValueError:
-        return 0.0
-
-
-def itens(resp) -> list:
-    """O ORDS do Tesouro devolve {"items": [...]}; aceita também a lista pura."""
-    if isinstance(resp, list):
-        return resp
-    if isinstance(resp, dict):
-        for k in ("items", "itens", "data"):
-            if isinstance(resp.get(k), list):
-                return resp[k]
-    return []
-
-
-def get(caminho: str, params: dict | None = None, tentativas: int = 4, timeout: int = 150):
-    import requests
-
-    ultimo = None
-    for i in range(tentativas):
+def amostra(url):
+    r = requests.get(url, headers=UA, timeout=300)
+    out = {"url": url, "http": r.status_code, "bytes": len(r.content)}
+    if r.status_code != 200:
+        out["texto"] = r.text[:300]
+        return out
+    for enc in ("utf-8-sig", "latin-1"):
         try:
-            r = requests.get(f"{BASE}/{caminho}", params=params, headers=UA, timeout=timeout)
-            if r.status_code == 200:
-                return r.json()
-            ultimo = f"HTTP {r.status_code}: {r.text[:200]}"
-            espera = 15 * (i + 1) if r.status_code in (429, 500, 502, 503, 504) else 5 * (i + 1)
-        except Exception as e:  # noqa: BLE001
-            ultimo = repr(e)[:300]
-            espera = 10 * (i + 1)
-        time.sleep(espera)
-    raise RuntimeError(f"{caminho} {params}: {ultimo}")
-
-
-def meses(inicio: str, hoje: dt.date) -> list[str]:
-    a, m = int(inicio[:4]), int(inicio[5:])
-    out = []
-    while (a, m) <= (hoje.year, hoje.month):
-        out.append(f"{a}-{m:02d}")
-        a, m = (a + 1, 1) if m == 12 else (a, m + 1)
+            txt = r.content.decode(enc)
+            out["encoding"] = enc
+            break
+        except UnicodeDecodeError:
+            continue
+    try:
+        sep = csv.Sniffer().sniff(txt[:5000], delimiters=";,|\t").delimiter
+    except csv.Error:
+        sep = ";"
+    out["sep"] = sep
+    out["primeiras_linhas_brutas"] = txt.splitlines()[:12]
+    linhas = list(csv.reader(io.StringIO(txt), delimiter=sep))
+    out["n_linhas"] = len(linhas)
+    if linhas:
+        cab = linhas[0]
+        out["cabecalho"] = cab
+        dist = {}
+        for i, c in enumerate(cab):
+            vals = Counter(l[i] for l in linhas[1:] if i < len(l))
+            dist[c] = {"n_distintos": len(vals), "mais_comuns": vals.most_common(40 if len(vals) < 80 else 5)}
+        out["colunas"] = dist
     return out
 
 
-def le(arq: Path) -> dict:
-    try:
-        return json.loads(gzip.decompress(arq.read_bytes()))
-    except Exception:  # noqa: BLE001
-        return {}
-
-
-def grava(arq: Path, ob: dict) -> None:
-    arq.write_bytes(gzip.compress(json.dumps(ob, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(), mtime=0))
-
-
-def main() -> int:
-    t0 = time.time()
-    hoje = dt.date.today()
+def main():
     PASTA.mkdir(parents=True, exist_ok=True)
-    debug = {"inicio": dt.datetime.now().isoformat(timespec="seconds"), "erros": [], "parcelas": {}, "pendentes": 0}
-    estados = {}
-    for e in itens(get("estados")):
-        sigla = UF_SIGLA.get(norm(e.get("nome")))
-        if sigla and e.get("codigo") is not None:
-            estados[sigla] = e["codigo"]
-    log(f"Estados na API: {len(estados)}")
-    if len(estados) < 27:
-        debug["erros"].append(f"só {len(estados)} estados reconhecidos na API")
-    todos = meses(INICIO, hoje)
-    recentes = set(todos[-2:])          # mês atual e anterior: o Tesouro ainda completa e corrige
-    feitos = 0
-    for ym in reversed(todos):          # dos mais recentes para os mais antigos
-        arq = PASTA / f"{ym}.json.gz"
-        ob = le(arq) or {"mes": ym, "ufs": {}, "mun": {}}
-        faltam = [s for s in sorted(estados) if ym in recentes or s not in ob["ufs"]]
-        if not faltam:
-            continue
-        mudou = False
-        for sigla in faltam:
-            if time.time() - t0 > ORCAMENTO_S:
-                debug["pendentes"] += 1
-                continue
-            try:
-                linhas = itens(get("por_estado_municipio_detalhe", {"P_ESTADO": estados[sigla], "P_ANO": int(ym[:4]), "P_MES": int(ym[5:])}))
-            except Exception as e:  # noqa: BLE001
-                debug["erros"].append(f"{ym} {sigla}: {e}")
-                log(f"  ERRO {ym} {sigla}: {e}")
-                continue
-            if not linhas:
-                continue  # mês ainda sem repasse publicado para o estado: tenta de novo na próxima execução
-            # tira o estado do mês antes de regravar (o mês recente é baixado de novo inteiro)
-            for cod in [c for c, v in ob["mun"].items() if v.get("_uf") == sigla]:
-                del ob["mun"][cod]
-            for l in linhas:
-                cod = "".join(ch for ch in str(l.get("co_ibge") or "") if ch.isdigit())
-                parc = " ".join(str(l.get("sg_detalhe") or "").split())
-                if not cod or not parc:
-                    continue
-                reg = ob["mun"].setdefault(cod, {"_uf": sigla})
-                v = reg.setdefault(parc, [0.0, 0.0, 0.0, 0.0])
-                for k, campo in enumerate(("va_primeiro_dec", "va_segundo_dec", "va_terceiro_dec", "total")):
-                    v[k] = round(v[k] + num(l.get(campo)), 2)
-                debug["parcelas"][parc] = debug["parcelas"].get(parc, 0) + 1
-            if not debug.get("exemplo"):
-                debug["exemplo"] = linhas[0]
-            ob["ufs"][sigla] = dt.datetime.now().isoformat(timespec="seconds")
-            mudou = True
-            feitos += 1
-            log(f"  {ym} {sigla}: {len(linhas)} linhas")
-        if mudou:
-            grava(arq, ob)
-    debug["consultas"] = feitos
-    debug["fim"] = dt.datetime.now().isoformat(timespec="seconds")
-    (PASTA / "debug.json").write_text(json.dumps(debug, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
-    log(f"Transferências: {feitos} consultas, {debug['pendentes']} para a próxima execução, {len(debug['erros'])} erros.")
-    return 0
+    res = {}
+    j = requests.get(CKAN, headers=UA, timeout=120).json()
+    recs = j["result"]["resources"]
+    res["recursos"] = [{"nome": r.get("name"), "url": r.get("url"), "mod": r.get("last_modified") or r.get("created")} for r in recs]
+    csvs = [r for r in recs if (r.get("url") or "").lower().endswith(".csv")]
+    csvs.sort(key=lambda r: r.get("last_modified") or r.get("created") or "")
+    alvo = csvs[-2:] + [r for r in csvs if "2024" in (r.get("name") or "")][:1]
+    res["amostras"] = [amostra(r["url"]) for r in alvo]
+    (PASTA / "sondagem.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("ok", [a.get("n_linhas") for a in res["amostras"]])
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
