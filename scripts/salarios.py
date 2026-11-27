@@ -4,7 +4,10 @@ nos microdados do Novo Caged (Ministério do Trabalho e Emprego, FTP do PDET).
 Entram só admissões com salário mensal, jornada de 30 horas ou mais, sem trabalho intermitente, parcial ou
 aprendiz. É o salário de contratação, não a média de quem já trabalha.
 
-Saída: data/salarios.json
+Na mesma passada sai o emprego formal por município e setor (admissões e desligamentos de todas as
+movimentações, mais as declarações fora do prazo e menos as exclusões, como faz o Ministério).
+
+Saída: data/salarios.json e data/emprego_mun.json
   {"meses": [AAAAMM...], "cbo": {codigo: nome}, "br": {cbo: [n, p25, p50, p75]}, "uf": {cbo: {uf: [n, p50]}},
    "mun": {mun6: {"t": [n, p50], "c": {cbo: [n, p50]}}}}
 Uso: python scripts/salarios.py [--forcar]
@@ -24,9 +27,11 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 SAIDA = RAIZ / "data" / "salarios.json"
+SAIDA_EMP = RAIZ / "data" / "emprego_mun.json"
 HOST, BASE = "ftp.mtps.gov.br", "/pdet/microdados/NOVO CAGED"
 COLS = ["uf", "município", "saldomovimentação", "cbo2002ocupação", "horascontratuais", "salário", "unidadesaláriocódigo",
-        "indtrabintermitente", "indtrabparcial", "indicadoraprendiz", "tipomovimentação"]
+        "indtrabintermitente", "indtrabparcial", "indicadoraprendiz", "tipomovimentação", "seção"]
+COLS_AJ = ["competênciamov", "uf", "município", "seção", "saldomovimentação"]
 MIN_BR, MIN_UF, MIN_MUN, TOP_MUN = 30, 20, 10, 40
 
 
@@ -99,30 +104,57 @@ def limpador_de_nomes():
     return limpa
 
 
-def ler_mes(ym: str, pasta: Path):
-    """Baixa e lê um mês; devolve um DataFrame só com as admissões que entram na conta."""
-    import pandas as pd
+def baixar_txt(ym: str, tipo: str, pasta: Path) -> Path:
+    """Baixa e descompacta CAGED{tipo}{ym}.7z (tipo MOV, FOR ou EXC); devolve o .txt."""
     for tentativa in range(3):
         try:
             ftp = conectar()
-            arq = f"{BASE}/{ym[:4]}/{ym}/CAGEDMOV{ym}.7z"
-            z = pasta / f"{ym}.7z"
+            arq = f"{BASE}/{ym[:4]}/{ym}/CAGED{tipo}{ym}.7z"
+            z = pasta / f"{tipo}{ym}.7z"
             with open(z, "wb") as fh:
                 ftp.retrbinary(f"RETR {arq}", fh.write)
             ftp.quit()
             break
         except Exception as e:  # noqa: BLE001
-            log(f"  {ym}: falhou o download ({e!r}), tentando de novo")
+            log(f"  {tipo}{ym}: falhou o download ({e!r}), tentando de novo")
             time.sleep(20 * (tentativa + 1))
     else:
-        raise RuntimeError(f"não consegui baixar {ym}")
-    subprocess.run(["7z", "x", "-y", f"-o{pasta / ym}", str(z)], check=True, capture_output=True)
+        raise RuntimeError(f"não consegui baixar {tipo}{ym}")
+    subprocess.run(["7z", "x", "-y", f"-o{pasta / (tipo + ym)}", str(z)], check=True, capture_output=True)
     z.unlink()
-    txt = next(p for p in (pasta / ym).rglob("*.txt"))
-    df = pd.read_csv(txt, sep=";", decimal=",", usecols=COLS, dtype={"cbo2002ocupação": str}, encoding="utf-8", low_memory=False)
-    shutil.rmtree(pasta / ym)
+    return next(p for p in (pasta / (tipo + ym)).rglob("*.txt"))
+
+
+def ler_ajuste(ym: str, tipo: str, pasta: Path):
+    """Declarações fora do prazo (FOR) ou exclusões (EXC) informadas no mês: contagem por competência, município,
+    setor e sentido (+1 admissão, -1 desligamento). None se o arquivo não vier."""
+    import pandas as pd
+    try:
+        txt = baixar_txt(ym, tipo, pasta)
+    except Exception as e:  # noqa: BLE001
+        log(f"  aviso: sem {tipo}{ym} ({e!r})")
+        return None
+    df = pd.read_csv(txt, sep=";", usecols=lambda c: c in COLS_AJ, dtype={"seção": str}, encoding="utf-8", low_memory=False)
+    shutil.rmtree(pasta / (tipo + ym))
+    if set(df.columns) != set(COLS_AJ):
+        log(f"  aviso: colunas inesperadas em {tipo}{ym}: {list(df.columns)}")
+        return None
+    df = df.rename(columns={"competênciamov": "ym", "município": "mun", "seção": "sec", "saldomovimentação": "saldo"})
+    df["ym"] = df["ym"].astype(str).str[:6]
+    return df.groupby(["ym", "uf", "mun", "sec", "saldo"]).size().rename("n").reset_index()
+
+
+def ler_mes(ym: str, pasta: Path):
+    """Baixa e lê um mês. Devolve (admissões que entram na conta do salário, contagem de movimentações por
+    município, setor e sentido)."""
+    import pandas as pd
+    txt = baixar_txt(ym, "MOV", pasta)
+    df = pd.read_csv(txt, sep=";", decimal=",", usecols=COLS, dtype={"cbo2002ocupação": str, "seção": str}, encoding="utf-8", low_memory=False)
+    shutil.rmtree(pasta / ("MOV" + ym))
     # o pandas devolve as colunas na ordem do arquivo, não na de COLS: renomeia pelo nome
-    df = df.rename(columns=dict(zip(COLS, ["uf", "mun", "saldo", "cbo", "horas", "sal", "unid", "interm", "parcial", "aprendiz", "tipomov"])))
+    df = df.rename(columns=dict(zip(COLS, ["uf", "mun", "saldo", "cbo", "horas", "sal", "unid", "interm", "parcial", "aprendiz", "tipomov", "sec"])))
+    mov = df.groupby(["uf", "mun", "sec", "saldo"]).size().rename("n").reset_index()
+    mov["ym"] = ym
     for c in ("horas", "sal"):
         if df[c].dtype == object:
             df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", "."), errors="coerce")
@@ -137,7 +169,59 @@ def ler_mes(ym: str, pasta: Path):
     df = df.loc[ok, ["uf", "mun", "cbo", "sal"]].copy()
     df["cbo"] = df["cbo"].str.strip().str.zfill(6)
     df["sal"] = df["sal"].astype("float32")
-    return df
+    return df, mov
+
+
+SECOES = {
+    "A": "Agropecuária, pesca e produção florestal", "B": "Indústrias extrativas (petróleo e mineração)", "C": "Indústria de transformação",
+    "D": "Eletricidade e gás", "E": "Água, esgoto e resíduos", "F": "Construção", "G": "Comércio e reparação de veículos",
+    "H": "Transporte, armazenagem e correio", "I": "Hotéis, bares e restaurantes", "J": "Informação e comunicação",
+    "K": "Bancos, seguros e finanças", "L": "Atividades imobiliárias", "M": "Serviços profissionais, científicos e técnicos",
+    "N": "Serviços administrativos (limpeza, vigilância, call center)", "O": "Administração pública", "P": "Educação",
+    "Q": "Saúde e assistência social", "R": "Cultura, esporte e lazer", "S": "Outros serviços", "T": "Serviços domésticos",
+    "U": "Organismos internacionais"}
+
+
+def emprego(mv, meses: list[str]) -> None:
+    """Admissões e desligamentos por mês (12 meses) e por setor (soma dos 12 meses), para o Brasil, cada estado e cada município."""
+    mv = mv[mv.ym.isin(meses)].copy()
+    mv["n"] = mv["n"] * mv["sinal"]
+    mv["tipo"] = mv["saldo"].map({1: "a", -1: "d"})
+    import pandas as pd
+    for c in ("mun", "uf"):
+        mv[c] = pd.to_numeric(mv[c], errors="coerce")
+    mv = mv.dropna(subset=["tipo", "mun", "uf"])
+    mv["mun"] = mv["mun"].astype(int).astype(str)
+    mv["uf"] = mv["uf"].astype(int).astype(str)
+    mv["sec"] = mv["sec"].astype(str).str.strip().str.upper()
+    idx = {m: i for i, m in enumerate(meses)}
+
+    def bloco(g):
+        m = [[0, 0] for _ in meses]
+        for (ym, tp), n in g.groupby(["ym", "tipo"]).n.sum().items():
+            m[idx[ym]][0 if tp == "a" else 1] += int(n)
+        s = {}
+        for (sec, tp), n in g.groupby(["sec", "tipo"]).n.sum().items():
+            if sec in SECOES:
+                s.setdefault(sec, [0, 0])[0 if tp == "a" else 1] += int(n)
+        return {"m": m, "s": s}
+
+    br = bloco(mv)
+    ufs = {u: bloco(g) for u, g in mv[mv.uf != "99"].groupby("uf")}
+    mun = {}
+    for k, g in mv[~mv.mun.isin(["999999", "9999999"])].groupby("mun"):
+        b = bloco(g)
+        if sum(a + d for a, d in b["m"]) >= 20:
+            mun[k] = b
+    tot_a, tot_d = sum(a for a, _ in br["m"]), sum(d for _, d in br["m"])
+    log(f"Emprego: {tot_a:,} admissões, {tot_d:,} desligamentos, saldo {tot_a - tot_d:+,} em 12 meses; {len(mun)} municípios")
+    log("  saldo por mês (Brasil):", [a - d for a, d in br["m"]])
+    if not mun or tot_a == 0:
+        raise SystemExit("Emprego por município vazio: nada foi salvo.")
+    SAIDA_EMP.write_text(json.dumps({"fonte": "Ministério do Trabalho e Emprego, Novo Caged (movimentações, fora do prazo e exclusões)",
+                                     "gerado_em": dt.date.today().isoformat(), "meses": meses, "secoes": SECOES,
+                                     "br": br, "uf": ufs, "mun": mun}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    log(f"Salvo: {SAIDA_EMP.name}, {SAIDA_EMP.stat().st_size / 1e6:.1f} MB")
 
 
 def main():
@@ -146,7 +230,7 @@ def main():
     import os
     meses = meses_disponiveis(ftp)[-int(os.environ.get("MESES", "12")):]
     antigo = json.loads(SAIDA.read_text(encoding="utf-8")) if SAIDA.exists() else {}
-    if not forcar and antigo.get("meses") == meses:
+    if not forcar and antigo.get("meses") == meses and SAIDA_EMP.exists():
         log("Sem mês novo no Novo Caged:", meses[-1])
         return 0
     cbo = nomes_cbo(ftp)
@@ -158,13 +242,19 @@ def main():
         log("  aviso: não consegui acentuar os nomes:", repr(e)[:200])
     log("Meses:", meses[0], "a", meses[-1], "| profissões na tabela:", len(cbo))
     import pandas as pd
-    partes = []
+    partes, movs = [], []
     with tempfile.TemporaryDirectory() as tmp:
         for ym in meses:
             t0 = time.time()
-            d = ler_mes(ym, Path(tmp))
+            d, mv = ler_mes(ym, Path(tmp))
             partes.append(d)
+            movs.append(mv.assign(sinal=1))
+            for tipo, sinal in (("FOR", 1), ("EXC", -1)):
+                aj = ler_ajuste(ym, tipo, Path(tmp))
+                if aj is not None:
+                    movs.append(aj.assign(sinal=sinal))
             log(f"  {ym}: {len(d):,} admissões ({time.time() - t0:.0f}s)")
+    emprego(pd.concat(movs, ignore_index=True), meses)
     df = pd.concat(partes, ignore_index=True)
     del partes
     log("Total:", f"{len(df):,}")

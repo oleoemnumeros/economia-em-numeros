@@ -1,4 +1,4 @@
-name: Salários por profissão (Novo Caged)
+name: Salários e emprego por município (Novo Caged)
 
 on:
   # O Ministério do Trabalho publica um mês novo perto do fim do mês seguinte: o robô confere toda semana.
@@ -44,7 +44,7 @@ jobs:
         run: |
           git config user.name "Economia em Números (robô)"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/salarios.json
+          git add data/salarios.json data/emprego_mun.json
           if ! git diff --cached --quiet; then
             git commit -m "Salários por profissão: $(date -u +%Y-%m-%d)"
             git pull --rebase && git push
