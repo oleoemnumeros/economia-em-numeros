@@ -29,7 +29,9 @@ PASTA = RAIZ / "data" / "transferencias"
 BASE = "https://apiapex.tesouro.gov.br/aria/v1/transferencias_constitucionais/custom"
 INICIO = "2023-01"
 ORCAMENTO_S = int(os.environ.get("ORCAMENTO_S", "2400"))
-UA = {"User-Agent": "EconomiaEmNumeros/1.0 (+https://economiaemnumeros.com.br)", "Accept": "application/json"}
+# Accept "*/*", como faz o pacote tesouropy: o gateway do Tesouro (APEX) responde "Serviço não encontrado" para algumas combinações de cabeçalho
+CABECALHOS = ({"Accept": "*/*"}, {"Accept": "*/*", "User-Agent": "EconomiaEmNumeros/1.0 (+https://economiaemnumeros.com.br)"},
+              {"Accept": "application/json"})
 
 UF_SIGLA = {  # nome do estado sem acento e em minúsculas -> sigla
     "acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM", "bahia": "BA", "ceara": "CE", "distrito federal": "DF",
@@ -64,32 +66,40 @@ def num(v) -> float:
 
 
 def itens(resp) -> list:
-    """O ORDS do Tesouro devolve {"items": [...]}; aceita também a lista pura."""
+    """A API devolve {"registros": [...]} (ou {"items": [...]}); aceita também a lista pura."""
     if isinstance(resp, list):
         return resp
     if isinstance(resp, dict):
-        for k in ("items", "itens", "data"):
+        for k in ("registros", "items", "itens", "data"):
             if isinstance(resp.get(k), list):
                 return resp[k]
     return []
 
 
+_JEITO = {}   # cabeçalho e forma do endereço que funcionaram na primeira consulta
+
+
 def get(caminho: str, params: dict | None = None, tentativas: int = 4, timeout: int = 150):
     import requests
 
-    ultimo = None
+    ultimo, tentou = None, []
+    jeitos = [_JEITO["j"]] if _JEITO else [(h, barra) for h in CABECALHOS for barra in ("", "/")]
     for i in range(tentativas):
-        try:
-            r = requests.get(f"{BASE}/{caminho}", params=params, headers=UA, timeout=timeout)
-            if r.status_code == 200:
-                return r.json()
-            ultimo = f"HTTP {r.status_code}: {r.text[:200]}"
-            espera = 15 * (i + 1) if r.status_code in (429, 500, 502, 503, 504) else 5 * (i + 1)
-        except Exception as e:  # noqa: BLE001
-            ultimo = repr(e)[:300]
-            espera = 10 * (i + 1)
-        time.sleep(espera)
-    raise RuntimeError(f"{caminho} {params}: {ultimo}")
+        for cab_, barra in jeitos:
+            try:
+                r = requests.get(f"{BASE}/{caminho}{barra}", params=params, headers=cab_, timeout=timeout)
+                if r.status_code == 200:
+                    _JEITO["j"] = (cab_, barra)
+                    return r.json()
+                ultimo = f"HTTP {r.status_code}: {r.text[:200]}"
+                tentou.append(f"{cab_} '{barra}': {r.status_code}")
+                if r.status_code in (429, 500, 502, 503, 504):
+                    break
+            except Exception as e:  # noqa: BLE001
+                ultimo = repr(e)[:300]
+                break
+        time.sleep(15 * (i + 1))
+    raise RuntimeError(f"{caminho} {params}: {ultimo} | tentativas: {'; '.join(tentou[:6])}")
 
 
 def meses(inicio: str, hoje: dt.date) -> list[str]:
@@ -118,7 +128,14 @@ def main() -> int:
     PASTA.mkdir(parents=True, exist_ok=True)
     debug = {"inicio": dt.datetime.now().isoformat(timespec="seconds"), "erros": [], "parcelas": {}, "pendentes": 0}
     estados = {}
-    for e in itens(get("estados")):
+    try:
+        lista_estados = itens(get("estados"))
+    except Exception as e:  # noqa: BLE001
+        debug["erros"].append(f"estados: {e}")
+        (PASTA / "debug.json").write_text(json.dumps(debug, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
+        log(f"ERRO: lista de estados: {e}")
+        return 1
+    for e in lista_estados:
         sigla = UF_SIGLA.get(norm(e.get("nome")))
         if sigla and e.get("codigo") is not None:
             estados[sigla] = e["codigo"]
