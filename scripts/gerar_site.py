@@ -8,6 +8,7 @@ estáticas em docs/. Uso:
 """
 import argparse
 import datetime as dt
+import gzip
 import html
 import json
 import math
@@ -3558,6 +3559,272 @@ def link_emp(B: Base) -> str:
             if getattr(B, "emp", None) else "")
 
 
+# ------------------------------------------------------------------ FPM por município (Tesouro Nacional, transferências constitucionais)
+FPM_URL = "/fpm/"
+F_FPM = "Tesouro Nacional (transferências constitucionais)"
+FPM_MESES_PAG = 36        # meses no gráfico e na tabela da cidade
+FPM_MIN_UFS = 25          # mês só entra na série quando quase todos os estados já vieram (senão o total do Brasil sai baixo)
+
+
+def brl_curto(v: float) -> str:
+    """Para tabelas estreitas (celular): 88 mil / 2,8 mi / 1,2 bi, sem o "R$" (que vai no cabeçalho)."""
+    if v >= 1e9:
+        return f"{nf(v / 1e9, 1)} bi"
+    if v >= 1e6:
+        return f"{nf(v / 1e6, 1)} mi"
+    if v >= 1e3:
+        return f"{nf(v / 1e3, 0)} mil"
+    return nf(v, 0)
+
+
+def fpm_url(m: dict) -> str:
+    return f"{mun_url(m)}fpm/"
+
+
+def _fpm_principal(parcela: str) -> str:
+    return parcela.split("/")[0].strip().upper()
+
+
+def fpm_prepara(pasta: Path, mun: dict | None, hoje: dt.date):
+    """data/transferencias/AAAA-MM.json.gz (scripts/fpm.py) -> FPM por município e mês, com os três decêndios.
+    Conta como FPM toda parcela cujo nome principal é "FPM" (ex.: "FPM", "FPM/1% JULHO"); "FUNDEB/FPM" fica de fora,
+    porque é o Fundeb. Só municípios com ficha ganham página. None se não houver dado."""
+    if not mun or not pasta.exists():
+        return None
+    cod6 = {c[:6]: c for c in mun["mun"]}
+    serie, meses, parcelas = {}, [], set()
+    atual = f"{hoje.year}-{hoje.month:02d}"
+    for arq in sorted(pasta.glob("*.json.gz")):
+        try:
+            ob = json.loads(gzip.decompress(arq.read_bytes()))
+        except Exception:  # noqa: BLE001
+            continue
+        ym = ob.get("mes") or arq.name[:7]
+        if len(ob.get("ufs") or {}) < FPM_MIN_UFS:
+            continue
+        tem = False
+        for cod, parc in (ob.get("mun") or {}).items():
+            c = cod if cod in mun["mun"] else cod6.get(cod[:6])
+            if not c:
+                continue
+            d = [0.0, 0.0, 0.0, 0.0]
+            for nome, v in parc.items():
+                if nome.startswith("_") or _fpm_principal(nome) != "FPM":
+                    continue
+                parcelas.add(nome)
+                for k in range(4):
+                    d[k] += v[k]
+            if d[3] > 0:
+                serie.setdefault(c, {})[ym] = d
+                tem = True
+        if tem:
+            meses.append(ym)
+    meses = sorted(meses)
+    fechados = [m_ for m_ in meses if m_ < atual]
+    if len(fechados) < 2:
+        return None
+    ult = fechados[-1]
+    ano = int(ult[:4])
+    out = {"mun": {}, "meses": meses, "fechados": fechados, "ult": ult, "atual": atual if atual in meses else None, "parcelas": sorted(parcelas),
+           "br": {k: sum(s.get(k, [0, 0, 0, 0])[3] for s in serie.values()) for k in meses}}
+
+    def soma(s, ini, fim):
+        return sum(v[3] for k, v in s.items() if ini <= k <= fim)
+    for c, s in serie.items():
+        m = mun["mun"][c]
+        u = s.get(ult, [0, 0, 0, 0])[3]
+        a12 = f"{ano - 1}{ult[4:]}"
+        ytd = soma(s, f"{ano}-01", ult)
+        ytd0 = soma(s, f"{ano - 1}-01", a12)
+        t12 = soma(s, f"{ano - 1}-{int(ult[5:]) + 1:02d}" if ult[5:] != "12" else f"{ano}-01", ult)
+        tem_ytd0 = all(f"{ano - 1}-{k:02d}" in s for k in range(1, int(ult[5:]) + 1))
+        out["mun"][c] = {"serie": s, "u": u, "u12": s.get(a12, [0, 0, 0, 0])[3] or None, "ytd": ytd, "ytd0": ytd0 if tem_ytd0 else None,
+                         "t12": t12, "pc12": t12 / m["pop"] if m["pop"] else None}
+    for u2 in mun["uf"]:
+        cods = [c for c in out["mun"] if mun["mun"][c]["uf2"] == u2]
+        for pos, c in enumerate(sorted(cods, key=lambda c: -out["mun"][c]["t12"]), 1):
+            out["mun"][c]["pos_uf"], out["mun"][c]["n_uf"] = pos, len(cods)
+        com_pc = [c for c in cods if out["mun"][c]["pc12"]]
+        for pos, c in enumerate(sorted(com_pc, key=lambda c: -out["mun"][c]["pc12"]), 1):
+            out["mun"][c]["pos_pc_uf"] = pos
+    out["fichas"] = sorted((c for c in out["mun"] if mun["mun"][c]["ficha"]), key=lambda c: -out["mun"][c]["t12"])
+    return out if out["fichas"] else None
+
+
+def fpm_datas(hoje: dt.date, n: int = 6) -> list[dt.date]:
+    """Próximas datas de crédito do FPM: dias 10, 20 e 30 (no fim de fevereiro, o último dia); em sábado ou domingo, o dia útil anterior."""
+    out = []
+    a, m = hoje.year, hoje.month
+    while len(out) < n:
+        ultimo = (dt.date(a + (m == 12), m % 12 + 1, 1) - dt.timedelta(days=1)).day
+        for d in (10, 20, min(30, ultimo)):
+            x = dt.date(a, m, d)
+            while x.weekday() >= 5:
+                x -= dt.timedelta(days=1)
+            if x >= hoje and len(out) < n:
+                out.append(x)
+        a, m = (a + 1, 1) if m == 12 else (a, m + 1)
+    return out
+
+
+FPM_TEXTO = ('<h2>Como ler</h2><p>O <strong>Fundo de Participação dos Municípios (FPM)</strong> é a parte do Imposto de Renda e do IPI que a União '
+             'repassa às prefeituras, como manda a Constituição. Cada cidade recebe conforme um coeficiente que depende principalmente do tamanho da '
+             'população; nas cidades pequenas, o FPM costuma ser a maior receita da prefeitura.</p>'
+             '<p>O dinheiro sai em três parcelas por mês, os <strong>decêndios</strong>: créditos nos dias 10, 20 e 30 (ou no dia útil anterior). '
+             'Como acompanha a arrecadação do IR e do IPI, o valor varia de mês para mês.</p>'
+             '<p class="small">Valores como divulgados pelo Tesouro Nacional nas transferências constitucionais, somando as parcelas do FPM do mês '
+             '(inclusive os adicionais de 1% de julho, setembro e dezembro, quando há).</p>')
+
+
+def card_fpm_mun(B: Base, m: dict) -> str:
+    """Resumo do FPM na ficha da cidade, com link para a página completa."""
+    F = getattr(B, "fpm", None)
+    f = F and F["mun"].get(m["cod"])
+    if not f or m["cod"] not in F["fichas"]:
+        return ""
+    ult = F["ult"]
+    txt = (f'<p>Em {mes_nome(ult)}, {esc(m["nome"])} recebeu <strong>{brl_abrev(f["u"])}</strong> do Fundo de Participação dos Municípios'
+           + (f' ({sinal((f["u"] / f["u12"] - 1) * 100, 1)}% sobre {mes_curto(f"{int(ult[:4]) - 1}{ult[4:]}")})' if f["u12"] else "")
+           + f'. Em 12 meses, foram {brl_abrev(f["t12"])}' + (f', ou R$ {nf(f["pc12"], 0)} por habitante' if f["pc12"] else "") + '.</p>')
+    return card(cab("FPM: repasse da União", f'<span class="src">{mes_curto(ult)}</span>') + txt
+                + f'<p><a href="{fpm_url(m)}">FPM de {esc(m["nome"])} mês a mês e por decêndio →</a></p>')
+
+
+def pg_fpm_mun(B: Base, m: dict) -> str:
+    F, x = B.fpm, B.mun
+    f = F["mun"][m["cod"]]
+    uf = x["uf"][m["uf2"]]
+    nome = f'{m["nome"]} ({m["sigla"]})'
+    ult, s = F["ult"], f["serie"]
+    ano = ult[:4]
+    lede = f'Em {mes_nome(ult)}, {esc(m["nome"])} recebeu <strong>{brl_abrev(f["u"])}</strong> do Fundo de Participação dos Municípios (FPM)'
+    if f["u12"]:
+        lede += f', {sinal((f["u"] / f["u12"] - 1) * 100, 1)}% em relação a {mes_nome(f"{int(ano) - 1}{ult[4:]}")}'
+    lede += f'. De janeiro a {MESES[int(ult[5:]) - 1]} de {ano}, foram <strong>{brl_abrev(f["ytd"])}</strong>'
+    if f["ytd0"]:
+        lede += f' ({sinal((f["ytd"] / f["ytd0"] - 1) * 100, 1)}% sobre o mesmo período de {int(ano) - 1})'
+    lede += "."
+    if f["pc12"]:
+        lede += (f' Em 12 meses, o FPM somou R$ {nf(f["pc12"], 0)} por habitante, o {f["pos_pc_uf"]}º maior valor por habitante entre os {f["n_uf"]} municípios '
+                 f'{uf_de(m["uf2"], esc(uf["nome"]))}.')
+    hero = card(f'<span class="eyebrow">FPM · {esc(uf["nome"])}</span><h1>FPM de {esc(nome)}: repasses mês a mês</h1><p class="lede">{lede}</p>')
+    tiles = [tile(f"FPM de {mes_curtinho(ult)}", *brl_partes(f["u"]), chg((f["u"] / f["u12"] - 1) * 100, 1, "%", " em 12 meses") if f["u12"] else "", "a"),
+             tile(f"Acumulado de {ano}", *brl_partes(f["ytd"]), chg((f["ytd"] / f["ytd0"] - 1) * 100, 1, "%", f" sobre {int(ano) - 1}") if f["ytd0"] else "", "b"),
+             tile("Últimos 12 meses", *brl_partes(f["t12"]), f'<span class="chg flat">● {f["pos_uf"]}º {uf_de(m["uf2"], esc(uf["nome"]))}</span>', "g"),
+             tile("Por habitante (12 meses)", nf(f["pc12"], 0) if f["pc12"] else "–", "R$", "", "k")]
+    ms = [k for k in F["fechados"] if k in s][-FPM_MESES_PAG:]
+    svg = svg_barras([s[k][3] / 1e6 for k in ms], [mes_curtinho(k) for k in ms], f"FPM recebido por {m['nome']} ({m['sigla']}) mês a mês, em R$ milhões", unidade="R$ milhões")
+    linhas = [(k, s[k][0], s[k][1], s[k][2], s[k][3]) for k in ms]
+    g = grafico(B, "fpm-municipio", f"FPM de {esc(m['nome'])} ({m['sigla']}) mês a mês", F_FPM, svg,
+                ["Mês", "1º decêndio (R$)", "2º decêndio (R$)", "3º decêndio (R$)", "Total do mês (R$)"], linhas, "FPM", casas=0,
+                nota=f'<p class="small">Soma dos três repasses de cada mês, nos últimos {len(ms)} meses. A tabela abre cada mês por decêndio.</p>',
+                ultimo=f"{brl_abrev(f['u'])} ({mes_curto(ult)})", csv_href="/dados/fpm-municipios.csv", csv_rotulo="Baixar CSV do FPM de todas as cidades")
+    # decêndios dos meses mais recentes, com o mês em andamento quando já houver crédito
+    rec = [k for k in F["meses"] if k in s][-4:][::-1]
+    dec_rows = []
+    for k in rec:
+        d = s[k]
+        rot = mes_curto(k) + ("*" if k == F["atual"] else "")
+        dec_rows.append([esc(rot)] + [brl_curto(v) if v else "–" for v in d[:3]] + [f"<strong>{brl_curto(d[3])}</strong>"])
+    datas = fpm_datas(B.hoje, 3)
+    dec = card(cab("Repasses por decêndio", '<span class="src">dias 10, 20 e 30</span>') +
+               tabela(["Mês", "Dia 10", "Dia 20", "Dia 30", "Total"], dec_rows, ["l", "r", "r", "r", "r"]) +
+               '<p class="small">Valores em reais.' + (' * Mês em andamento: só os repasses já feitos.' if F["atual"] in rec else "") + '</p>' +
+               f'<p class="small">Próximos créditos previstos: {", ".join(data_br(d_) for d_ in datas)} (em feriado, o crédito sai no dia útil anterior). '
+               'O valor de cada decêndio só é conhecido perto da data, porque depende da arrecadação do IR e do IPI.</p>')
+    # comparação com cidades do mesmo estado e porte parecido
+    viz = [c for c in F["mun"] if x["mun"][c]["uf2"] == m["uf2"] and c != m["cod"] and x["mun"][c]["ficha"]]
+    viz = sorted(viz, key=lambda c: abs(math.log(max(x["mun"][c]["pop"], 1) / max(m["pop"], 1))))[:6]
+    comp_rows = [[f'<strong>{esc(m["nome"])}</strong>', brl_curto(m["pop"]).replace(" mil", " mil"), brl_curto(f["t12"]), nf(f["pc12"], 0) if f["pc12"] else "–"]]
+    for c in sorted(viz, key=lambda c: -F["mun"][c]["t12"]):
+        mm, ff = x["mun"][c], F["mun"][c]
+        comp_rows.append([f'<a href="{fpm_url(mm)}">{esc(mm["nome"])}</a>', brl_curto(mm["pop"]), brl_curto(ff["t12"]), nf(ff["pc12"], 0) if ff["pc12"] else "–"])
+    comp = card(cab(f'Cidades {uf_de(m["uf2"], esc(uf["nome"]))} de tamanho parecido', '<span class="src">FPM em 12 meses</span>') +
+                tabela(["Cidade", "Habitantes", "R$", "R$ por hab."], comp_rows, ["l", "r", "r", "r"]))
+    peso = ""
+    c_ = m["contas"]
+    if c_ and c_["rec"].get("destaques", {}).get("fpm") and c_["rec"]["total"]:
+        p = c_["rec"]["destaques"]["fpm"] / c_["rec"]["total"] * 100
+        peso = (f'<p>Nas contas que a prefeitura entregou ao Tesouro, o FPM foi <strong>{nf(p, 0)}% da receita de {c_["ano"]}</strong>. '
+                f'<a href="{mun_url(m)}">Veja de onde vem e para onde vai o dinheiro da prefeitura</a>.</p>')
+    texto = card(peso + FPM_TEXTO + f'<p class="small"><a href="{FPM_URL}">FPM de todos os municípios</a> · <a href="{mun_url(m)}">PIB e contas de {esc(m["nome"])}</a></p>')
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{g}{colunas([dec, comp])}{fpm_busca_html(B)}{texto}'
+    desc = (f"{nome} recebeu {brl_abrev(f['u'])} de FPM em {mes_nome(ult)} e {brl_abrev(f['ytd'])} em {ano}. "
+            "Repasses mês a mês e por decêndio (dias 10, 20 e 30), comparação com cidades vizinhas e dados do Tesouro Nacional.")
+    cont = [("economia", mun_url(m), f"População e PIB de {m['nome']}", "De onde vem e para onde vai o dinheiro da prefeitura"),
+            ("economia", FPM_URL, "FPM de todos os municípios", "Calendário dos repasses e ranking por estado")]
+    if m["links"].get("oleo"):
+        cont.append(("oleo", m["links"]["oleo"], f"Royalties de petróleo em {m['nome']}", "Quanto a prefeitura recebe de royalties"))
+    return pagina(B, fpm_url(m), f"FPM de {nome}: {brl_abrev(f['u'])} em {mes_nome(ult)}", desc, corpo, "/municipios/",
+                  [(FPM_URL, "FPM"), (f"/municipios/{uf['slug']}/", uf["nome"]), (mun_url(m), m["nome"]), (None, "FPM")], continuar=cont)
+
+
+def fpm_busca_html(B: Base, titulo="FPM de outra cidade") -> str:
+    return card(f'<span class="eyebrow">Busca</span><h2>{titulo}</h2>'
+                '<label class="small" for="bf-busca">Digite o nome da cidade (sem precisar de acento)</label>'
+                f'<div class="search"><input id="bf-busca" type="search" autocomplete="off" placeholder="Ex.: Santo Amaro, Frutal, Petrolina" data-indice="{FPM_URL}busca.json" aria-controls="bf-res"></div>'
+                '<ul id="bf-res" class="busca-res" aria-live="polite"></ul>'
+                f'<script src="/assets/busca.js?v={B.d["gerado_em"][:10]}" defer></script>')
+
+
+def fpm_indice(B: Base) -> str:
+    F, x = B.fpm, B.mun
+    itens = [[x["mun"][c]["nome"], x["mun"][c]["sigla"], fpm_url(x["mun"][c]), f'FPM de {brl_abrev(F["mun"][c]["u"])} em {mes_curto(F["ult"])}'] for c in F["fichas"]]
+    return json.dumps(itens, ensure_ascii=False, separators=(",", ":"))
+
+
+def pg_fpm(B: Base) -> str:
+    F, x = B.fpm, B.mun
+    ult, ano = F["ult"], F["ult"][:4]
+    br_u = F["br"][ult]
+    br_12 = F["br"].get(f"{int(ano) - 1}{ult[4:]}")
+    ytd = sum(v for k, v in F["br"].items() if k[:4] == ano and k <= ult)
+    lede = (f'Em {mes_nome(ult)}, a União repassou <strong>{brl_abrev(br_u)}</strong> de FPM às prefeituras'
+            + (f', {sinal((br_u / br_12 - 1) * 100, 1)}% em relação a {mes_nome(f"{int(ano) - 1}{ult[4:]}")}' if br_12 else "")
+            + f'. Em {ano}, até {MESES[int(ult[5:]) - 1]}, foram {brl_abrev(ytd)}. Busque sua cidade para ver os repasses mês a mês e por decêndio.')
+    hero = card(f'<span class="eyebrow">FPM · {mes_curto(ult)}</span><h1>FPM por município: quanto cada cidade recebe</h1><p class="lede">{lede}</p>')
+    datas = fpm_datas(B.hoje, 6)
+    cal = card(cab("Próximos repasses", '<span class="src">datas previstas</span>') +
+               tabela(["Data", "Dia da semana"], [[data_br(d_), ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"][d_.weekday()] + "-feira" * (d_.weekday() < 5)] for d_ in datas], ["l", "l"]) +
+               '<p class="small">O FPM é creditado nos dias 10, 20 e 30 de cada mês; em fim de semana ou feriado, no dia útil anterior.</p>')
+    ms = F["fechados"][-FPM_MESES_PAG:]
+    g = grafico(B, "fpm-brasil", "FPM repassado a todos os municípios, mês a mês", F_FPM,
+                svg_barras([F["br"][k] / 1e9 for k in ms], [mes_curtinho(k) for k in ms], "FPM repassado aos municípios do Brasil por mês, em R$ bilhões", unidade="R$ bilhões"),
+                ["Mês", "FPM (R$)"], [(k, F["br"][k]) for k in ms], "FPM", casas=0, ultimo=f"{brl_abrev(br_u)} ({mes_curto(ult)})")
+    top = F["fichas"][:30]
+    linhas = [[f'<a href="{fpm_url(x["mun"][c])}">{esc(x["mun"][c]["nome"])}</a> ({x["mun"][c]["sigla"]})', brl_curto(F["mun"][c]["u"]),
+               brl_curto(F["mun"][c]["t12"]), nf(F["mun"][c]["pc12"], 0) if F["mun"][c]["pc12"] else "–"] for c in top]
+    rk = card(cab("Cidades que mais recebem", '<span class="src">valores em R$</span>') +
+              tabela(["Cidade", mes_curto(ult), "12 meses", "Por hab."], linhas, ["l", "r", "r", "r"]))
+    ufs = sorted({x["mun"][c]["uf2"] for c in F["fichas"]}, key=lambda u: x["uf"][u]["nome"])
+    por_uf = []
+    for u in ufs:
+        cods = [c for c in F["fichas"] if x["mun"][c]["uf2"] == u][:8]
+        por_uf.append(f'<p><strong>{esc(x["uf"][u]["nome"])}:</strong> ' + ", ".join(f'<a href="{fpm_url(x["mun"][c])}">{esc(x["mun"][c]["nome"])}</a>' for c in cods) + "</p>")
+    est = card(cab("Por estado", '<span class="src">cidades com mais FPM</span>') + "".join(por_uf))
+    corpo = f'{hero}{fpm_busca_html(B, "Busque sua cidade")}{colunas([g, cal])}{rk}{est}{card(FPM_TEXTO)}'
+    desc = (f"FPM por município: {brl_abrev(br_u)} repassados às prefeituras em {mes_nome(ult)}. Busque sua cidade e veja os repasses mês a mês, "
+            "por decêndio (dias 10, 20 e 30) e o calendário dos próximos créditos, com dados do Tesouro Nacional.")
+    return pagina(B, FPM_URL, f"FPM por município: repasses de {mes_nome(ult)} e calendário", desc, corpo, "/municipios/",
+                  [("/municipios/", "Municípios"), (None, "FPM")],
+                  continuar=[("economia", "/municipios/", "PIB e contas da sua cidade", "População, PIB e de onde vem o dinheiro da prefeitura"),
+                             ("oleo", "/royalties/", "Royalties de petróleo por cidade", "Quanto cada município recebe da produção de petróleo e gás")])
+
+
+def fpm_csv(B: Base) -> None:
+    F, x = B.fpm, B.mun
+    linhas = []
+    for c in sorted(F["fichas"]):
+        m = x["mun"][c]
+        for k in F["meses"]:
+            d = F["mun"][c]["serie"].get(k)
+            if d:
+                linhas.append((c, m["nome"], m["sigla"], k, round(d[0], 2), round(d[1], 2), round(d[2], 2), round(d[3], 2)))
+    B.csvs["fpm-municipios"] = {"titulo": "FPM por município e mês, por decêndio", "fonte": F_FPM, "ultimo": mes_curto(F["ult"]), "grupo": "FPM",
+                                "cab": ["Código IBGE", "Município", "UF", "Mês", "1º decêndio (R$)", "2º decêndio (R$)", "3º decêndio (R$)", "Total do mês (R$)"],
+                                "linhas": linhas}
+
+
 def pg_mun(B: Base, m: dict) -> str:
     x = B.mun
     uf = x["uf"][m["uf2"]]
@@ -3600,7 +3867,7 @@ def pg_mun(B: Base, m: dict) -> str:
                      'Assim que houver dado, a ficha mostra de onde vem e para onde vai o dinheiro.</p>')
         dest = aviso
     corpo = (f'{hero}<div class="tiles">{"".join(tiles)}</div>'
-             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{card_emp_mun(B, m)}{card_sal_mun(B, m)}{mun_busca_html(B, "Busque outra cidade")}{mun_mesmo_porte(B, m)}{mun_links_irmaos(B, m)}'
+             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{card_fpm_mun(B, m)}{card_emp_mun(B, m)}{card_sal_mun(B, m)}{mun_busca_html(B, "Busque outra cidade")}{mun_mesmo_porte(B, m)}{mun_links_irmaos(B, m)}'
              + card(mun_texto(B) + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
     desc = (f"A população de {nome} é de {nf(m['pop'], 0)} habitantes ({x['pop_ano']}) e o PIB é de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
             + (f", receita da prefeitura de {brl_abrev(c['rec']['total'])} e gastos por área" if c else "") + ". Dados oficiais do IBGE e do Tesouro Nacional.")
@@ -4522,7 +4789,7 @@ def pg_juros_banco(B: Base, b: dict) -> str:
 def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None,
           resumos_path: Path = RAIZ / "data" / "copom_resumos.json", bf_path: Path | None = None, mun_path: Path | None = None,
           juros_path: Path | None = None, salarios_path: Path | None = None,
-          emprego_path: Path | None = None) -> list:
+          emprego_path: Path | None = None, transf_path: Path | None = None) -> list:
     dados = json.loads(dados_path.read_text(encoding="utf-8"))
     cal = json.loads(calendario_path.read_text(encoding="utf-8"))
     resumos = json.loads(resumos_path.read_text(encoding="utf-8")) if resumos_path.exists() else {}
@@ -4535,6 +4802,7 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     B.sal = sal_prepara(_s, B.mun) if _s and _s.get("br") else None
     _e = json.loads(Path(emprego_path).read_text(encoding="utf-8")) if emprego_path and Path(emprego_path).exists() else None
     B.emp = emp_prepara(_e, B.mun) if _e and _e.get("mun") and B.tem_mun else None
+    B.fpm = fpm_prepara(Path(transf_path), B.mun, hoje) if transf_path and B.tem_mun else None
     resumos_preparar(B, dados_path.parent / "resumos")
     if saida.exists():
         shutil.rmtree(saida)
@@ -4595,6 +4863,14 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
             extras.append(mun_url(m))
         escrever(saida, "/municipios/busca.json", mun_indice(B))
         mun_csvs(B)
+    if B.fpm:
+        paginas.append((FPM_URL, pg_fpm(B)))
+        for c in B.fpm["fichas"]:
+            m = B.mun["mun"][c]
+            escrever(saida, fpm_url(m), pg_fpm_mun(B, m))
+            extras.append(fpm_url(m))
+        escrever(saida, f"{FPM_URL}busca.json", fpm_indice(B))
+        fpm_csv(B)
     for a in B.ranking():
         paginas.append((f"/inflacao/{a['slug']}/", pg_area(B, a)))
     paginas.append(("/resumo/", pg_resumos(B)))
@@ -4667,9 +4943,10 @@ def main():
     ap.add_argument("--juros", default=str(RAIZ / "data" / "juros.json"))
     ap.add_argument("--salarios", default=str(RAIZ / "data" / "salarios.json"))
     ap.add_argument("--emprego-municipios", default=str(RAIZ / "data" / "emprego_mun.json"))
+    ap.add_argument("--transferencias", default=str(RAIZ / "data" / "transferencias"))
     a = ap.parse_args()
     caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario), bf_path=Path(a.bolsa_familia), mun_path=Path(a.municipios), juros_path=Path(a.juros),
-                     salarios_path=Path(a.salarios), emprego_path=Path(a.emprego_municipios))
+                     salarios_path=Path(a.salarios), emprego_path=Path(a.emprego_municipios), transf_path=Path(a.transferencias))
     print(f"{len(caminhos)} páginas geradas em {a.saida}")
 
 

@@ -1770,3 +1770,63 @@ class TestJurosDosBancos(unittest.TestCase):
         self.assertEqual(J["mes"], "novembro de 2026")
         self.assertEqual(g.juros_nome_banco("BCO INDUSTRIAL DO BRASIL S.A."), "Banco Industrial do Brasil")
         self.assertAlmostEqual(g._parcela(10000, 2, 12), 945.60, places=2)
+
+
+class TestFpm(unittest.TestCase):
+    """FPM por município (scripts/fpm.py -> data/transferencias): página da cidade, índice, busca e resumo na ficha."""
+
+    @classmethod
+    def setUpClass(cls):
+        import gzip
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.d = Path(cls.tmp.name)
+        cls.dados = gravar(cls.d / "dados.json")
+        cls.munp = gravar_mun(cls.d / "mun.json")
+        mun = municipios_exemplo()
+        ufs = {u: "x" for u in ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI",
+                                "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]}
+        tr = cls.d / "transferencias"
+        tr.mkdir()
+        hoje = dt.datetime.fromisoformat(json.loads(cls.dados.read_text(encoding="utf-8"))["gerado_em"]).date()
+        a, m = hoje.year - 2, hoje.month
+        while (a, m) <= (hoje.year, hoje.month):
+            ym = f"{a}-{m:02d}"
+            reg = {}
+            for i, cod in enumerate(mun["pop"]):
+                chave = cod[:6] if i % 2 else cod                  # a API pode trazer o código com 6 dígitos
+                reg[chave] = {"_uf": "XX", "FPM": [100.0 + i, 50.0, 80.0, 230.0 + i], "FUNDEB/FPM": [1.0, 1.0, 1.0, 3.0]}
+            (tr / f"{ym}.json.gz").write_bytes(gzip.compress(json.dumps({"mes": ym, "ufs": ufs, "mun": reg}).encode()))
+            a, m = (a + 1, 1) if m == 12 else (a, m + 1)
+        (tr / "debug.json").write_text("{}", encoding="utf-8")
+        cls.saida = cls.d / "docs"
+        cls.caminhos = g.gerar(cls.dados, cls.saida, mun_path=cls.munp, transf_path=tr)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_paginas(self):
+        self.assertIn("/fpm/", self.caminhos)
+        fpm = [c for c in self.caminhos if c.endswith("/fpm/") and c.startswith("/municipios/")]
+        self.assertEqual(len(fpm), 12)                                         # uma por cidade com ficha
+        t = (self.saida / "municipios" / "bahia" / "salvador" / "fpm" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("<title>FPM de Salvador (BA):", t)
+        self.assertIn("Repasses por decêndio", t)
+        self.assertNotIn("FUNDEB", t.upper().split("<MAIN")[1].split("COMO LER")[0])   # a parcela do Fundeb não entra na soma
+        self.assertIn('href="/dados/fpm-municipios.csv"', t)
+
+    def test_resumo_na_ficha_e_busca(self):
+        t = (self.saida / "municipios" / "bahia" / "salvador" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('href="/municipios/bahia/salvador/fpm/"', t)
+        idx = json.loads((self.saida / "fpm" / "busca.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(idx), 12)
+        self.assertTrue(all(x[2].endswith("/fpm/") for x in idx))
+
+    def test_datas_dos_repasses(self):
+        datas = g.fpm_datas(dt.date(2026, 11, 27), 4)
+        self.assertEqual(datas, [dt.date(2026, 11, 30), dt.date(2026, 12, 10), dt.date(2026, 12, 18), dt.date(2026, 12, 30)])   # 20/12 é domingo
+        self.assertEqual(g.fpm_datas(dt.date(2027, 2, 21), 1), [dt.date(2027, 2, 26)])                                       # 28/02/2027 é domingo
+
+    def test_sem_dados_sem_paginas(self):
+        caminhos = g.gerar(self.dados, self.d / "sem", mun_path=self.munp, transf_path=self.d / "nao-existe")
+        self.assertNotIn("/fpm/", caminhos)
