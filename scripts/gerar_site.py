@@ -3501,7 +3501,7 @@ def card_emp_uf(B: Base, u: dict) -> str:
     a, d, sd = emp_tot(b)
     top = [emp_linha_mun(E, k, False) for k in rk[:30]]
     pior = [emp_linha_mun(E, k, False) for k in rk[::-1][:10] if emp_tot(E["mun"][k])[2] < 0]
-    t1 = card(cab(f"Cidades {EM[u['sigla']]} que mais criaram empregos com carteira", f'<span class="src">{emp_periodo(E)}</span>') +
+    t1 = card(cab(f"Cidades {uf_de(uf2, esc(u['nome']))} que mais criaram empregos com carteira", f'<span class="src">{emp_periodo(E)}</span>') +
               f'<p>No estado, foram {nf(a, 0)} admissões e {nf(d, 0)} desligamentos: saldo de <strong>{saldo_txt(sd)} vagas</strong> em 12 meses.</p>' +
               tabela(EMP_CAB[0], top, EMP_CAB[1]))
     t2 = card(cab("Cidades que mais fecharam vagas") + tabela(EMP_CAB[0], pior, EMP_CAB[1])) if pior else ""
