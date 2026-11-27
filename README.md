@@ -12,6 +12,7 @@ scripts/gerar_site.py  gerador: data/*.json + site/       ->  docs/ (não fica n
 ```
 
 - **Fontes:** SGS do Banco Central (Selic 432, IPCA 433 e 13522), SIDRA/IBGE (tabela 7060, IPCA por área) e Olinda/Banco Central (Boletim Focus).
+- **FPM por município:** `scripts/fpm.py` (workflow `fpm.yml`, todo dia) baixa da API de Transferências Constitucionais do Tesouro os repasses de cada município, mês a mês e por decêndio, em `data/transferencias/AAAA-MM.json.gz`. A carga desde 2023 leva algumas execuções: cada uma usa até 40 minutos e continua de onde a anterior parou. O site gera `/fpm/` e `/municipios/<uf>/<cidade>/fpm/` para as cidades com ficha.
 - **Calendário do Copom:** `data/copom_calendario.json`, conferido com o calendário oficial do Banco Central. O BC publica o do ano seguinte em junho: acrescentar as datas ali.
 - Se uma fonte falhar, o robô mantém o dado anterior daquela fonte, grava o motivo em `data/debug.json` e o workflow termina com erro (o site é publicado mesmo assim, com o último dado bom).
 - A rede do ambiente de desenvolvimento não alcança as APIs do governo: o robô só roda no GitHub Actions.

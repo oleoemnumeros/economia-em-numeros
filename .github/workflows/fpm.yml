@@ -1,0 +1,43 @@
+name: FPM e transferências aos municípios (Tesouro Nacional)
+
+on:
+  # Os repasses do FPM caem nos dias 10, 20 e 30: o robô confere todo dia, de manhã.
+  schedule:
+    - cron: "41 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fpm
+  cancel-in-progress: false
+
+jobs:
+  fpm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependências
+        run: pip install requests==2.32.3
+      - name: Baixar transferências do Tesouro
+        env:
+          ORCAMENTO_S: "2400"
+        run: python scripts/fpm.py
+      - name: Salvar e publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "Economia em Números (robô)"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/transferencias
+          if ! git diff --cached --quiet; then
+            git commit -m "Transferências aos municípios: $(date -u +%Y-%m-%d)"
+            git pull --rebase && git push
+            gh workflow run atualizar.yml
+          fi
