@@ -149,6 +149,16 @@ class TestSite(unittest.TestCase):
         self.assertIn("aviso destaque", t)
         self.assertIn("assets/calc.js", t)
 
+    def test_emprego_por_cidade(self):
+        E = {"meses": ["202601", "202602"], "secoes": {"G": "Comércio", "F": "Construção"},
+             "mun": {"292740": {"m": [[30, 10], [5, 20]], "s": {"G": [30, 10], "F": [5, 20]}}}}
+        self.assertEqual(g.emp_tot(E["mun"]["292740"]), (35, 30, 5))
+        self.assertEqual(g.emp_periodo(E), "janeiro de 2026 a fevereiro de 2026")
+        t = g.emp_setores(E, E["mun"]["292740"])
+        self.assertLess(t.index("Comércio"), t.index("Construção"))  # maior saldo primeiro
+        self.assertIn("+20", t)
+        self.assertIn("−15", t)
+
     def test_reajuste_de_aluguel(self):
         self.assertAlmostEqual(g.acum12({f"2025-{m:02d}": 1.0 for m in range(1, 13)}, "2025-12"), (1.01 ** 12 - 1) * 100)
         self.assertIsNone(g.acum12({"2025-12": 1.0}, "2025-12"))

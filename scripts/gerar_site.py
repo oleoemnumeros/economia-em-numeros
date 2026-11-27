@@ -959,7 +959,7 @@ CONTINUA = {
     "/industria-e-varejo/": ["/atividade/", ("oleo", "/", "Produção de petróleo e gás", "A indústria extrativa, campo a campo"),
                              ("comex", "/produtos/", "O que o Brasil vende ao mundo", "Os produtos mais exportados e importados"), "/emprego/"],
     "/salarios/": ["/emprego/", "/municipios/", "/inflacao/", "/calculadora/"],
-    "/emprego/": ["/salarios/", "/atividade/", "/municipios/", ("comex", "/estados/", "Comércio exterior por estado", "O que cada estado vende e compra do exterior"), "/inflacao/"],
+    "/emprego/": [("economia", "/emprego/cidades/", "Cidades que mais criaram empregos", "Saldo de vagas com carteira em cada município, em 12 meses"), "/salarios/", "/atividade/", "/municipios/", ("comex", "/estados/", "Comércio exterior por estado", "O que cada estado vende e compra do exterior"), "/inflacao/"],
     "/inflacao/": [("economia", "/calculadora/reajuste-de-aluguel/", "Reajuste de aluguel", "Quanto sobe o seu aluguel no aniversário do contrato"), "/juros/", "/calculadora/", ("oleo", "/precos/", "Preço da gasolina e do diesel", "Preços nos postos, por estado e município"), "/cambio/"],
     "/juros/": ["/inflacao/", "/credito/", "/calculadora/", ("comex", "/", "O comércio exterior do Brasil", "Quanto o país exporta e importa, mês a mês")],
     "/credito/": ["/juros/", "/inflacao/", "/emprego/", ("voo", "/", "Voos no horário?", "Pontualidade e cancelamentos por companhia e aeroporto")],
@@ -1410,7 +1410,7 @@ def pg_emprego(B: Base) -> str:
     if cg:
         mes, v = cg[-1]
         lede += f' O Novo Caged {"criou" if v > 0 else "fechou"} <strong>{nf(abs(v), 0)}</strong> vagas formais líquidas em {mes_nome(mes)}.'
-    hero = card('<span class="eyebrow">Mercado de trabalho</span><h1>Desemprego e vagas formais no Brasil</h1>' f'<p class="lede">{lede}</p>')
+    hero = card('<span class="eyebrow">Mercado de trabalho</span><h1>Desemprego e vagas formais no Brasil</h1>' f'<p class="lede">{lede}</p>' + link_emp(B))
     tiles = [tile("Desocupação (trim. móvel)", nf(ult[2], 1), "%", chg(ult[2] - ant[2], 1, " p.p.", " vs. trim. anterior"), "a")]
     if ano:
         tiles.append(tile("Um ano antes", nf(ano[2], 1), "%", "", "k"))
@@ -1496,7 +1496,7 @@ def pg_uf(B: Base, u: dict) -> str:
     texto = card("<h2>O que a taxa de desocupação mede</h2>"
                  "<p>A taxa de desocupação é a parcela da força de trabalho (pessoas de 14 anos ou mais que trabalham ou procuram trabalho) que está sem ocupação e procurando uma vaga. "
                  f"Os dados vêm da PNAD Contínua, pesquisa por amostra do IBGE, e as diferenças pequenas entre trimestres {EM[u['sigla']]} podem estar dentro da margem de erro.</p>")
-    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{graf}<div class="cols">{tab}{outras}</div>{texto}'
+    corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{graf}{card_emp_uf(B, u)}<div class="cols">{tab}{outras}</div>{texto}'
     return pagina(B, f"/emprego/{u['slug']}/", f"Desemprego {EM[u['sigla']]} ({u['sigla']}): taxa de {pct(u['taxa'], 1)} no {rot_tri(ult, True)}",
                   f"Taxa de desocupação {EM[u['sigla']]} ({u['sigla']}): {pct(u['taxa'], 1)} no {rot_tri(ult, True)}, comparada ao Brasil. Série trimestral da PNAD Contínua do IBGE.",
                   corpo, "/emprego/", [("/emprego/", "Emprego"), (None, u["nome"])])
@@ -3383,6 +3383,181 @@ def card_sal_mun(B: Base, m: dict) -> str:
                 f'<span class="src">Salário de contratação (Novo Caged), jornada de 30 horas ou mais. Fonte: {F_SAL}. <a href="{SAL_URL}">Salário por profissão no Brasil →</a></span>')
 
 
+# ------------------------------------------------------------------ emprego por município e setor (Novo Caged)
+EMP_URL = "/emprego/cidades/"
+F_EMP = "Ministério do Trabalho e Emprego, Novo Caged (movimentações, declarações fora do prazo e exclusões)"
+
+
+def emp_prepara(E: dict, mun: dict | None) -> dict:
+    m6 = {cod[:6]: m for cod, m in mun["mun"].items()} if mun else {}
+    return {**E, "m6": m6}
+
+
+def emp_tot(b: dict) -> tuple[int, int, int]:
+    a = sum(x[0] for x in b["m"])
+    d = sum(x[1] for x in b["m"])
+    return a, d, a - d
+
+
+def emp_ym(E: dict, i: int) -> str:
+    p = E["meses"][i]
+    return f"{p[:4]}-{p[4:]}"
+
+
+def emp_periodo(E: dict) -> str:
+    return f"{mes_nome(emp_ym(E, 0))} a {mes_nome(emp_ym(E, -1))}"
+
+
+def emp_setores(E: dict, b: dict, lim: int | None = None) -> str:
+    sec = [(k, v) for k, v in b["s"].items() if v[0] or v[1]]
+    sec.sort(key=lambda kv: -(kv[1][0] - kv[1][1]))
+    if lim and len(sec) > lim:
+        sec = sec[:lim // 2] + [kv for kv in sec[-(lim - lim // 2):] if kv not in sec[:lim // 2]]
+    rows = [[esc(E["secoes"].get(k, k)), f"<strong>{saldo_txt(a - d)}</strong>", nf(a, 0), nf(d, 0)] for k, (a, d) in sec]
+    return (tabela(["Setor", "Saldo", "Adm.", "Desl."], rows, ["l", "r", "r", "r"]) +
+            '<p class="small">Adm. = admissões; Desl. = desligamentos (inclui pedidos de demissão e aposentadorias).</p>')
+
+
+def emp_ranking_uf(E: dict, uf2: str) -> list:
+    out = []
+    for k, b in E["mun"].items():
+        m = E["m6"].get(k)
+        if m and m["uf2"] == uf2:
+            out.append((emp_tot(b)[2], k))
+    out.sort(reverse=True)
+    return [k for _, k in out]
+
+
+def card_emp_mun(B: Base, m: dict) -> str:
+    E = getattr(B, "emp", None)
+    if not E:
+        return ""
+    b = E["mun"].get(m["cod"][:6])
+    if not b:
+        return ""
+    a, d, sd = emp_tot(b)
+    ult_a, ult_d = b["m"][-1]
+    rk = emp_ranking_uf(E, m["uf2"])
+    pos = rk.index(m["cod"][:6]) + 1 if m["cod"][:6] in rk else None
+    uf = B.mun["uf"][m["uf2"]]
+    verbo = "criou" if sd > 0 else "fechou" if sd < 0 else "manteve"
+    txt = (f'<p>De {emp_periodo(E)}, {esc(m["nome"])} teve {nf(a, 0)} admissões e {nf(d, 0)} desligamentos com carteira assinada: '
+           + (f'<strong>{verbo} {nf(abs(sd), 0)} vagas</strong>' if sd else "<strong>saldo zero</strong>")
+           + (f' ({nf(abs(sd) / m["pop"] * 1000, 1)} por mil habitantes)' if sd and m.get("pop") else "") + "."
+           + (f' É o {pos}º saldo {uf_de(m["uf2"], esc(uf["nome"]))}, entre {len(rk)} municípios.' if pos else "")
+           + f' Em {mes_nome(emp_ym(E, -1))}, o saldo foi de {saldo_txt(ult_a - ult_d)}.</p>')
+    vals = [x[0] - x[1] for x in b["m"]]
+    rot = [mes_curtinho(emp_ym(E, i)) for i in range(len(vals))]
+    linhas = [(emp_ym(E, i), x[0], x[1], x[0] - x[1]) for i, x in enumerate(b["m"])]
+    graf = grafico(B, f"emp-{m['cod']}", f"Empregos com carteira em {esc(m['nome'])}", F_EMP,
+                   svg_barras(vals, rot, f"Gráfico de barras do saldo mensal de empregos com carteira em {m['nome']} nos últimos 12 meses", unidade="Saldo de vagas no mês"),
+                   ["Mês", "Admissões", "Desligamentos", "Saldo"], linhas, "Municípios", casas=0, nota=txt,
+                   ultimo=f"{mes_nome(emp_ym(E, -1))}: {saldo_txt(ult_a - ult_d)}",
+                   csv_href="/dados/emprego-municipios.csv", csv_rotulo="CSV de todas as cidades")
+    setores = card(cab(f"Setores que mais contrataram e demitiram em {esc(m['nome'])}", f'<span class="src">{emp_periodo(E)}</span>') +
+                   emp_setores(E, b, 12) +
+                   f'<span class="src">Saldo = admissões menos desligamentos, empregos com carteira assinada. Fonte: {esc(F_EMP)}. '
+                   f'<a href="/emprego/{UFS[m["uf2"]][0]}/">Cidades {uf_de(m["uf2"], esc(uf["nome"]))} que mais criaram empregos →</a></span>')
+    return graf + setores
+
+
+def emp_csv(B: Base) -> None:
+    E = B.emp
+    linhas = []
+    for k, b in E["mun"].items():
+        m = E["m6"].get(k)
+        if not m:
+            continue
+        for i, x in enumerate(b["m"]):
+            linhas.append((m["cod"], m["nome"], m["sigla"], emp_ym(E, i), x[0], x[1], x[0] - x[1]))
+    linhas.sort()
+    B.csvs["emprego-municipios"] = {"titulo": "Emprego com carteira por município e mês (admissões, desligamentos e saldo, Novo Caged)", "fonte": F_EMP,
+                                    "ultimo": mes_curto(emp_ym(E, -1)), "grupo": "Emprego",
+                                    "cab": ["Código IBGE", "Município", "UF", "Mês", "Admissões", "Desligamentos", "Saldo"], "linhas": linhas}
+
+
+def emp_linha_mun(E: dict, k: str, com_uf=True) -> list:
+    m = E["m6"][k]
+    a, d, sd = emp_tot(E["mun"][k])
+    nome = f'{m["nome"]} ({m["sigla"]})' if com_uf else m["nome"]
+    lk = f'<a href="{mun_url(m)}">{esc(nome)}</a>' if m.get("ficha") else esc(nome)
+    pm = nf(sd / m["pop"] * 1000, 1) if m.get("pop") else "–"
+    return [lk, f"<strong>{saldo_txt(sd)}</strong>", pm]
+
+
+EMP_CAB = (["Cidade", "Saldo de vagas", "Por mil hab."], ["l", "r", "r"])
+
+
+def card_emp_uf(B: Base, u: dict) -> str:
+    """Bloco das páginas /emprego/<estado>/: cidades do estado que mais criaram e fecharam vagas, e setores."""
+    E = getattr(B, "emp", None)
+    if not E:
+        return ""
+    uf2 = u["cod"]
+    rk = [k for k in emp_ranking_uf(E, uf2) if k in E["m6"]]
+    b = E["uf"].get(str(int(uf2)))
+    if not rk or not b:
+        return ""
+    a, d, sd = emp_tot(b)
+    top = [emp_linha_mun(E, k, False) for k in rk[:30]]
+    pior = [emp_linha_mun(E, k, False) for k in rk[::-1][:10] if emp_tot(E["mun"][k])[2] < 0]
+    t1 = card(cab(f"Cidades {EM[u['sigla']]} que mais criaram empregos com carteira", f'<span class="src">{emp_periodo(E)}</span>') +
+              f'<p>No estado, foram {nf(a, 0)} admissões e {nf(d, 0)} desligamentos: saldo de <strong>{saldo_txt(sd)} vagas</strong> em 12 meses.</p>' +
+              tabela(EMP_CAB[0], top, EMP_CAB[1]))
+    t2 = card(cab("Cidades que mais fecharam vagas") + tabela(EMP_CAB[0], pior, EMP_CAB[1])) if pior else ""
+    t3 = card(cab(f"Por setor {EM[u['sigla']]}", f'<span class="src">{emp_periodo(E)}</span>') + emp_setores(E, b) +
+              f'<span class="src">Fonte: {esc(F_EMP)}. <a href="{EMP_URL}">Ranking das cidades do Brasil →</a></span>')
+    return t1 + t2 + t3
+
+
+def pg_emp_cidades(B: Base) -> str:
+    E = B.emp
+    a, d, sd = emp_tot(E["br"])
+    todos = sorted((k for k in E["mun"] if k in E["m6"]), key=lambda k: -emp_tot(E["mun"][k])[2])
+    top = [emp_linha_mun(E, k) for k in todos[:50]]
+    pior = [emp_linha_mun(E, k) for k in todos[::-1][:20] if emp_tot(E["mun"][k])[2] < 0]
+    grandes = [k for k in todos if (E["m6"][k].get("pop") or 0) >= 100000]
+    grandes.sort(key=lambda k: -emp_tot(E["mun"][k])[2] / E["m6"][k]["pop"])
+    prop = [emp_linha_mun(E, k) for k in grandes[:30]]
+    k0 = todos[0]
+    m0 = E["m6"][k0]
+    lede = (f"De {emp_periodo(E)}, o Brasil teve {nf(a, 0)} admissões e {nf(d, 0)} desligamentos com carteira assinada, "
+            f"um saldo de <strong>{saldo_txt(sd)} vagas</strong>. A cidade que mais criou empregos foi <strong>{esc(m0['nome'])} ({m0['sigla']})</strong>, "
+            f"com saldo de {saldo_txt(emp_tot(E['mun'][k0])[2])}.")
+    hero = card(f'<span class="eyebrow">Emprego · Novo Caged</span><h1>Cidades que mais criaram empregos com carteira assinada</h1><p class="lede">{lede}</p>')
+    busca = mun_busca_html(B, "Veja a sua cidade") if B.tem_mun else ""
+    t1 = card(cab("As 50 cidades com maior saldo de vagas", f'<span class="src">{emp_periodo(E)}</span>') + tabela(EMP_CAB[0], top, EMP_CAB[1]))
+    t2 = card(cab("Cidades grandes que mais criaram vagas por habitante", '<span class="src">100 mil habitantes ou mais</span>') + tabela(EMP_CAB[0], prop, EMP_CAB[1]))
+    t3 = card(cab("Cidades que mais fecharam vagas") + tabela(EMP_CAB[0], pior, EMP_CAB[1])) if pior else ""
+    ufs = []
+    for u in B.uf_lista() if B.tem_emprego else []:
+        bu = E["uf"].get(str(int(u["cod"])))
+        if bu:
+            ua, ud, us = emp_tot(bu)
+            ufs.append((us, [f'<a href="/emprego/{u["slug"]}/">{esc(u["nome"])} ({u["sigla"]})</a>', f"<strong>{saldo_txt(us)}</strong>", nf(ua, 0), nf(ud, 0)]))
+    ufs.sort(key=lambda x: -x[0])
+    t4 = card(cab("Por estado", '<span class="src">clique para ver as cidades do estado</span>') +
+              tabela(["Estado", "Saldo", "Adm.", "Desl."], [r for _, r in ufs], ["l", "r", "r", "r"])) if ufs else ""
+    t5 = card(cab("Por setor no Brasil", f'<span class="src">{emp_periodo(E)}</span>') + emp_setores(E, E["br"]))
+    nota = card("<h2>De onde vêm os números</h2>"
+                "<p>São os microdados do Novo Caged, do Ministério do Trabalho e Emprego: cada admissão e cada desligamento de emprego com carteira assinada, "
+                "pelo município do estabelecimento. Entram também as declarações feitas fora do prazo, no mês a que se referem, e saem as exclusões, como faz o Ministério. "
+                "Por isso os números podem diferir um pouco dos divulgados no dia do anúncio de cada mês.</p>"
+                "<p>O saldo mostra quantas vagas com carteira foram criadas ou fechadas, não quantas pessoas trabalham na cidade. "
+                "Trabalho informal, servidores estatutários e quem trabalha por conta própria não entram no Caged.</p>"
+                '<p class="small"><a href="/dados/emprego-municipios.csv" download>Baixar CSV com todos os municípios, mês a mês</a> · '
+                f'<a href="{SAL_URL}">Salário por profissão</a> · <a href="/emprego/">Desemprego no Brasil</a></p>')
+    corpo = hero + busca + t1 + t2 + t3 + t4 + t5 + nota
+    return pagina(B, EMP_URL, f"Cidades que mais criaram empregos com carteira em 12 meses ({emp_periodo(E)})",
+                  f"Ranking das cidades que mais criaram e fecharam vagas com carteira assinada, de {emp_periodo(E)}, pelo Novo Caged. Saldo, admissões e desligamentos de {nf(len(todos), 0)} municípios, por estado e setor.",
+                  corpo, "/emprego/", [("/emprego/", "Emprego"), (None, "Cidades")])
+
+
+def link_emp(B: Base) -> str:
+    return (f'<p class="ir-p"><a class="ir" href="{EMP_URL}" data-goatcounter-click="emprego-cidades-botao">Cidades que mais criaram empregos</a></p>'
+            if getattr(B, "emp", None) else "")
+
+
 def pg_mun(B: Base, m: dict) -> str:
     x = B.mun
     uf = x["uf"][m["uf2"]]
@@ -3425,7 +3600,7 @@ def pg_mun(B: Base, m: dict) -> str:
                      'Assim que houver dado, a ficha mostra de onde vem e para onde vai o dinheiro.</p>')
         dest = aviso
     corpo = (f'{hero}<div class="tiles">{"".join(tiles)}</div>'
-             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{card_sal_mun(B, m)}{mun_busca_html(B, "Busque outra cidade")}{mun_mesmo_porte(B, m)}{mun_links_irmaos(B, m)}'
+             f'{colunas(graf) if len(graf) > 1 else "".join(graf)}{comp}{dest}{card_emp_mun(B, m)}{card_sal_mun(B, m)}{mun_busca_html(B, "Busque outra cidade")}{mun_mesmo_porte(B, m)}{mun_links_irmaos(B, m)}'
              + card(mun_texto(B) + f'<p class="small"><a href="/municipios/{uf["slug"]}/">Ver as cidades {uf_de(m["uf2"], esc(uf["nome"]))}</a> · <a href="/municipios/">Municípios do Brasil</a></p>'))
     desc = (f"A população de {nome} é de {nf(m['pop'], 0)} habitantes ({x['pop_ano']}) e o PIB é de {brl_abrev(m['pib'])} em {x['pib_ano']} (R$ {nf(m['pc'], 0)} per capita)"
             + (f", receita da prefeitura de {brl_abrev(c['rec']['total'])} e gastos por área" if c else "") + ". Dados oficiais do IBGE e do Tesouro Nacional.")
@@ -3955,7 +4130,7 @@ def resumos_home(B: Base) -> str:
     return f'<div class="cols">{"".join(cards)}</div>' if cards else ""
 
 
-LLMS_TXT = '# Economia em Números\n\n> Indicadores da economia brasileira (juros, inflação, emprego, atividade, câmbio, contas públicas, crédito) e dados por município, como Bolsa Família e PIB, em páginas simples e atualizadas a partir de fontes oficiais.\n\nCada indicador tem página própria com valor mais recente, variação, série histórica e link para a fonte oficial. As páginas de município juntam população, PIB, contas da prefeitura, emprego formal e Bolsa Família.\n\n## Principais páginas\n- [Resumo](__BASE__/resumo/): os principais números da economia hoje\n- [Juros e Selic](__BASE__/juros/): meta da Selic, decisões e atas do Copom, expectativas do Boletim Focus\n- [Histórico do Boletim Focus](__BASE__/juros/focus/): como as projeções do mercado para IPCA, Selic, PIB e dólar mudaram semana a semana\n- [Inflação](__BASE__/inflacao/): IPCA do Brasil, por região e por grupo e item\n- [Emprego](__BASE__/emprego/): desocupação (PNAD) e vagas formais (Novo Caged)\n- [Salário por profissão](__BASE__/salarios/): salário de contratação de cada profissão no Brasil, por estado e cidade (Novo Caged)\n- [Atividade](__BASE__/atividade/): PIB e IBC-Br\n- [Indústria e varejo](__BASE__/industria-e-varejo/): produção industrial e vendas no varejo\n- [Câmbio](__BASE__/cambio/): dólar\n- [Crédito](__BASE__/credito/): crédito e inadimplência das famílias\n- [Contas públicas](__BASE__/contas-publicas/)\n- [Setor externo](__BASE__/setor-externo/)\n- [Bolsa Família por município](__BASE__/bolsa-familia/): famílias e valor pago em cada município\n- [Municípios](__BASE__/municipios/): PIB, população e contas das prefeituras\n- [Calculadora](__BASE__/calculadora/): correção de valores por indicadores\n- [Reajuste de aluguel](__BASE__/calculadora/reajuste-de-aluguel/): IGP-M, IPCA, INPC e IGP-DI acumulados em 12 meses para cada mês de aniversário do contrato\n- [Dados abertos](__BASE__/dados/): tabelas para baixar\n- [Como funciona](__BASE__/sobre/): fonte de cada série\n\n## Fontes\n- IBGE (SIDRA), Banco Central (SGS, Focus, Copom), Ministério do Trabalho e Emprego (Novo Caged), MDS e CGU (Bolsa Família) e Tesouro Nacional (Siconfi).\n- A lista completa de séries e tabelas está em __BASE__/sobre/.\n\n## Como citar\n- Cite o nome do portal e o link da página usada. Os dados são públicos e os links levam à fonte oficial.\n- Cada página mostra o período dos dados. Informe o período ao usar um número.\n- O portal é independente e não tem ligação com governo, empresas ou instituições financeiras.\n\n## Família em Números\nPortais independentes de dados públicos do Brasil: Óleo em Números (https://oleoemnumeros.com.br), Comex em Números (https://comexemnumeros.com.br), Voo em Números (https://vooemnumeros.com.br), Economia em Números (https://economiaemnumeros.com.br) e Imóveis em Números (https://imoveisemnumeros.com.br).\n\n## Contato\n- Erros, sugestões e pedidos de dados: __BASE__/contato/\n'
+LLMS_TXT = '# Economia em Números\n\n> Indicadores da economia brasileira (juros, inflação, emprego, atividade, câmbio, contas públicas, crédito) e dados por município, como Bolsa Família e PIB, em páginas simples e atualizadas a partir de fontes oficiais.\n\nCada indicador tem página própria com valor mais recente, variação, série histórica e link para a fonte oficial. As páginas de município juntam população, PIB, contas da prefeitura, emprego formal e Bolsa Família.\n\n## Principais páginas\n- [Resumo](__BASE__/resumo/): os principais números da economia hoje\n- [Juros e Selic](__BASE__/juros/): meta da Selic, decisões e atas do Copom, expectativas do Boletim Focus\n- [Histórico do Boletim Focus](__BASE__/juros/focus/): como as projeções do mercado para IPCA, Selic, PIB e dólar mudaram semana a semana\n- [Inflação](__BASE__/inflacao/): IPCA do Brasil, por região e por grupo e item\n- [Emprego](__BASE__/emprego/): desocupação (PNAD) e vagas formais (Novo Caged)\n- [Cidades que mais criaram empregos](__BASE__/emprego/cidades/): saldo de vagas com carteira em 12 meses em cada município, por estado e setor (Novo Caged)\n- [Salário por profissão](__BASE__/salarios/): salário de contratação de cada profissão no Brasil, por estado e cidade (Novo Caged)\n- [Atividade](__BASE__/atividade/): PIB e IBC-Br\n- [Indústria e varejo](__BASE__/industria-e-varejo/): produção industrial e vendas no varejo\n- [Câmbio](__BASE__/cambio/): dólar\n- [Crédito](__BASE__/credito/): crédito e inadimplência das famílias\n- [Contas públicas](__BASE__/contas-publicas/)\n- [Setor externo](__BASE__/setor-externo/)\n- [Bolsa Família por município](__BASE__/bolsa-familia/): famílias e valor pago em cada município\n- [Municípios](__BASE__/municipios/): PIB, população e contas das prefeituras\n- [Calculadora](__BASE__/calculadora/): correção de valores por indicadores\n- [Reajuste de aluguel](__BASE__/calculadora/reajuste-de-aluguel/): IGP-M, IPCA, INPC e IGP-DI acumulados em 12 meses para cada mês de aniversário do contrato\n- [Dados abertos](__BASE__/dados/): tabelas para baixar\n- [Como funciona](__BASE__/sobre/): fonte de cada série\n\n## Fontes\n- IBGE (SIDRA), Banco Central (SGS, Focus, Copom), Ministério do Trabalho e Emprego (Novo Caged), MDS e CGU (Bolsa Família) e Tesouro Nacional (Siconfi).\n- A lista completa de séries e tabelas está em __BASE__/sobre/.\n\n## Como citar\n- Cite o nome do portal e o link da página usada. Os dados são públicos e os links levam à fonte oficial.\n- Cada página mostra o período dos dados. Informe o período ao usar um número.\n- O portal é independente e não tem ligação com governo, empresas ou instituições financeiras.\n\n## Família em Números\nPortais independentes de dados públicos do Brasil: Óleo em Números (https://oleoemnumeros.com.br), Comex em Números (https://comexemnumeros.com.br), Voo em Números (https://vooemnumeros.com.br), Economia em Números (https://economiaemnumeros.com.br) e Imóveis em Números (https://imoveisemnumeros.com.br).\n\n## Contato\n- Erros, sugestões e pedidos de dados: __BASE__/contato/\n'
 
 
 # ---------------------------------------------------------------- Juros dos bancos (Banco Central, taxaJuros v2)
@@ -4346,7 +4521,8 @@ def pg_juros_banco(B: Base, b: dict) -> str:
 
 def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" / "copom_calendario.json", hoje: dt.date | None = None,
           resumos_path: Path = RAIZ / "data" / "copom_resumos.json", bf_path: Path | None = None, mun_path: Path | None = None,
-          juros_path: Path | None = None, salarios_path: Path | None = None) -> list:
+          juros_path: Path | None = None, salarios_path: Path | None = None,
+          emprego_path: Path | None = None) -> list:
     dados = json.loads(dados_path.read_text(encoding="utf-8"))
     cal = json.loads(calendario_path.read_text(encoding="utf-8"))
     resumos = json.loads(resumos_path.read_text(encoding="utf-8")) if resumos_path.exists() else {}
@@ -4357,6 +4533,8 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
     B.juros = juros_prepara(json.loads(Path(juros_path).read_text(encoding="utf-8"))) if juros_path and Path(juros_path).exists() else None
     _s = json.loads(Path(salarios_path).read_text(encoding="utf-8")) if salarios_path and Path(salarios_path).exists() else None
     B.sal = sal_prepara(_s, B.mun) if _s and _s.get("br") else None
+    _e = json.loads(Path(emprego_path).read_text(encoding="utf-8")) if emprego_path and Path(emprego_path).exists() else None
+    B.emp = emp_prepara(_e, B.mun) if _e and _e.get("mun") and B.tem_mun else None
     resumos_preparar(B, dados_path.parent / "resumos")
     if saida.exists():
         shutil.rmtree(saida)
@@ -4370,6 +4548,9 @@ def gerar(dados_path: Path, saida: Path, calendario_path: Path = RAIZ / "data" /
         paginas.append(("/emprego/", pg_emprego(B)))
         for u in B.uf_lista():
             paginas.append((f"/emprego/{u['slug']}/", pg_uf(B, u)))
+    if B.emp:
+        paginas.append((EMP_URL, pg_emp_cidades(B)))
+        emp_csv(B)
     if B.tem_atividade:
         paginas.append(("/atividade/", pg_atividade(B)))
     if B.tem_ibge:
@@ -4485,9 +4666,10 @@ def main():
     ap.add_argument("--municipios", default=str(RAIZ / "data" / "municipios.json"))
     ap.add_argument("--juros", default=str(RAIZ / "data" / "juros.json"))
     ap.add_argument("--salarios", default=str(RAIZ / "data" / "salarios.json"))
+    ap.add_argument("--emprego-municipios", default=str(RAIZ / "data" / "emprego_mun.json"))
     a = ap.parse_args()
     caminhos = gerar(Path(a.dados), Path(a.saida), Path(a.calendario), bf_path=Path(a.bolsa_familia), mun_path=Path(a.municipios), juros_path=Path(a.juros),
-                     salarios_path=Path(a.salarios))
+                     salarios_path=Path(a.salarios), emprego_path=Path(a.emprego_municipios))
     print(f"{len(caminhos)} páginas geradas em {a.saida}")
 
 
