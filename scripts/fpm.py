@@ -11,6 +11,10 @@ import json
 from collections import Counter
 from pathlib import Path
 
+import os
+import time
+from urllib.parse import quote
+
 import requests
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -19,8 +23,36 @@ CKAN = "https://www.tesourotransparente.gov.br/ckan/api/3/action/package_show?id
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
 
 
+CAMINHOS = []
+
+
+def baixar(url, timeout=300):
+    """O gov.br às vezes derruba a conexão do GitHub: tenta direto, depois a ponte do projeto (RELAY), depois o leitor r.jina.ai."""
+    relay, token = os.environ.get("RELAY_URL", "").strip(), os.environ.get("RELAY_TOKEN", "").strip()
+    tentativas = [("direto", lambda: requests.get(url, headers=UA, timeout=timeout))]
+    if relay and token:
+        tentativas.append(("ponte", lambda: requests.get(f"{relay.rstrip('/')}/?url={quote(url, safe='')}", headers={"X-Token": token}, timeout=timeout)))
+    tentativas.append(("leitor", lambda: requests.get("https://r.jina.ai/" + url, headers={"X-Return-Format": "text", "Accept": "text/plain"}, timeout=timeout)))
+    erros = []
+    for nome, f in tentativas:
+        for i in range(2):
+            try:
+                r = f()
+                if r.status_code == 200:
+                    CAMINHOS.append(f"{nome}: {url[-60:]}")
+                    return r
+                erros.append(f"{nome} HTTP {r.status_code}")
+            except requests.RequestException as e:
+                erros.append(f"{nome} {type(e).__name__}")
+            time.sleep(5 * (i + 1))
+    raise RuntimeError("; ".join(erros))
+
+
 def amostra(url):
-    r = requests.get(url, headers=UA, timeout=300)
+    try:
+        r = baixar(url)
+    except Exception as e:  # noqa: BLE001
+        return {"url": url, "erro": str(e)}
     out = {"url": url, "http": r.status_code, "bytes": len(r.content)}
     if r.status_code != 200:
         out["texto"] = r.text[:300]
@@ -54,13 +86,20 @@ def amostra(url):
 def main():
     PASTA.mkdir(parents=True, exist_ok=True)
     res = {}
-    j = requests.get(CKAN, headers=UA, timeout=120).json()
+    res["ponte_configurada"] = bool(os.environ.get("RELAY_URL"))
+    r = baixar(CKAN, 120)
+    try:
+        j = r.json()
+    except ValueError:
+        t = r.text
+        j = json.loads(t[t.find("{"):t.rfind("}") + 1])
     recs = j["result"]["resources"]
     res["recursos"] = [{"nome": r.get("name"), "url": r.get("url"), "mod": r.get("last_modified") or r.get("created")} for r in recs]
     csvs = [r for r in recs if (r.get("url") or "").lower().endswith(".csv")]
     csvs.sort(key=lambda r: r.get("last_modified") or r.get("created") or "")
     alvo = csvs[-2:] + [r for r in csvs if "2024" in (r.get("name") or "")][:1]
     res["amostras"] = [amostra(r["url"]) for r in alvo]
+    res["caminhos"] = CAMINHOS
     (PASTA / "sondagem.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
     print("ok", [a.get("n_linhas") for a in res["amostras"]])
 
