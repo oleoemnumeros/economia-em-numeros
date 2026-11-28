@@ -1,0 +1,1909 @@
+{
+ "ponte_configurada": false,
+ "recursos": [
+  {
+   "nome": "Metadados - Transferências Constitucionais Para Municípios",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f7748189-6293-4999-bc6d-294428d949d8/download/metadados---transferencias-constitucionais---municipios.pdf",
+   "mod": "2016-09-29T08:59:43.545148"
+  },
+  {
+   "nome": "Transferencia_Municipios_1997.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/dc189145-9ea9-4c0f-b60b-65e57a37ba38/download/transferenciamensalmunicipios1997.csv.csv",
+   "mod": "2016-09-08T01:52:32.727324"
+  },
+  {
+   "nome": "Transferencia_Municipios_1998.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/66ffadd6-d841-4bab-a3e0-fea3da9c17d9/download/transferenciamensalmunicipios1998.csv.csv",
+   "mod": "2016-09-08T04:52:47.196553"
+  },
+  {
+   "nome": "Transferencia_Municipios_1999.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/0c5852d2-2fc9-4b23-ba7f-1e7644d57b38/download/transferenciamensalmunicipios1999.csv.csv",
+   "mod": "2016-09-08T10:53:02.449222"
+  },
+  {
+   "nome": "Transferencia_Municipios_2000.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/4d332fbc-69d3-4e46-85e3-c25031646dfa/download/transferenciamensalmunicipios2000.csv.csv",
+   "mod": "2016-09-08T16:53:24.149289"
+  },
+  {
+   "nome": "Transferencia_Municipios_2001.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/3ffc1342-513d-44c0-bb22-7c2f8de98d2f/download/transferenciamensalmunicipios2001.csv.csv",
+   "mod": "2016-09-08T19:54:08.243728"
+  },
+  {
+   "nome": "Transferencia_Municipios_2002.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/5265bfa6-c5f7-4dd0-8cac-47e8d3930eff/download/transferenciamensalmunicipios2002.csv.csv",
+   "mod": "2016-09-08T22:54:24.111540"
+  },
+  {
+   "nome": "Transferencia_Municipios_2003.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/cd164d92-375d-4b88-be50-644f8fcbd741/download/transferenciamensalmunicipios2003.csv.csv",
+   "mod": "2016-09-09T01:54:42.905219"
+  },
+  {
+   "nome": "Transferencia_Municipios_2004.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/883628ac-0747-47c4-a1d1-baef030e55dc/download/transferenciamensalmunicipios2004.csv.csv",
+   "mod": "2016-09-09T04:54:58.351602"
+  },
+  {
+   "nome": "Transferencia_Municipios_2005.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/57e33dfa-8505-4806-9c78-91732773c7cd/download/transferenciamensalmunicipios2005.csv.csv",
+   "mod": "2016-09-09T10:55:19.250803"
+  },
+  {
+   "nome": "Transferencia_Municipios_2006.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/7103c666-05ad-4bb2-8027-80cc38dca4e0/download/transferenciamunicipios2006.csv.csv",
+   "mod": "2016-09-29T16:55:04.764645"
+  },
+  {
+   "nome": "Transferencia_Municipios_2007.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/179f992f-5fa7-4646-afb6-5e08cc3080c9/download/transferenciamunicipios2007.csv.csv",
+   "mod": "2016-09-29T16:57:51.349740"
+  },
+  {
+   "nome": "Transferencia_Municipios_2008.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/3a04ddf3-a666-478a-a323-df8e6a163624/download/transferenciamunicipios2008.csv.csv",
+   "mod": "2016-09-29T17:00:13.691513"
+  },
+  {
+   "nome": "Transferencia_Municipios_2009.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/4910cb4c-73de-49c3-8749-71f3be3f7039/download/transferenciamunicipios2009.csv.csv",
+   "mod": "2016-09-29T17:12:55.332609"
+  },
+  {
+   "nome": "Transferencia_Municipios_2010.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/37d2e747-67df-4fd0-94bc-6e51904a8185/download/transferenciamunicipios2010.csv.csv",
+   "mod": "2016-09-29T17:15:14.617205"
+  },
+  {
+   "nome": "Transferencia_Municipios_2011.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/ea55e249-ea5e-4284-ac6a-dd39a44b5256/download/transferenciamunicipios2011.csv.csv",
+   "mod": "2016-09-29T17:17:25.901431"
+  },
+  {
+   "nome": "Transferencia_Municipios_2012.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/56666074-64bf-47b1-9d6e-622c444e1d3c/download/transferenciamunicipios2012.csv.csv",
+   "mod": "2016-09-29T17:19:58.883860"
+  },
+  {
+   "nome": "Transferencia_Municipios_2013.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/0c5afa0d-e7dc-4208-b9e5-9fe9b917c316/download/transferenciamunicipios2013.csv.csv",
+   "mod": "2016-09-29T17:22:11.452021"
+  },
+  {
+   "nome": "Transferencia_Municipios_2014.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/6036b9ff-5121-469c-8677-a3b8c198dd84/download/transferenciamunicipios2014.csv.csv",
+   "mod": "2016-09-29T17:24:13.823779"
+  },
+  {
+   "nome": "Transferencia_Municipios_2015.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/4f2b069c-881a-4669-837e-478fd5730cf7/download/transferenciamunicipios2015.csv.csv",
+   "mod": "2016-09-29T17:26:39.569179"
+  },
+  {
+   "nome": "Transferencia_Municipios_jan-jul2016.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/4ef2d746-e3ed-4bf3-b874-1e2ceaa67df6/download/transferenciamunicipiosjan-jul2016.csv.csv",
+   "mod": "2016-09-29T17:29:23.396361"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_1998.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/d9e376d9-9a15-40a2-b2a6-36232ec045f2/download/transferenciamensalmunicipios1998.csv.csv",
+   "mod": "2016-12-08T15:01:18.490449"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201608.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/4affbddd-851d-4a25-a57d-6c761790f8fb/download/transferenciamensalmunicipios201608.csv.csv",
+   "mod": "2016-10-04T10:47:43.577370"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201609.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/1aa7c8b2-b5bf-4b96-8bad-510a128213c8/download/transferenciamensalmunicipios201609.csv.csv",
+   "mod": "2016-10-18T16:31:43.086095"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201610.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/8dbc9bf4-8e67-441b-a661-d074e9872152/download/transferenciamensalmunicipios201610.csv.csv",
+   "mod": "2017-05-24T14:50:48.276618"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201611.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/d5362dc9-c712-44c8-be4f-a7717fb439ec/download/transferenciamensalmunicipios201611.csv.csv",
+   "mod": "2017-05-24T14:59:10.651801"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201612.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/ff0baca1-feed-4417-9990-3288c12d2aad/download/transferenciamensalmunicipios201612.csv.csv",
+   "mod": "2020-09-17T12:04:15.474269"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201701.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/2bf14247-27de-44bb-93fd-db59f1c57b1d/download/transferenciamensalmunicipios201701.csv.csv",
+   "mod": "2017-05-24T15:01:11.604047"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201702.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/737b4b67-ead8-4ec2-b8ac-9b6ad92fced1/download/transferenciamensalmunicipios201702.csv.csv",
+   "mod": "2017-03-05T08:01:53.737367"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201703.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/49ee86ad-e795-4bc9-8123-7ad505c87783/download/transferenciamensalmunicipios201703.csv.csv",
+   "mod": "2017-05-24T15:04:51.599596"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201704.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e26f33fe-5d60-4f47-a7ce-43586aed7555/download/transferenciamensalmunicipios201704.csv.csv",
+   "mod": "2017-05-05T08:00:53.918799"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201705.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/22f1f9b9-a0e3-482b-b91f-fc9b150937a5/download/transferenciamensalmunicipios201705.csv.csv",
+   "mod": "2017-06-05T08:00:20.876119"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201706.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f7a2276c-479b-4115-936f-f149c385dd78/download/transferenciamensalmunicipios201706.csv.csv",
+   "mod": "2017-12-26T11:34:35.629087"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201707.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/4a3be129-c56d-4e53-8ad7-45d186c834dd/download/transferenciamensalmunicipios201707.csv.csv",
+   "mod": "2017-12-26T11:35:02.450922"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201708.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/dabd301c-aa48-4b93-841b-db2313c22c97/download/transferenciamensalmunicipios201708.csv.csv",
+   "mod": "2017-12-26T11:35:29.190457"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201709.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/fc2a0cbe-4bbc-4555-859c-867e7384b36a/download/transferenciamensalmunicipios201709.csv.csv",
+   "mod": "2017-12-26T11:35:50.377246"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201710.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/cb009d72-6395-413e-965e-503fe617d544/download/transferenciamensalmunicipios201710.csv.csv",
+   "mod": "2017-12-26T11:36:09.619279"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201711.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/a58af95b-0a13-4619-8a8c-ad24ab2f3ee9/download/transferenciamensalmunicipios201711.csv",
+   "mod": "2017-12-21T17:49:43.907207"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201712.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/07c02159-9bed-4674-b5c3-57615a6c5b4b/download/transferenciamensalmunicipios201712.csv.csv",
+   "mod": "2020-09-17T12:12:34.624584"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201801.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f80c233b-8dab-499f-8c33-16d8d3944789/download/transferenciamensalmunicipios201801.csv.csv",
+   "mod": "2018-11-07T16:20:08.505967"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201802.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/1d4d7d3f-63d0-4898-b594-4721f2bd9cef/download/transferenciamensalmunicipios201802.csv.csv",
+   "mod": "2018-03-05T08:00:15.300445"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201803.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/ebd86c3f-fd6d-4dd6-b0fc-07fee84d8347/download/transferenciamensalmunicipios201803.csv.csv",
+   "mod": "2018-04-05T08:00:22.096369"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201804.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/27c11d69-d5f7-4692-a19c-9a3fcde85af2/download/transferenciamensalmunicipios201804.csv.csv",
+   "mod": "2018-11-07T16:18:28.625502"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201805.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/2092c816-62bf-4e88-b11e-4405d25b896c/download/transferenciamensalmunicipios201805.csv.csv",
+   "mod": "2018-06-05T07:59:56.139742"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201806.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e17946f0-f075-424d-be06-e32c997aea28/download/transferenciamensalmunicipios201806.csv.csv",
+   "mod": "2018-07-05T08:00:01.786514"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201807.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/2cae8552-7a0a-4967-b1f4-019d9242f2d6/download/transferenciamensalmunicipios201807.csv.csv",
+   "mod": "2018-08-05T08:00:02.207700"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201808.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/66c82c73-a4a3-486e-a701-a90270f507a2/download/transferenciamensalmunicipios201808.csv.csv",
+   "mod": "2018-09-05T08:00:08.929433"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201809.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/11fe52da-514e-4679-ba75-58ebe30781f9/download/transferenciamensalmunicipios201809.csv.csv",
+   "mod": "2018-10-05T08:00:46.468971"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201810.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/1fab26b1-bf1b-4e00-b0a7-4b33801a8208/download/transferenciamensalmunicipios201810.csv.csv",
+   "mod": "2018-11-05T08:00:59.912523"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201811.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/2a448648-012e-4711-bc6a-da4b6e41aa07/download/transferenciamensalmunicipios201811.csv.csv",
+   "mod": "2018-12-05T08:03:17.576781"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201812.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/799c7203-5a59-4c52-94a0-434ae8b1c1b9/download/transferenciamensalmunicipios201812.csv.csv",
+   "mod": "2020-09-17T12:13:04.567095"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201901.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e91c92bd-6809-4ea5-abdd-012b5817c627/download/transferenciamensalmunicipios201901.csv.csv",
+   "mod": "2020-09-17T12:20:44.173705"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201902.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/d0eba1de-cf49-4f6c-9a6d-84efdc0c5c42/download/transferenciamensalmunicipios201902.csv.csv",
+   "mod": "2020-09-17T11:20:03.484679"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201903.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/1fa6c2bb-546c-4849-8b18-91894af46af4/download/transferenciamensalmunicipios201903.csv.csv",
+   "mod": "2019-04-05T08:00:27.191280"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201904.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/8b0ba42a-fb8d-483b-bef0-e759b2dba59d/download/transferenciamensalmunicipios201904.csv.csv",
+   "mod": "2019-05-05T08:00:28.561569"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201905.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/3f9da19a-7a10-4f34-a667-6bed2790e38a/download/transferenciamensalmunicipios201905.csv.csv",
+   "mod": "2019-06-05T08:00:33.268282"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201906.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/8b6156b3-a279-4a62-83b0-ce7163697c6d/download/transferenciamensalmunicipios201906.csv.csv",
+   "mod": "2019-07-05T08:00:32.271118"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201907.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/9c779fa7-c747-4b6e-bb62-740fa2bc1092/download/transferenciamensalmunicipios201907.csv.csv",
+   "mod": "2019-08-05T08:01:21.796197"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201908.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/c2f5f044-9bc7-49db-90c4-7e9611aefd1b/download/transferenciamensalmunicipios201908.csv.csv",
+   "mod": "2019-09-05T08:00:27.149932"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201909.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/b78ca64f-f7e0-4e6b-8e46-60160dd67d76/download/transferenciamensalmunicipios201909.csv.csv",
+   "mod": "2019-10-05T08:00:31.000592"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201910.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/64018fd4-26ee-40c0-93f1-57281d1ba519/download/transferenciamensalmunicipios201910.csv.csv",
+   "mod": "2019-11-05T08:00:29.095269"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201911.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/5d12bafd-899b-48fc-b535-f690cd1079ea/download/transferenciamensalmunicipios201911.csv.csv",
+   "mod": "2019-12-05T08:00:31.456757"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_201912.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/2376c39a-caa7-458d-87e4-60c6bf7945cf/download/transferenciamensalmunicipios201912.csv.csv",
+   "mod": "2020-09-17T12:14:32.250159"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202001.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/2c5accb9-3258-4340-b46b-fd70af02be8b/download/transferenciamensalmunicipios202001.csv.csv",
+   "mod": "2020-09-17T12:21:18.360231"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202002.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e1e8509f-b3b3-422c-bcfe-aef2d57c0b9e/download/transferenciamensalmunicipios202002.csv.csv",
+   "mod": "2020-03-05T08:00:34.050072"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202003.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f37c93a7-65c9-44dd-81e0-c8f6a8e2e8ec/download/transferenciamensalmunicipios202003.csv.csv",
+   "mod": "2020-04-05T08:00:37.464269"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202004.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/6ef1a42e-80cf-4c42-9f96-2646bc922960/download/transferenciamensalmunicipios202004.csv.csv",
+   "mod": "2020-05-05T08:00:34.189632"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202005.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/15722274-363b-4864-ab6f-b96c918e56bf/download/transferenciamensalmunicipios202005.csv.csv",
+   "mod": "2020-06-05T08:00:35.669883"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202006.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/4b3d31ee-2097-482f-9f61-235f64ebffc6/download/transferenciamensalmunicipios202006.csv.csv",
+   "mod": "2020-08-13T11:05:25.674082"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202007.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f3b459eb-028d-4ad1-ac4b-bb2de1dd4869/download/transferenciamensalmunicipios202007.csv.csv",
+   "mod": "2020-08-05T08:00:36.488100"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202007.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/7bd77f22-8ad1-44c1-a55d-636935a862ed/download/transferenciamensalmunicipios202007.csv.csv",
+   "mod": "2020-09-15T19:38:07.038101"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202008.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/2e31e459-112e-473f-a139-8ee9e7dd193f/download/transferenciamensalmunicipios202008.csv.csv",
+   "mod": "2020-09-15T19:38:52.823077"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202010.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/8d35ad6e-813f-4bba-a9e8-39c60fe6f85e/download/transferenciamensalmunicipios202010.csv.csv",
+   "mod": "2020-10-05T08:00:12.147869"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202011.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/8ce59249-ae27-41b8-bd36-7986d97a4f3d/download/transferenciamensalmunicipios202011.csv.csv",
+   "mod": "2020-11-05T08:00:23.441722"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202012.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/bd5038a5-3a72-44d1-a7f1-4ee6ab8f0e36/download/transferenciamensalmunicipios202012.csv.csv",
+   "mod": "2020-12-05T08:00:24.288633"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202012.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/22eabe39-a325-4353-b430-5d82a8b342bc/download/transferenciamensalmunicipios202012.csv.csv",
+   "mod": "2021-01-05T08:00:15.193673"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202101.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/ebb66b65-b367-4a27-a059-1dcd716f3879/download/transferenciamensalmunicipios202102.csv.csv",
+   "mod": "2022-06-03T01:56:25.596710"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202102.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/78d74b71-0a1a-492c-9fce-8d0d5a05c932/download/transferenciamensalmunicipios202103.csv.csv",
+   "mod": "2022-06-02T22:55:48.677200"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202103.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/d8c0ccd8-70ef-4110-8bab-96830b080d01/download/transferenciamensalmunicipios202104.csv.csv",
+   "mod": "2022-06-02T19:55:09.206704"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202104.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/8bddf8e6-0787-4747-abda-e60566c39881/download/transferenciamensalmunicipios202105.csv.csv",
+   "mod": "2022-06-02T16:54:12.329458"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202105.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/d91f1847-7417-44a3-8a44-668badca5b2d/download/transferenciamensalmunicipios202106.csv.csv",
+   "mod": "2022-06-02T13:53:32.619276"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202106.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/c61e0dd3-e96c-48cc-9980-d5fad22de145/download/transferenciamensalmunicipios202107.csv.csv",
+   "mod": "2022-06-02T10:52:44.606784"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202107.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f478d615-7a11-4dcc-baf2-54f6c32760a1/download/transferenciamensalmunicipios202108.csv.csv",
+   "mod": "2022-06-02T07:51:50.922250"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202203.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/9c02f717-f995-4f93-95ff-d40e18fc480e/download/transferenciamensalmunicipios202203.csv.csv",
+   "mod": "2022-04-18T14:33:23.987092"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202202.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/2d52d3fc-5c0b-4167-89af-02229e808e2c/download/transferenciamensalmunicipios202202.csv.csv",
+   "mod": "2022-04-18T14:33:53.539392"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202201.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/5c490136-997a-4cf6-bfda-2cb586f7841d/download/transferenciamensalmunicipios202201.csv.csv",
+   "mod": "2022-04-18T14:34:27.481899"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202112.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e99fe70a-c873-4cdc-b9ed-b4224a9afcf1/download/transferenciamensalmunicipios202112.csv.csv",
+   "mod": "2022-04-18T14:36:58.233333"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202111.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/46f544ee-39cf-4653-93f8-ebfa265f24ab/download/transferenciamensalmunicipios202111.csv.csv",
+   "mod": "2022-04-18T14:37:29.909218"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202110.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/15a1356e-60b8-4c02-8c9d-aafe4e57f7be/download/transferenciamensalmunicipios202110.csv.csv",
+   "mod": "2022-04-18T14:38:06.148488"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202109.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/a0a316a7-af4f-4c40-91d8-87bcb55fce10/download/transferenciamensalmunicipios202109.csv.csv",
+   "mod": "2022-04-18T14:38:53.453547"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202204.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/0551f02c-b37d-4a8f-8ab7-f83c9887f904/download/transferenciamensalmunicipios202205.csv.csv",
+   "mod": "2022-06-01T22:15:16.715882"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202205.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/fa956f4b-956d-4867-af92-77b07a901e1a/download/transferenciamensalmunicipios202206.csv.csv",
+   "mod": "2022-06-02T04:48:32.617840"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202108.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/8f1cb291-ed64-49a6-ae3d-7ad34897e573/download/transferenciamensalmunicipios202108.csv",
+   "mod": "2022-06-02T01:46:20.322212"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202206.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/c7e94e6a-fa56-48fd-b82f-6ad167135d8b/download/transferenciamensalmunicipios202207.csv.csv",
+   "mod": "2022-07-06T14:20:21.704524"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202207.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/329edebd-6c5c-4efd-992e-2deaac34eccc/download/transferenciamensalmunicipios202208.csv.csv",
+   "mod": "2022-08-03T14:29:50.875069"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202209.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/0646d3c8-d563-4f8b-88b4-bc1e3f7cb69f/download/transferenciamensalmunicipios202209.csv.csv",
+   "mod": "2022-09-04T08:00:12.073177"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202210.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/0eb0e2b7-e2a4-4926-83c6-6b5045a09412/download/transferenciamensalmunicipios202210.csv.csv",
+   "mod": "2022-10-04T08:00:12.474900"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202211",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/3fd1d358-7002-45c9-91d9-51d9fdac8d2c/download/transferenciamensalmunicipios202211.csv",
+   "mod": "2023-03-30T10:55:24.261559"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202212",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/71796ab1-366d-43b4-854f-80ad834e153b/download/transferenciamensalmunicipios202212.csv",
+   "mod": "2023-03-30T10:57:36.153892"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202301",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/07f4f479-503d-4b32-8911-2cd418be0698/download/transferenciamensalmunicipios202301.csv",
+   "mod": "2023-03-30T10:59:24.125750"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202302",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/ad282bd0-9043-4c5d-b6d0-f586576c0bd4/download/transferenciamensalmunicipios202302.csv",
+   "mod": "2023-03-30T10:59:55.328194"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202303",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/1e7f22f4-9bac-4f44-a8ab-03d7e5b176a2/download/transferenciamensalmunicipios202303.csv",
+   "mod": "2023-03-30T11:01:29.380074"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202304.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e3a5dd79-2a11-48b3-8856-aff08454a238/download/transferenciamensalmunicipios202304.csv.csv",
+   "mod": "2023-04-04T08:00:09.160048"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202305.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/a9c99f0e-fef9-4806-92b3-2e8af3a0a6ee/download/transferenciamensalmunicipios202305.csv.csv",
+   "mod": "2023-05-04T08:00:10.206740"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202306.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/36c9bfab-9c3e-4784-a4e7-7d7f036bfdd9/download/transferenciamensalmunicipios202306.csv.csv",
+   "mod": "2023-06-04T08:00:07.735687"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202307.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f81a747c-7b96-4499-af05-afcac970bef2/download/transferenciamensalmunicipios202307.csv.csv",
+   "mod": "2023-07-04T08:00:10.918203"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202308.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/5f86c2b8-32c0-4794-885b-7eb33ae67932/download/transferenciamensalmunicipios202308.csv.csv",
+   "mod": "2023-08-04T08:00:10.282598"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202309.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/9a91c22d-6a25-4040-9abc-274ace2baa36/download/transferenciamensalmunicipios202309.csv.csv",
+   "mod": "2023-09-04T08:00:09.159907"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202310.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/4a2b41cc-ba5b-4a7b-a236-2d2ea3a1e8aa/download/transferenciamensalmunicipios202310.csv.csv",
+   "mod": "2023-10-04T08:00:10.520082"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202311.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/b3eb06a5-869e-4637-80ba-3bc964d94e12/download/transferenciamensalmunicipios202311.csv.csv",
+   "mod": "2023-11-04T08:00:10.827947"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202312.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/27c38682-1b5d-42d5-ad51-cd4cda03de7d/download/transferenciamensalmunicipios202312.csv.csv",
+   "mod": "2023-12-04T08:00:12.537571"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202312.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f38e7cca-761a-4b98-b678-112fb9d37c40/download/transferenciamensalmunicipios202312.csv.csv",
+   "mod": "2024-01-04T08:00:08.813233"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202402.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e826c916-38e1-4eb5-95ae-28e5a73bdd24/download/transferenciamensalmunicipios202402.csv.csv",
+   "mod": "2024-02-04T08:00:09.534526"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202403.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/71299314-97c9-4b11-921b-e0f7667361c9/download/transferenciamensalmunicipios202403.csv.csv",
+   "mod": "2024-03-04T08:00:06.881903"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202404.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/7a1ad098-1771-41e3-bec1-e9bbe71ec370/download/transferenciamensalmunicipios202404.csv.csv",
+   "mod": "2024-04-04T08:00:08.135478"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202405.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/00ea4777-2a5b-4a6c-9fb2-69ac2411e96d/download/transferenciamensalmunicipios202405.csv.csv",
+   "mod": "2024-05-04T08:00:08.204668"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202406.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/c2f5ad0c-4af4-40c0-bad8-f7b4f526d126/download/transferenciamensalmunicipios202406.csv.csv",
+   "mod": "2024-06-04T08:00:10.149495"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202407.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e1d55480-a613-4193-add3-bcc8f44172fa/download/transferenciamensalmunicipios202407.csv.csv",
+   "mod": "2024-07-04T08:00:08.672861"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202408.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/98993629-ff4f-41c0-8715-74f56c736efa/download/transferenciamensalmunicipios202408.csv.csv",
+   "mod": "2024-08-04T08:00:09.904691"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202409.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f7271cff-7a7e-40b4-b827-8a286d70207b/download/transferenciamensalmunicipios202409.csv.csv",
+   "mod": "2024-09-04T08:00:10.905479"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202410.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/91cf135e-767f-4f5b-8b87-e87c4d4c33e4/download/transferenciamensalmunicipios202410.csv.csv",
+   "mod": "2024-10-04T08:00:11.168803"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202411.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/0fbe8f29-cef8-459c-9222-2a78c2390e8e/download/transferenciamensalmunicipios202411.csv.csv",
+   "mod": "2024-11-04T08:00:26.111006"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202412.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/6e59222d-a83d-4b96-8a82-ac2c00fd5310/download/transferenciamensalmunicipios202412.csv.csv",
+   "mod": "2024-12-04T08:00:38.076968"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202412.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/2403f2d8-1659-45cd-a6c9-83393ce6c3c8/download/transferenciamensalmunicipios202412.csv.csv",
+   "mod": "2025-01-04T08:00:12.496607"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202303",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/7aadd080-e2f2-40bb-99e6-803f852055a4/download/transferenciamensalmunicipios202303.csv",
+   "mod": "2025-01-14T12:41:50.256623"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202502.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/1247bbf0-b802-4b41-b456-460412770ff1/download/transferenciamensalmunicipios202501.csv.csv",
+   "mod": "2025-09-10T14:58:38.174940"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202503.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/f153f571-c27b-4d7f-907d-17f00147cb53/download/transferenciamensalmunicipios202502.csv.csv",
+   "mod": "2025-09-10T15:03:12.996357"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202504.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/b24ff6cd-cd3c-407e-bc29-79d16a60beb3/download/transferenciamensalmunicipios202503.csv.csv",
+   "mod": "2025-09-10T15:01:59.326827"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202506.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e1ecf89a-9171-4d0e-b457-0b35e2672fb1/download/transferenciamensalmunicipios202505.csv.csv",
+   "mod": "2025-09-10T15:00:39.254801"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202507.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/b291440d-921c-4233-8f99-b2de0d1878b8/download/transferenciamensalmunicipios202506.csv.csv",
+   "mod": "2025-09-10T15:00:07.194415"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202508.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e4c595bf-b9f8-49b3-b8a0-a40c15d23df9/download/transferenciamensalmunicipios202507.csv.csv",
+   "mod": "2025-09-10T14:59:37.563483"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202505.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/409e0947-930b-4ca3-82b1-237672603244/download/transferenciamensalmunicipios202504.csv.csv",
+   "mod": "2025-09-10T15:01:24.959083"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202509.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/087059ec-9e62-4157-a5b3-f4ec0baf1a4e/download/transferenciamensalmunicipios202509.csv.csv",
+   "mod": "2025-09-10T14:59:20.897182"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202510.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/6de0049d-31a0-45f6-af7e-be093be982df/download/transferenciamensalmunicipios202510.csv.csv",
+   "mod": "2025-10-08T11:03:08.426962"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202511.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/faf6401d-9c5e-4d2b-9390-fed60f640df4/download/transferenciamensalmunicipios202511.csv.csv",
+   "mod": "2025-11-08T11:02:53.395556"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202512.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/73fd1224-5b60-4c2b-8790-f081b660c21a/download/transferenciamensalmunicipios202512.csv.csv",
+   "mod": "2025-12-08T11:02:54.585681"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202512.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e16eb0c3-34a3-40fa-b147-75ee1678c460/download/transferenciamensalmunicipios202512.csv.csv",
+   "mod": "2026-01-08T11:04:15.722671"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202602.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/9ae45c47-39c8-43ab-ad82-39aebd38256c/download/transferenciamensalmunicipios202602.csv.csv",
+   "mod": "2026-02-08T11:03:02.902097"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202603.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/12995231-daba-4a10-988d-d89ef3968836/download/transferenciamensalmunicipios202603.csv.csv",
+   "mod": "2026-03-08T11:03:29.604846"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202604.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/b4b7c379-322f-48b7-8516-a22b49e9c151/download/transferenciamensalmunicipios202604.csv.csv",
+   "mod": "2026-04-08T11:02:48.053606"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202605.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e38533b1-27c6-4240-82bc-ec26477798f6/download/transferenciamensalmunicipios202605.csv.csv",
+   "mod": "2026-05-08T11:03:07.346686"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202606.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/315e91df-109d-41c2-b8c6-820eb3ffe0cd/download/transferenciamensalmunicipios202606.csv.csv",
+   "mod": "2026-06-08T11:04:46.726543"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202607.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/42940901-bfd6-4b83-83a0-283018d27a80/download/transferenciamensalmunicipios202607.csv.csv",
+   "mod": "2026-07-08T11:02:55.243508"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202608.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/6c9d098d-5822-45e0-8ce6-aefc046d4bcb/download/transferenciamensalmunicipios202608.csv.csv",
+   "mod": "2026-08-08T11:04:00.952210"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202609.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/17336152-2728-4368-9ba2-c3f7821e4acf/download/transferenciamensalmunicipios202609.csv.csv",
+   "mod": "2026-09-08T11:02:43.306155"
+  },
+  {
+   "nome": "Transferencia_Mensal_Municipios_202610.csv",
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/63b5f470-135f-4431-9158-ca8b7a43f61b/download/transferenciamensalmunicipios202610.csv.csv",
+   "mod": "2026-10-08T11:04:26.486190"
+  }
+ ],
+ "amostras": [
+  {
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/17336152-2728-4368-9ba2-c3f7821e4acf/download/transferenciamensalmunicipios202609.csv.csv",
+   "http": 200,
+   "bytes": 3774417,
+   "encoding": "utf-8-sig",
+   "sep": ";",
+   "primeiras_linhas_brutas": [
+    "Munic�pio;UF;ANO;M�s;1� Dec�ndio;2� Dec�ndio;3� Dec�ndio;Item transfer�ncia;Transfer�ncia;",
+    "Acrel�ndia;AC;2026;08;786215.36;166671.22;406337.15;FPM;FPM;",
+    "Acrel�ndia;AC;2026;08;7.21;86.98;413.21;ITR;ITR;",
+    "Acrel�ndia;AC;2026;08;91652.64;19429.61;47368.54;FPM;FUNDEB;",
+    "Acrel�ndia;AC;2026;08;227.11;139.81;67.6;IPI-EXP;FUNDEB;",
+    "Acrel�ndia;AC;2026;08;20.48;3.42;9.03;ITR;FUNDEB;",
+    "Acrel�ndia;AC;2026;08;8708.34;8602.87;4238.88;IPVA;FUNDEB;",
+    "Acrel�ndia;AC;2026;08;493.07;1322.62;303.4;ITCMD;FUNDEB;",
+    "Acrel�ndia;AC;2026;08;108053.42;140501.75;104538.88;ICMS;FUNDEB;",
+    "Acrel�ndia;AC;2026;08;196555.63;41689.53;101687.57;DEDU;FUNDEB;",
+    "Acrel�ndia;AC;2026;08;616368.86;133689.55;311382.57;FPE;FUNDEB;",
+    "Acrel�ndia;AC;2026;08;0;0;39140.47;FEP;Royalties;"
+   ],
+   "n_linhas": 60355,
+   "cabecalho": [
+    "Munic�pio",
+    "UF",
+    "ANO",
+    "M�s",
+    "1� Dec�ndio",
+    "2� Dec�ndio",
+    "3� Dec�ndio",
+    "Item transfer�ncia",
+    "Transfer�ncia",
+    ""
+   ],
+   "colunas": {
+    "Munic�pio": {
+     "n_distintos": 3980,
+     "mais_comuns": [
+      [
+       "Santa Luzia",
+       63
+      ],
+      [
+       "Santa In�s",
+       61
+      ],
+      [
+       "Bonito",
+       59
+      ],
+      [
+       "Bom Jesus",
+       56
+      ],
+      [
+       "�gua Branca",
+       47
+      ]
+     ]
+    },
+    "UF": {
+     "n_distintos": 23,
+     "mais_comuns": [
+      [
+       "MG",
+       11599
+      ],
+      [
+       "BA",
+       6779
+      ],
+      [
+       "PR",
+       5432
+      ],
+      [
+       "PI",
+       3448
+      ],
+      [
+       "MA",
+       3414
+      ],
+      [
+       "PB",
+       3389
+      ],
+      [
+       "GO",
+       3360
+      ],
+      [
+       "RS",
+       3090
+      ],
+      [
+       "CE",
+       2930
+      ],
+      [
+       "PE",
+       2816
+      ],
+      [
+       "PA",
+       2295
+      ],
+      [
+       "RN",
+       2246
+      ],
+      [
+       "MT",
+       1947
+      ],
+      [
+       "AL",
+       1655
+      ],
+      [
+       "RJ",
+       1293
+      ],
+      [
+       "ES",
+       1195
+      ],
+      [
+       "MS",
+       1062
+      ],
+      [
+       "AM",
+       981
+      ],
+      [
+       "RO",
+       693
+      ],
+      [
+       "AC",
+       303
+      ],
+      [
+       "AP",
+       225
+      ],
+      [
+       "RR",
+       195
+      ],
+      [
+       "DF",
+       7
+      ]
+     ]
+    },
+    "ANO": {
+     "n_distintos": 1,
+     "mais_comuns": [
+      [
+       "2026",
+       60354
+      ]
+     ]
+    },
+    "M�s": {
+     "n_distintos": 1,
+     "mais_comuns": [
+      [
+       "08",
+       60353
+      ]
+     ]
+    },
+    "1� Dec�ndio": {
+     "n_distintos": 35607,
+     "mais_comuns": [
+      [
+       "0",
+       19511
+      ],
+      [
+       "765527.08",
+       472
+      ],
+      [
+       "791020.77",
+       195
+      ],
+      [
+       "625605.91",
+       159
+      ],
+      [
+       "700952.71",
+       156
+      ]
+     ]
+    },
+    "2� Dec�ndio": {
+     "n_distintos": 34441,
+     "mais_comuns": [
+      [
+       "0",
+       18965
+      ],
+      [
+       "162285.49",
+       472
+      ],
+      [
+       "167689.93",
+       195
+      ],
+      [
+       "132623.33",
+       159
+      ],
+      [
+       "148596.25",
+       156
+      ]
+     ]
+    },
+    "3� Dec�ndio": {
+     "n_distintos": 48707,
+     "mais_comuns": [
+      [
+       "0",
+       2123
+      ],
+      [
+       "395644.88",
+       472
+      ],
+      [
+       "38194.78",
+       472
+      ],
+      [
+       "408820.71",
+       195
+      ],
+      [
+       "39373.31",
+       195
+      ]
+     ]
+    },
+    "Item transfer�ncia": {
+     "n_distintos": 20,
+     "mais_comuns": [
+      [
+       "FPM",
+       8307
+      ],
+      [
+       "ITR",
+       8126
+      ],
+      [
+       "DEDU",
+       4154
+      ],
+      [
+       "IPI-EXP",
+       4153
+      ],
+      [
+       "ITCMD",
+       4153
+      ],
+      [
+       "ICMS",
+       4153
+      ],
+      [
+       "FPE",
+       4152
+      ],
+      [
+       "FEP",
+       4152
+      ],
+      [
+       "LC 176/2020 (ADO25)",
+       4058
+      ],
+      [
+       "IPVA",
+       3986
+      ],
+      [
+       "COUN VAAR",
+       2393
+      ],
+      [
+       "COUN VAAT",
+       2344
+      ],
+      [
+       "COUN VAAF",
+       1757
+      ],
+      [
+       "AJUSTE FUNDEB VAAT",
+       1543
+      ],
+      [
+       "CFEM",
+       1508
+      ],
+      [
+       "ANP",
+       734
+      ],
+      [
+       "CFH",
+       443
+      ],
+      [
+       "ITA",
+       188
+      ],
+      [
+       "IOF Ouro",
+       29
+      ],
+      [
+       "PEA",
+       20
+      ]
+     ]
+    },
+    "Transfer�ncia": {
+     "n_distintos": 7,
+     "mais_comuns": [
+      [
+       "FUNDEB",
+       39551
+      ],
+      [
+       "Royalties",
+       7045
+      ],
+      [
+       "FPM",
+       4154
+      ],
+      [
+       "LC 176/2020 (ADO25)",
+       4058
+      ],
+      [
+       "ITR",
+       3973
+      ],
+      [
+       "AJUSTE FUNDEB",
+       1543
+      ],
+      [
+       "IOF-Ouro",
+       29
+      ]
+     ]
+    },
+    "": {
+     "n_distintos": 1,
+     "mais_comuns": [
+      [
+       "",
+       60353
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/63b5f470-135f-4431-9158-ca8b7a43f61b/download/transferenciamensalmunicipios202610.csv.csv",
+   "http": 200,
+   "bytes": 7715272,
+   "encoding": "utf-8-sig",
+   "sep": ";",
+   "primeiras_linhas_brutas": [
+    "Munic�pio;UF;ANO;M�s;1� Dec�ndio;2� Dec�ndio;3� Dec�ndio;Item transfer�ncia;Transfer�ncia;",
+    "Acrel�ndia;AC;2026;09;434949.78;251470.39;400943.27;FPM;FPM;",
+    "Acrel�ndia;AC;2026;09;705.38;1160.11;1166.45;ITR;ITR;",
+    "Acrel�ndia;AC;2026;09;50688.95;29306.31;46725.85;FPM;FUNDEB;",
+    "Acrel�ndia;AC;2026;09;203.79;44.95;104.9;IPI-EXP;FUNDEB;",
+    "Acrel�ndia;AC;2026;09;24.63;88.27;49.61;ITR;FUNDEB;",
+    "Acrel�ndia;AC;2026;09;9757.9;4810.43;5881.28;IPVA;FUNDEB;",
+    "Acrel�ndia;AC;2026;09;811.12;122.48;439.36;ITCMD;FUNDEB;",
+    "Acrel�ndia;AC;2026;09;99929.78;119375.93;119111.34;ICMS;FUNDEB;",
+    "Acrel�ndia;AC;2026;09;108913.76;63157.61;100527.41;DEDU;FUNDEB;",
+    "Acrel�ndia;AC;2026;09;332685.25;202574.07;309877.23;FPE;FUNDEB;",
+    "Acrel�ndia;AC;2026;09;0;0;38103.39;FEP;Royalties;"
+   ],
+   "n_linhas": 126808,
+   "cabecalho": [
+    "Munic�pio",
+    "UF",
+    "ANO",
+    "M�s",
+    "1� Dec�ndio",
+    "2� Dec�ndio",
+    "3� Dec�ndio",
+    "Item transfer�ncia",
+    "Transfer�ncia",
+    ""
+   ],
+   "colunas": {
+    "Munic�pio": {
+     "n_distintos": 5278,
+     "mais_comuns": [
+      [
+       "S�o Domingos",
+       116
+      ],
+      [
+       "Bom Jesus",
+       109
+      ],
+      [
+       "Santa In�s",
+       97
+      ],
+      [
+       "Santa Luzia",
+       97
+      ],
+      [
+       "Vera Cruz",
+       93
+      ]
+     ]
+    },
+    "UF": {
+     "n_distintos": 27,
+     "mais_comuns": [
+      [
+       "MG",
+       18569
+      ],
+      [
+       "SP",
+       13889
+      ],
+      [
+       "RS",
+       10739
+      ],
+      [
+       "BA",
+       10429
+      ],
+      [
+       "PR",
+       8763
+      ],
+      [
+       "SC",
+       6430
+      ],
+      [
+       "PI",
+       5484
+      ],
+      [
+       "GO",
+       5416
+      ],
+      [
+       "PB",
+       5411
+      ],
+      [
+       "MA",
+       5375
+      ],
+      [
+       "CE",
+       4567
+      ],
+      [
+       "PE",
+       4490
+      ],
+      [
+       "RN",
+       3773
+      ],
+      [
+       "PA",
+       3569
+      ],
+      [
+       "MT",
+       3159
+      ],
+      [
+       "TO",
+       3007
+      ],
+      [
+       "AL",
+       2581
+      ],
+      [
+       "RJ",
+       2045
+      ],
+      [
+       "ES",
+       1837
+      ],
+      [
+       "SE",
+       1759
+      ],
+      [
+       "MS",
+       1710
+      ],
+      [
+       "AM",
+       1522
+      ],
+      [
+       "RO",
+       1132
+      ],
+      [
+       "AC",
+       471
+      ],
+      [
+       "AP",
+       352
+      ],
+      [
+       "RR",
+       321
+      ],
+      [
+       "DF",
+       7
+      ]
+     ]
+    },
+    "ANO": {
+     "n_distintos": 1,
+     "mais_comuns": [
+      [
+       "2026",
+       126807
+      ]
+     ]
+    },
+    "M�s": {
+     "n_distintos": 1,
+     "mais_comuns": [
+      [
+       "09",
+       126807
+      ]
+     ]
+    },
+    "1� Dec�ndio": {
+     "n_distintos": 49183,
+     "mais_comuns": [
+      [
+       "0",
+       66532
+      ],
+      [
+       "423504.61",
+       472
+      ],
+      [
+       "863383.56",
+       472
+      ],
+      [
+       "387780.8",
+       326
+      ],
+      [
+       "790554.73",
+       326
+      ]
+     ]
+    },
+    "2� Dec�ndio": {
+     "n_distintos": 51236,
+     "mais_comuns": [
+      [
+       "0",
+       69127
+      ],
+      [
+       "244853.26",
+       472
+      ],
+      [
+       "224199.2",
+       326
+      ],
+      [
+       "231361.16",
+       264
+      ],
+      [
+       "253007.39",
+       195
+      ]
+     ]
+    },
+    "3� Dec�ndio": {
+     "n_distintos": 96386,
+     "mais_comuns": [
+      [
+       "0",
+       8668
+      ],
+      [
+       "390392.95",
+       472
+      ],
+      [
+       "37182.75",
+       472
+      ],
+      [
+       "357462.21",
+       326
+      ],
+      [
+       "33995.47",
+       326
+      ]
+     ]
+    },
+    "Item transfer�ncia": {
+     "n_distintos": 24,
+     "mais_comuns": [
+      [
+       "FPM",
+       16708
+      ],
+      [
+       "ITR",
+       16589
+      ],
+      [
+       "IPVA",
+       11138
+      ],
+      [
+       "ITCMD",
+       11138
+      ],
+      [
+       "FPE",
+       11138
+      ],
+      [
+       "DEDU",
+       5570
+      ],
+      [
+       "FPM 1%",
+       5570
+      ],
+      [
+       "IPI-EXP",
+       5569
+      ],
+      [
+       "ICMS",
+       5569
+      ],
+      [
+       "FEP",
+       5569
+      ],
+      [
+       "ICME",
+       5569
+      ],
+      [
+       "IPIE",
+       5565
+      ],
+      [
+       "LC 176/2020 (ADO25)",
+       5426
+      ],
+      [
+       "COUN VAAR",
+       3029
+      ],
+      [
+       "AJUSTE FUNDEB VAAR",
+       3029
+      ],
+      [
+       "COUN VAAT",
+       2551
+      ],
+      [
+       "CFEM",
+       2160
+      ],
+      [
+       "AJUSTE FUNDEB VAAF",
+       1810
+      ],
+      [
+       "COUN VAAF",
+       1757
+      ],
+      [
+       "ANP",
+       971
+      ],
+      [
+       "ITA",
+       347
+      ],
+      [
+       "IOF Ouro",
+       29
+      ],
+      [
+       "PEA",
+       3
+      ],
+      [
+       "AJUSTE FUNDEB VAAT",
+       3
+      ]
+     ]
+    },
+    "Transfer�ncia": {
+     "n_distintos": 8,
+     "mais_comuns": [
+      [
+       "FUNDEB",
+       51890
+      ],
+      [
+       "AJUSTE FUNDEB",
+       43787
+      ],
+      [
+       "Royalties",
+       9050
+      ],
+      [
+       "FPM",
+       5570
+      ],
+      [
+       "FPM 1%",
+       5570
+      ],
+      [
+       "ITR",
+       5485
+      ],
+      [
+       "LC 176/2020 (ADO25)",
+       5426
+      ],
+      [
+       "IOF-Ouro",
+       29
+      ]
+     ]
+    },
+    "": {
+     "n_distintos": 1,
+     "mais_comuns": [
+      [
+       "",
+       126807
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "url": "https://www.tesourotransparente.gov.br/ckan/dataset/af4e7c47-2132-4d9a-bd7c-34e28a210b03/resource/e826c916-38e1-4eb5-95ae-28e5a73bdd24/download/transferenciamensalmunicipios202402.csv.csv",
+   "http": 200,
+   "bytes": 4237319,
+   "encoding": "utf-8-sig",
+   "sep": ";",
+   "primeiras_linhas_brutas": [
+    "Munic�pio;UF;ANO;M�s;1� Dec�ndio;2� Dec�ndio;3� Dec�ndio;Item transfer�ncia;Transfer�ncia;",
+    "Acrel�ndia;AC;2024;01;11509.09;0;0;CIDE/Combust�vel;CIDE-Combust�veis;",
+    "Acrel�ndia;AC;2024;01;529669.77;176607.92;0;FPM;FPM;",
+    "Acrel�ndia;AC;2024;01;73.9;423.8;0;ITR;ITR;",
+    "Acrel�ndia;AC;2024;01;67772.13;22597.28;63379.09;FPM;FUNDEB;",
+    "Acrel�ndia;AC;2024;01;55.17;23.52;3.07;IPI-EXP;FUNDEB;",
+    "Acrel�ndia;AC;2024;01;45.12;11.51;6.78;ITR;FUNDEB;",
+    "Acrel�ndia;AC;2024;01;6042.43;5243.63;8942.81;IPVA;FUNDEB;",
+    "Acrel�ndia;AC;2024;01;2690.45;499.78;410.09;ITCMD;FUNDEB;",
+    "Acrel�ndia;AC;2024;01;81609.75;121490.99;105318.3;ICMS;FUNDEB;",
+    "Acrel�ndia;AC;2024;01;132435.89;44257.91;123912.47;DEDU;FUNDEB;",
+    "Acrel�ndia;AC;2024;01;416119.38;137626.51;402373.84;FPE;FUNDEB;"
+   ],
+   "n_linhas": 69498,
+   "cabecalho": [
+    "Munic�pio",
+    "UF",
+    "ANO",
+    "M�s",
+    "1� Dec�ndio",
+    "2� Dec�ndio",
+    "3� Dec�ndio",
+    "Item transfer�ncia",
+    "Transfer�ncia",
+    ""
+   ],
+   "colunas": {
+    "Munic�pio": {
+     "n_distintos": 5277,
+     "mais_comuns": [
+      [
+       "S�o Domingos",
+       68
+      ],
+      [
+       "Bom Jesus",
+       65
+      ],
+      [
+       "Santa Helena",
+       56
+      ],
+      [
+       "Planalto",
+       50
+      ],
+      [
+       "Santa In�s",
+       50
+      ]
+     ]
+    },
+    "UF": {
+     "n_distintos": 27,
+     "mais_comuns": [
+      [
+       "MG",
+       10302
+      ],
+      [
+       "SP",
+       7984
+      ],
+      [
+       "RS",
+       5921
+      ],
+      [
+       "SC",
+       5581
+      ],
+      [
+       "BA",
+       5217
+      ],
+      [
+       "PR",
+       4830
+      ],
+      [
+       "GO",
+       2987
+      ],
+      [
+       "PI",
+       2626
+      ],
+      [
+       "PB",
+       2602
+      ],
+      [
+       "MA",
+       2583
+      ],
+      [
+       "CE",
+       2184
+      ],
+      [
+       "PE",
+       2178
+      ],
+      [
+       "RN",
+       2046
+      ],
+      [
+       "PA",
+       1729
+      ],
+      [
+       "MT",
+       1708
+      ],
+      [
+       "TO",
+       1664
+      ],
+      [
+       "AL",
+       1251
+      ],
+      [
+       "RJ",
+       1183
+      ],
+      [
+       "ES",
+       1011
+      ],
+      [
+       "SE",
+       964
+      ],
+      [
+       "MS",
+       956
+      ],
+      [
+       "AM",
+       750
+      ],
+      [
+       "RO",
+       626
+      ],
+      [
+       "AC",
+       262
+      ],
+      [
+       "RR",
+       177
+      ],
+      [
+       "AP",
+       171
+      ],
+      [
+       "DF",
+       4
+      ]
+     ]
+    },
+    "ANO": {
+     "n_distintos": 1,
+     "mais_comuns": [
+      [
+       "2024",
+       69497
+      ]
+     ]
+    },
+    "M�s": {
+     "n_distintos": 1,
+     "mais_comuns": [
+      [
+       "01",
+       69497
+      ]
+     ]
+    },
+    "1� Dec�ndio": {
+     "n_distintos": 52736,
+     "mais_comuns": [
+      [
+       "0",
+       9754
+      ],
+      [
+       "506212.6",
+       472
+      ],
+      [
+       "461350.56",
+       326
+      ],
+      [
+       "476903.66",
+       264
+      ],
+      [
+       "524493.84",
+       196
+      ]
+     ]
+    },
+    "2� Dec�ndio": {
+     "n_distintos": 46933,
+     "mais_comuns": [
+      [
+       "0",
+       7190
+      ],
+      [
+       "168786.58",
+       472
+      ],
+      [
+       "17943.81",
+       472
+      ],
+      [
+       "153828.23",
+       326
+      ],
+      [
+       "16342.15",
+       326
+      ]
+     ]
+    },
+    "3� Dec�ndio": {
+     "n_distintos": 40011,
+     "mais_comuns": [
+      [
+       "0",
+       25584
+      ],
+      [
+       "118349.88",
+       157
+      ],
+      [
+       "107861.36",
+       139
+      ],
+      [
+       "111497.59",
+       103
+      ],
+      [
+       "97012.5",
+       98
+      ]
+     ]
+    },
+    "Item transfer�ncia": {
+     "n_distintos": 15,
+     "mais_comuns": [
+      [
+       "FPM",
+       11432
+      ],
+      [
+       "ITR",
+       10747
+      ],
+      [
+       "ITCMD",
+       5863
+      ],
+      [
+       "FPE",
+       5863
+      ],
+      [
+       "IPVA",
+       5847
+      ],
+      [
+       "DEDU",
+       5569
+      ],
+      [
+       "CIDE/Combust�vel",
+       5568
+      ],
+      [
+       "IPI-EXP",
+       5568
+      ],
+      [
+       "ICMS",
+       5568
+      ],
+      [
+       "FEP",
+       5568
+      ],
+      [
+       "ANP",
+       942
+      ],
+      [
+       "ITA",
+       347
+      ],
+      [
+       "IPIE",
+       295
+      ],
+      [
+       "ICME",
+       295
+      ],
+      [
+       "IOF Ouro",
+       25
+      ]
+     ]
+    },
+    "Transfer�ncia": {
+     "n_distintos": 7,
+     "mais_comuns": [
+      [
+       "FUNDEB",
+       44529
+      ],
+      [
+       "Royalties",
+       6857
+      ],
+      [
+       "FPM",
+       5569
+      ],
+      [
+       "CIDE-Combust�veis",
+       5568
+      ],
+      [
+       "ITR",
+       4884
+      ],
+      [
+       "AJUSTE FUNDEB",
+       2065
+      ],
+      [
+       "IOF-Ouro",
+       25
+      ]
+     ]
+    },
+    "": {
+     "n_distintos": 1,
+     "mais_comuns": [
+      [
+       "",
+       69497
+      ]
+     ]
+    }
+   }
+  }
+ ],
+ "caminhos": [
+  "leitor: /action/package_show?id=af4e7c47-2132-4d9a-bd7c-34e28a210b03",
+  "leitor: 21e4acf/download/transferenciamensalmunicipios202609.csv.csv",
+  "leitor: a43f61b/download/transferenciamensalmunicipios202610.csv.csv",
+  "leitor: 73bdd24/download/transferenciamensalmunicipios202402.csv.csv"
+ ]
+}
