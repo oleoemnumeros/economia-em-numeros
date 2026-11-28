@@ -14,6 +14,7 @@ import json
 import math
 import re
 import shutil
+import statistics
 import sys
 import unicodedata
 from pathlib import Path
@@ -3621,6 +3622,17 @@ def fpm_prepara(pasta: Path, mun: dict | None, hoje: dt.date):
         if tem:
             meses.append(ym)
     meses = sorted(meses)
+    # mês com defeito na base do Tesouro fica de fora (vira lacuna, não queda nem pico): total do Brasil muito fora da mediana
+    # (set/2024 veio em centavos) ou 3º decêndio zerado no país inteiro (jan, fev, ago, out e nov/2024 vieram assim)
+    tot = {k: sum(s.get(k, [0, 0, 0, 0])[3] for s in serie.values()) for k in meses}
+    d3 = {k: sum(s.get(k, [0, 0, 0, 0])[2] for s in serie.values()) for k in meses}
+    if len(meses) >= 6:
+        mt, md3 = statistics.median(tot.values()), statistics.median(d3.values())
+        ruins = {k for k in meses if not (0.4 * mt <= tot[k] <= 3 * mt) or (k < atual and d3[k] < 0.1 * md3)}
+        for s in serie.values():
+            for k in ruins:
+                s.pop(k, None)
+        meses = [k for k in meses if k not in ruins]
     fechados = [m_ for m_ in meses if m_ < atual]
     if len(fechados) < 2:
         return None

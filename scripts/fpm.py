@@ -36,6 +36,7 @@ MUNICIPIOS = RAIZ / "data" / "municipios.json"
 CKAN = "https://www.tesourotransparente.gov.br/ckan/api/3/action/package_show?id=af4e7c47-2132-4d9a-bd7c-34e28a210b03"
 INICIO = "2023-01"
 ORCAMENTO_S = int(os.environ.get("ORCAMENTO_S", "2400"))
+VERSAO = "3"   # ao mudar a leitura (ex.: a ligação de nomes), sobe a versão e todos os arquivos são lidos de novo
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
 
 
@@ -105,7 +106,37 @@ def mapa_municipios() -> dict:
     # segunda chance: sem as letras não ASCII (se o leitor trocou uma letra por dois '�', ou o contrário)
     sem = Counter(k.replace("?", "") for k in out)
     out.update({"~" + k.replace("?", ""): c for k, c in list(out.items()) if sem[k.replace("?", "")] == 1})
+    # terceira chance (grafias diferentes entre o Tesouro e o IBGE: Izidoro/Isidoro, de/do, Teresinha/Terezinha):
+    # nomes sem acento por UF, para a comparação aproximada em parecido()
+    por_uf = {}
+    for cod, (nome, uf) in d["nomes"].items():
+        sa = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
+        por_uf.setdefault(uf.upper(), []).append((cod, " ".join(re.sub(r"[^A-Z0-9 ]+", " ", sa.upper()).split())))
+    out["__por_uf__"] = por_uf
     return out
+
+
+_CACHE_PARECIDO = {}
+
+
+def parecido(nome: str, uf: str, mapa: dict) -> str | None:
+    """Município da UF com o nome mais parecido (letras trocadas por '�' são ignoradas), se a semelhança for alta e sem empate."""
+    from difflib import SequenceMatcher
+    k = (nome, uf)
+    if k in _CACHE_PARECIDO:
+        return _CACHE_PARECIDO[k]
+    alvo = " ".join(re.sub(r"[^A-Z0-9 ]+", " ", "".join(c for c in nome.upper() if ord(c) < 128)).split())
+    notas = []
+    for cod, n in mapa["__por_uf__"].get(uf, []):
+        n2 = "".join(c for c in n if c != " ")
+        a2 = alvo.replace(" ", "")
+        notas.append((SequenceMatcher(None, a2, n2).ratio(), cod))
+    notas.sort(reverse=True)
+    res = None
+    if notas and notas[0][0] >= 0.84 and (len(notas) == 1 or notas[0][0] - notas[1][0] >= 0.06):
+        res = notas[0][1]
+    _CACHE_PARECIDO[k] = res
+    return res
 
 
 def ler_mes(texto: str, mapa: dict, dbg: Counter) -> dict:
@@ -125,6 +156,11 @@ def ler_mes(texto: str, mapa: dict, dbg: Counter) -> dict:
     c_mun, c_uf, c_ano, c_mes = col("MUNIC"), col("UF"), col("ANO"), col("M?S", "MES")
     c_d1, c_d2, c_d3 = col("1? DEC", "1 DEC"), col("2? DEC", "2 DEC"), col("3? DEC", "3 DEC")
     c_item, c_tr = col("ITEM"), col("TRANSFER")
+    # um arquivo (set/2024) veio com os valores em centavos, sem separador decimal: se nenhum valor tem ponto ou vírgula, divide por 100
+    amostra = [l[c] for l in linhas[1:2000] for c in (c_d1, c_d2, c_d3) if len(l) > c and l[c].strip() not in ("", "0")]
+    escala = 0.01 if amostra and not any(("." in v or "," in v) for v in amostra) else 1.0
+    if escala != 1.0:
+        dbg["arquivo_em_centavos"] += 1
     mes, ufs, mun = None, set(), {}
     for l in linhas[1:]:
         if len(l) <= max(c_tr, c_d3):
@@ -141,12 +177,16 @@ def ler_mes(texto: str, mapa: dict, dbg: Counter) -> dict:
         k = chave_nome(l[c_mun], uf)
         cod = mapa.get(k) or mapa.get("~" + k.replace("?", ""))
         if not cod:
+            cod = parecido(l[c_mun], uf, mapa)
+            if cod:
+                dbg[f"parecido:{uf}|{l[c_mun]}->{cod}"[:90]] += 1
+        if not cod:
             dbg["municipio_nao_achado"] += 1
             dbg[f"nao_achado:{uf}|{l[c_mun]}"[:80]] += 1
             continue
         ufs.add(uf)
         parc = f"{' '.join(l[c_tr].split())}/{' '.join(l[c_item].split())}"
-        d = [num(l[c_d1]), num(l[c_d2]), num(l[c_d3])]
+        d = [num(l[c_d1]) * escala, num(l[c_d2]) * escala, num(l[c_d3]) * escala]
         reg = mun.setdefault(cod, {})
         v = reg.setdefault(parc, [0.0, 0.0, 0.0, 0.0])
         for k in range(3):
@@ -184,7 +224,7 @@ def main() -> int:
     recursos.sort(reverse=True)  # os mais recentes primeiro
     mapa = mapa_municipios()
     for mod, rid, url in recursos:
-        if indice.get(rid) == mod:
+        if indice.get(rid) == f"{mod}|v{VERSAO}":
             continue
         if time.time() - t0 > ORCAMENTO_S:
             debug["pendentes"] = debug.get("pendentes", 0) + 1
@@ -200,14 +240,15 @@ def main() -> int:
         antigo = {}
         if arq.exists():
             antigo = json.loads(gzip.decompress(arq.read_bytes()))
-        # dois arquivos do mesmo mês (o Tesouro às vezes republica): fica o que tem mais estados
-        if len(antigo.get("ufs") or {}) > len(ob["ufs"]):
-            debug["arquivos"].append({"url": url[-60:], "mes": ob["mes"], "ufs": len(ob["ufs"]), "ignorado": "outro arquivo do mês tem mais estados"})
+        # dois arquivos do mesmo mês (o Tesouro às vezes republica): fica o que tem mais estados e, no empate, o mais novo
+        ob["publicado"] = mod
+        if (len(antigo.get("ufs") or {}), antigo.get("publicado") or "") > (len(ob["ufs"]), mod):
+            debug["arquivos"].append({"url": url[-60:], "mes": ob["mes"], "ufs": len(ob["ufs"]), "ignorado": "outro arquivo do mês é mais completo ou mais novo"})
         else:
             grava(arq, ob)
         completo = len(ob["ufs"]) >= 27
         if completo:
-            indice[rid] = mod      # arquivo incompleto (ou cortado pelo leitor) é baixado de novo na próxima execução
+            indice[rid] = f"{mod}|v{VERSAO}"      # arquivo incompleto (ou cortado pelo leitor) é baixado de novo na próxima execução
         debug["arquivos"].append({"url": url[-60:], "mes": ob["mes"], "ufs": len(ob["ufs"]), "municipios": len(ob["mun"]), "caminho": caminho})
         log(f"  {ob['mes']}: {len(ob['ufs'])} UFs, {len(ob['mun'])} municípios ({caminho})")
     idx_arq.write_text(json.dumps(indice, indent=1, sort_keys=True), encoding="utf-8")
