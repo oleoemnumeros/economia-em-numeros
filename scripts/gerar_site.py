@@ -14,6 +14,7 @@ import json
 import math
 import re
 import shutil
+import statistics
 import sys
 import unicodedata
 from pathlib import Path
@@ -3581,14 +3582,15 @@ def fpm_url(m: dict) -> str:
     return f"{mun_url(m)}fpm/"
 
 
-def _fpm_principal(parcela: str) -> str:
-    return parcela.split("/")[0].strip().upper()
+def _e_fpm(parcela: str) -> bool:
+    """"FPM/FPM" e "FPM 1%/FPM 1%" (adicional de julho, setembro e dezembro) entram; "FUNDEB/FPM" é Fundeb e fica de fora."""
+    return parcela.split("/")[0].strip().upper().startswith("FPM")
 
 
 def fpm_prepara(pasta: Path, mun: dict | None, hoje: dt.date):
     """data/transferencias/AAAA-MM.json.gz (scripts/fpm.py) -> FPM por município e mês, com os três decêndios.
-    Conta como FPM toda parcela cujo nome principal é "FPM" (ex.: "FPM", "FPM/1% JULHO"); "FUNDEB/FPM" fica de fora,
-    porque é o Fundeb. Só municípios com ficha ganham página. None se não houver dado."""
+    Conta como FPM as parcelas "FPM/..." e "FPM 1%/..."; "FUNDEB/FPM" fica de fora, porque é o Fundeb.
+    Só municípios com ficha ganham página. None se não houver dado."""
     if not mun or not pasta.exists():
         return None
     cod6 = {c[:6]: c for c in mun["mun"]}
@@ -3609,7 +3611,7 @@ def fpm_prepara(pasta: Path, mun: dict | None, hoje: dt.date):
                 continue
             d = [0.0, 0.0, 0.0, 0.0]
             for nome, v in parc.items():
-                if nome.startswith("_") or _fpm_principal(nome) != "FPM":
+                if nome.startswith("_") or not _e_fpm(nome):
                     continue
                 parcelas.add(nome)
                 for k in range(4):
@@ -3620,6 +3622,17 @@ def fpm_prepara(pasta: Path, mun: dict | None, hoje: dt.date):
         if tem:
             meses.append(ym)
     meses = sorted(meses)
+    # mês com defeito na base do Tesouro fica de fora (vira lacuna, não queda nem pico): total do Brasil muito fora da mediana
+    # (set/2024 veio em centavos) ou 3º decêndio zerado no país inteiro (jan, fev, ago, out e nov/2024 vieram assim)
+    tot = {k: sum(s.get(k, [0, 0, 0, 0])[3] for s in serie.values()) for k in meses}
+    d3 = {k: sum(s.get(k, [0, 0, 0, 0])[2] for s in serie.values()) for k in meses}
+    if len(meses) >= 6:
+        mt, md3 = statistics.median(tot.values()), statistics.median(d3.values())
+        ruins = {k for k in meses if not (0.4 * mt <= tot[k] <= 3 * mt) or (k < atual and d3[k] < 0.1 * md3)}
+        for s in serie.values():
+            for k in ruins:
+                s.pop(k, None)
+        meses = [k for k in meses if k not in ruins]
     fechados = [m_ for m_ in meses if m_ < atual]
     if len(fechados) < 2:
         return None
@@ -3672,8 +3685,9 @@ FPM_TEXTO = ('<h2>Como ler</h2><p>O <strong>Fundo de Participação dos Municíp
              'população; nas cidades pequenas, o FPM costuma ser a maior receita da prefeitura.</p>'
              '<p>O dinheiro sai em três parcelas por mês, os <strong>decêndios</strong>: créditos nos dias 10, 20 e 30 (ou no dia útil anterior). '
              'Como acompanha a arrecadação do IR e do IPI, o valor varia de mês para mês.</p>'
-             '<p class="small">Valores como divulgados pelo Tesouro Nacional nas transferências constitucionais, somando as parcelas do FPM do mês '
-             '(inclusive os adicionais de 1% de julho, setembro e dezembro, quando há).</p>')
+             '<p class="small">Valores como divulgados pelo Tesouro Nacional (transferências constitucionais), somando as parcelas do FPM do mês, '
+             'inclusive os adicionais de 1% de julho, setembro e dezembro. O Tesouro informa o FPM já sem a parte que vai para o Fundeb, '
+             'que aparece à parte nos dados. Os números de cada mês saem por volta do dia 8 do mês seguinte.</p>')
 
 
 def card_fpm_mun(B: Base, m: dict) -> str:

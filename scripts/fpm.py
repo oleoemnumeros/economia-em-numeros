@@ -1,60 +1,90 @@
-"""Transferências constitucionais da União para os municípios, mês a mês e por decêndio (FPM, ITR, royalties etc.):
-API de Transferências Constitucionais do Tesouro Nacional (apiapex.tesouro.gov.br, sem chave).
+"""Transferências constitucionais da União para os municípios (FPM, ITR, royalties, Fundeb...), mês a mês e por decêndio,
+dos arquivos mensais do Tesouro Transparente (CKAN, conjunto "Transferências Constitucionais para Municípios").
 
-Uma consulta por estado e mês no endpoint de detalhe, que traz os três decêndios (repasses dos dias 10, 20 e 30)
-de cada município e de cada parcela ("FPM", "FUNDEB/FPM", "Royalties/ANP"...). Um estado inteiro num mês tem
-cerca de 3 mil linhas e leva uns 10 segundos.
+Cada arquivo traz um mês (o publicado em novembro traz outubro, por exemplo), com as colunas
+  Município;UF;ANO;Mês;1º Decêndio;2º Decêndio;3º Decêndio;Item transferência;Transferência
+e uma linha por município e parcela. O FPM creditado é a linha com Transferência "FPM" (ou "FPM 1%", o adicional de julho,
+setembro e dezembro); "FUNDEB" com item "FPM" é o Fundeb e fica à parte.
 
-Saída: data/transferencias/AAAA-MM.json.gz
-  {"mes": "AAAA-MM", "ufs": {"BA": "2026-11-27T12:00:00"}, "mun": {"<código IBGE>": {"<parcela>": [dec1, dec2, dec3, total]}}}
-  data/transferencias/debug.json: parcelas encontradas, erros e o que ficou para a próxima execução.
+O arquivo não traz o código do IBGE: o município é achado pelo nome e pela UF em data/municipios.json. O gov.br às vezes
+derruba a conexão do GitHub; aí o robô usa a ponte do projeto (RELAY_URL + RELAY_TOKEN), se houver, ou o leitor público
+r.jina.ai, que pode trocar as letras acentuadas por "�". Por isso a comparação de nomes ignora as letras não ASCII.
 
-Meses fechados são baixados uma vez só; o mês atual e o anterior, de novo a cada execução (o Tesouro completa os
-repasses e às vezes corrige). A carga inicial (desde INICIO) não cabe numa execução: o robô respeita o
-ORCAMENTO_S, começa pelos meses mais recentes e continua de onde parou na execução seguinte.
+Saída: data/transferencias/AAAA-MM.json.gz  {"mes", "ufs": {UF: "ok"}, "mun": {código IBGE: {"Transferência/Item": [dec1, dec2, dec3, total]}}}
+       data/transferencias/indice.json      arquivos já processados (o mesmo arquivo não é baixado de novo)
+       data/transferencias/debug.json       o que aconteceu na última execução
 Uso: python scripts/fpm.py
 """
 from __future__ import annotations
 
+import csv
 import datetime as dt
 import gzip
+import io
 import json
 import os
+import re
 import time
 import unicodedata
+from collections import Counter
 from pathlib import Path
+from urllib.parse import quote
 
 RAIZ = Path(__file__).resolve().parent.parent
 PASTA = RAIZ / "data" / "transferencias"
-BASE = "https://apiapex.tesouro.gov.br/aria/v1/transferencias_constitucionais/custom"
+MUNICIPIOS = RAIZ / "data" / "municipios.json"
+CKAN = "https://www.tesourotransparente.gov.br/ckan/api/3/action/package_show?id=af4e7c47-2132-4d9a-bd7c-34e28a210b03"
 INICIO = "2023-01"
 ORCAMENTO_S = int(os.environ.get("ORCAMENTO_S", "2400"))
-UA = {"User-Agent": "EconomiaEmNumeros/1.0 (+https://economiaemnumeros.com.br)", "Accept": "application/json"}
-
-UF_SIGLA = {  # nome do estado sem acento e em minúsculas -> sigla
-    "acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM", "bahia": "BA", "ceara": "CE", "distrito federal": "DF",
-    "espirito santo": "ES", "goias": "GO", "maranhao": "MA", "mato grosso": "MT", "mato grosso do sul": "MS",
-    "minas gerais": "MG", "para": "PA", "paraiba": "PB", "parana": "PR", "pernambuco": "PE", "piaui": "PI",
-    "rio de janeiro": "RJ", "rio grande do norte": "RN", "rio grande do sul": "RS", "rondonia": "RO", "roraima": "RR",
-    "santa catarina": "SC", "sao paulo": "SP", "sergipe": "SE", "tocantins": "TO",
-}
+VERSAO = "3"   # ao mudar a leitura (ex.: a ligação de nomes), sobe a versão e todos os arquivos são lidos de novo
+UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
 
 
 def log(*a):
     print(*a, flush=True)
 
 
-def norm(t: str) -> str:
-    t = unicodedata.normalize("NFKD", str(t or "")).encode("ascii", "ignore").decode().lower().strip()
-    return " ".join(t.split())
+def baixar(url: str, timeout: int = 300) -> tuple[str, str]:
+    """(texto, caminho): direto; se o gov.br recusar, pela ponte do projeto ou pelo leitor público."""
+    import requests
+
+    relay, token = os.environ.get("RELAY_URL", "").strip(), os.environ.get("RELAY_TOKEN", "").strip()
+    tentativas = [("direto", lambda: requests.get(url, headers=UA, timeout=timeout))]
+    if relay and token:
+        tentativas.append(("ponte", lambda: requests.get(f"{relay.rstrip('/')}/?url={quote(url, safe='')}", headers={"X-Token": token}, timeout=timeout)))
+    tentativas.append(("leitor", lambda: requests.get("https://r.jina.ai/" + url, headers={"X-Return-Format": "text", "Accept": "text/plain"}, timeout=timeout)))
+    erros = []
+    for nome, f in tentativas:
+        for i in range(2):
+            try:
+                r = f()
+                if r.status_code == 200 and r.content:
+                    if nome == "leitor":
+                        return r.text, nome
+                    for enc in ("utf-8-sig", "latin-1"):
+                        try:
+                            return r.content.decode(enc), nome
+                        except UnicodeDecodeError:
+                            continue
+                erros.append(f"{nome} HTTP {r.status_code}")
+            except Exception as e:  # noqa: BLE001
+                erros.append(f"{nome} {type(e).__name__}")
+            time.sleep(5 * (i + 1))
+    raise RuntimeError("; ".join(erros))
+
+
+def chave_nome(nome: str, uf: str) -> str:
+    """Nome comparável mesmo quando as letras acentuadas chegaram trocadas por '�': toda letra não ASCII vira '?'."""
+    n = unicodedata.normalize("NFC", str(nome or "")).upper().strip()
+    n = "".join(c if ord(c) < 128 else "?" for c in n)
+    n = re.sub(r"[^A-Z0-9? ]+", " ", n.replace("'", " ").replace("-", " "))
+    return f"{uf.upper().strip()}|{' '.join(n.split())}"
 
 
 def num(v) -> float:
-    if v is None or v == "":
+    s = str(v or "").strip()
+    if not s:
         return 0.0
-    if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).strip()
     if "," in s:
         s = s.replace(".", "").replace(",", ".")
     try:
@@ -63,49 +93,108 @@ def num(v) -> float:
         return 0.0
 
 
-def itens(resp) -> list:
-    """O ORDS do Tesouro devolve {"items": [...]}; aceita também a lista pura."""
-    if isinstance(resp, list):
-        return resp
-    if isinstance(resp, dict):
-        for k in ("items", "itens", "data"):
-            if isinstance(resp.get(k), list):
-                return resp[k]
-    return []
-
-
-def get(caminho: str, params: dict | None = None, tentativas: int = 4, timeout: int = 150):
-    import requests
-
-    ultimo = None
-    for i in range(tentativas):
-        try:
-            r = requests.get(f"{BASE}/{caminho}", params=params, headers=UA, timeout=timeout)
-            if r.status_code == 200:
-                return r.json()
-            ultimo = f"HTTP {r.status_code}: {r.text[:200]}"
-            espera = 15 * (i + 1) if r.status_code in (429, 500, 502, 503, 504) else 5 * (i + 1)
-        except Exception as e:  # noqa: BLE001
-            ultimo = repr(e)[:300]
-            espera = 10 * (i + 1)
-        time.sleep(espera)
-    raise RuntimeError(f"{caminho} {params}: {ultimo}")
-
-
-def meses(inicio: str, hoje: dt.date) -> list[str]:
-    a, m = int(inicio[:4]), int(inicio[5:])
-    out = []
-    while (a, m) <= (hoje.year, hoje.month):
-        out.append(f"{a}-{m:02d}")
-        a, m = (a + 1, 1) if m == 12 else (a, m + 1)
+def mapa_municipios() -> dict:
+    d = json.loads(MUNICIPIOS.read_text(encoding="utf-8"))
+    out, repetidos = {}, set()
+    for cod, (nome, uf) in d["nomes"].items():
+        k = chave_nome(nome, uf)
+        if k in out:
+            repetidos.add(k)
+        out[k] = cod
+    for k in repetidos:   # dois municípios com o mesmo nome na mesma UF: sem como decidir, fica de fora
+        out.pop(k, None)
+    # segunda chance: sem as letras não ASCII (se o leitor trocou uma letra por dois '�', ou o contrário)
+    sem = Counter(k.replace("?", "") for k in out)
+    out.update({"~" + k.replace("?", ""): c for k, c in list(out.items()) if sem[k.replace("?", "")] == 1})
+    # terceira chance (grafias diferentes entre o Tesouro e o IBGE: Izidoro/Isidoro, de/do, Teresinha/Terezinha):
+    # nomes sem acento por UF, para a comparação aproximada em parecido()
+    por_uf = {}
+    for cod, (nome, uf) in d["nomes"].items():
+        sa = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
+        por_uf.setdefault(uf.upper(), []).append((cod, " ".join(re.sub(r"[^A-Z0-9 ]+", " ", sa.upper()).split())))
+    out["__por_uf__"] = por_uf
     return out
 
 
-def le(arq: Path) -> dict:
-    try:
-        return json.loads(gzip.decompress(arq.read_bytes()))
-    except Exception:  # noqa: BLE001
-        return {}
+_CACHE_PARECIDO = {}
+
+
+def parecido(nome: str, uf: str, mapa: dict) -> str | None:
+    """Município da UF com o nome mais parecido (letras trocadas por '�' são ignoradas), se a semelhança for alta e sem empate."""
+    from difflib import SequenceMatcher
+    k = (nome, uf)
+    if k in _CACHE_PARECIDO:
+        return _CACHE_PARECIDO[k]
+    alvo = " ".join(re.sub(r"[^A-Z0-9 ]+", " ", "".join(c for c in nome.upper() if ord(c) < 128)).split())
+    notas = []
+    for cod, n in mapa["__por_uf__"].get(uf, []):
+        n2 = "".join(c for c in n if c != " ")
+        a2 = alvo.replace(" ", "")
+        notas.append((SequenceMatcher(None, a2, n2).ratio(), cod))
+    notas.sort(reverse=True)
+    res = None
+    if notas and notas[0][0] >= 0.84 and (len(notas) == 1 or notas[0][0] - notas[1][0] >= 0.06):
+        res = notas[0][1]
+    _CACHE_PARECIDO[k] = res
+    return res
+
+
+def ler_mes(texto: str, mapa: dict, dbg: Counter) -> dict:
+    """Arquivo de um mês -> {"mes", "ufs", "mun"}. As colunas são achadas pelo começo do nome (o acento pode vir trocado)."""
+    i = texto.find("Munic")
+    if i < 0:
+        raise ValueError("cabeçalho não encontrado")
+    linhas = list(csv.reader(io.StringIO(texto[i:]), delimiter=";"))
+    cab = [chave_nome(c, "").split("|", 1)[1] for c in linhas[0]]
+
+    def col(*prefixos):
+        for p in prefixos:
+            for k, c in enumerate(cab):
+                if c.startswith(p):
+                    return k
+        raise ValueError(f"coluna {prefixos} não encontrada em {linhas[0]}")
+    c_mun, c_uf, c_ano, c_mes = col("MUNIC"), col("UF"), col("ANO"), col("M?S", "MES")
+    c_d1, c_d2, c_d3 = col("1? DEC", "1 DEC"), col("2? DEC", "2 DEC"), col("3? DEC", "3 DEC")
+    c_item, c_tr = col("ITEM"), col("TRANSFER")
+    # um arquivo (set/2024) veio com os valores em centavos, sem separador decimal: se nenhum valor tem ponto ou vírgula, divide por 100
+    amostra = [l[c] for l in linhas[1:2000] for c in (c_d1, c_d2, c_d3) if len(l) > c and l[c].strip() not in ("", "0")]
+    escala = 0.01 if amostra and not any(("." in v or "," in v) for v in amostra) else 1.0
+    if escala != 1.0:
+        dbg["arquivo_em_centavos"] += 1
+    mes, ufs, mun = None, set(), {}
+    for l in linhas[1:]:
+        if len(l) <= max(c_tr, c_d3):
+            continue
+        try:
+            ym = f"{int(l[c_ano]):04d}-{int(l[c_mes]):02d}"
+        except ValueError:
+            continue
+        mes = mes or ym
+        if ym != mes:
+            dbg["linha_de_outro_mes"] += 1
+            continue
+        uf = l[c_uf].strip().upper()
+        k = chave_nome(l[c_mun], uf)
+        cod = mapa.get(k) or mapa.get("~" + k.replace("?", ""))
+        if not cod:
+            cod = parecido(l[c_mun], uf, mapa)
+            if cod:
+                dbg[f"parecido:{uf}|{l[c_mun]}->{cod}"[:90]] += 1
+        if not cod:
+            dbg["municipio_nao_achado"] += 1
+            dbg[f"nao_achado:{uf}|{l[c_mun]}"[:80]] += 1
+            continue
+        ufs.add(uf)
+        parc = f"{' '.join(l[c_tr].split())}/{' '.join(l[c_item].split())}"
+        d = [num(l[c_d1]) * escala, num(l[c_d2]) * escala, num(l[c_d3]) * escala]
+        reg = mun.setdefault(cod, {})
+        v = reg.setdefault(parc, [0.0, 0.0, 0.0, 0.0])
+        for k in range(3):
+            v[k] = round(v[k] + d[k], 2)
+        v[3] = round(v[0] + v[1] + v[2], 2)
+    if not mes:
+        raise ValueError("nenhuma linha com ano e mês")
+    return {"mes": mes, "ufs": {u: "ok" for u in sorted(ufs)}, "mun": mun}
 
 
 def grava(arq: Path, ob: dict) -> None:
@@ -114,64 +203,60 @@ def grava(arq: Path, ob: dict) -> None:
 
 def main() -> int:
     t0 = time.time()
-    hoje = dt.date.today()
     PASTA.mkdir(parents=True, exist_ok=True)
-    debug = {"inicio": dt.datetime.now().isoformat(timespec="seconds"), "erros": [], "parcelas": {}, "pendentes": 0}
-    estados = {}
-    for e in itens(get("estados")):
-        sigla = UF_SIGLA.get(norm(e.get("nome")))
-        if sigla and e.get("codigo") is not None:
-            estados[sigla] = e["codigo"]
-    log(f"Estados na API: {len(estados)}")
-    if len(estados) < 27:
-        debug["erros"].append(f"só {len(estados)} estados reconhecidos na API")
-    todos = meses(INICIO, hoje)
-    recentes = set(todos[-2:])          # mês atual e anterior: o Tesouro ainda completa e corrige
-    feitos = 0
-    for ym in reversed(todos):          # dos mais recentes para os mais antigos
-        arq = PASTA / f"{ym}.json.gz"
-        ob = le(arq) or {"mes": ym, "ufs": {}, "mun": {}}
-        faltam = [s for s in sorted(estados) if ym in recentes or s not in ob["ufs"]]
-        if not faltam:
+    dbg = Counter()
+    debug = {"inicio": dt.datetime.now().isoformat(timespec="seconds"), "erros": [], "arquivos": []}
+    idx_arq = PASTA / "indice.json"
+    indice = json.loads(idx_arq.read_text(encoding="utf-8")) if idx_arq.exists() else {}
+    texto, caminho = baixar(CKAN, 120)
+    debug["caminho_ckan"] = caminho
+    pacote = json.loads(texto[texto.find("{"):texto.rfind("}") + 1])
+    recursos = []
+    for r in pacote["result"]["resources"]:
+        url = r.get("url") or ""
+        m = re.search(r"(20\d\d)(\d\d)\.csv", url.lower())
+        if not m or not url.lower().endswith(".csv"):
             continue
-        mudou = False
-        for sigla in faltam:
-            if time.time() - t0 > ORCAMENTO_S:
-                debug["pendentes"] += 1
-                continue
-            try:
-                linhas = itens(get("por_estado_municipio_detalhe", {"P_ESTADO": estados[sigla], "P_ANO": int(ym[:4]), "P_MES": int(ym[5:])}))
-            except Exception as e:  # noqa: BLE001
-                debug["erros"].append(f"{ym} {sigla}: {e}")
-                log(f"  ERRO {ym} {sigla}: {e}")
-                continue
-            if not linhas:
-                continue  # mês ainda sem repasse publicado para o estado: tenta de novo na próxima execução
-            # tira o estado do mês antes de regravar (o mês recente é baixado de novo inteiro)
-            for cod in [c for c, v in ob["mun"].items() if v.get("_uf") == sigla]:
-                del ob["mun"][cod]
-            for l in linhas:
-                cod = "".join(ch for ch in str(l.get("co_ibge") or "") if ch.isdigit())
-                parc = " ".join(str(l.get("sg_detalhe") or "").split())
-                if not cod or not parc:
-                    continue
-                reg = ob["mun"].setdefault(cod, {"_uf": sigla})
-                v = reg.setdefault(parc, [0.0, 0.0, 0.0, 0.0])
-                for k, campo in enumerate(("va_primeiro_dec", "va_segundo_dec", "va_terceiro_dec", "total")):
-                    v[k] = round(v[k] + num(l.get(campo)), 2)
-                debug["parcelas"][parc] = debug["parcelas"].get(parc, 0) + 1
-            if not debug.get("exemplo"):
-                debug["exemplo"] = linhas[0]
-            ob["ufs"][sigla] = dt.datetime.now().isoformat(timespec="seconds")
-            mudou = True
-            feitos += 1
-            log(f"  {ym} {sigla}: {len(linhas)} linhas")
-        if mudou:
+        # o arquivo AAAAMM traz o mês anterior: entra a partir do que cobre INICIO
+        if f"{m.group(1)}-{m.group(2)}" <= INICIO:
+            continue
+        recursos.append((r.get("last_modified") or r.get("created") or "", r.get("id"), url))
+    recursos.sort(reverse=True)  # os mais recentes primeiro
+    mapa = mapa_municipios()
+    for mod, rid, url in recursos:
+        if indice.get(rid) == f"{mod}|v{VERSAO}":
+            continue
+        if time.time() - t0 > ORCAMENTO_S:
+            debug["pendentes"] = debug.get("pendentes", 0) + 1
+            continue
+        try:
+            txt, caminho = baixar(url)
+            ob = ler_mes(txt, mapa, dbg)
+        except Exception as e:  # noqa: BLE001
+            debug["erros"].append(f"{url[-50:]}: {e}"[:300])
+            log(f"  ERRO {url[-50:]}: {e}")
+            continue
+        arq = PASTA / f"{ob['mes']}.json.gz"
+        antigo = {}
+        if arq.exists():
+            antigo = json.loads(gzip.decompress(arq.read_bytes()))
+        # dois arquivos do mesmo mês (o Tesouro às vezes republica): fica o que tem mais estados e, no empate, o mais novo
+        ob["publicado"] = mod
+        if (len(antigo.get("ufs") or {}), antigo.get("publicado") or "") > (len(ob["ufs"]), mod):
+            debug["arquivos"].append({"url": url[-60:], "mes": ob["mes"], "ufs": len(ob["ufs"]), "ignorado": "outro arquivo do mês é mais completo ou mais novo"})
+        else:
             grava(arq, ob)
-    debug["consultas"] = feitos
+        completo = len(ob["ufs"]) >= 27
+        if completo:
+            indice[rid] = f"{mod}|v{VERSAO}"      # arquivo incompleto (ou cortado pelo leitor) é baixado de novo na próxima execução
+        debug["arquivos"].append({"url": url[-60:], "mes": ob["mes"], "ufs": len(ob["ufs"]), "municipios": len(ob["mun"]), "caminho": caminho})
+        log(f"  {ob['mes']}: {len(ob['ufs'])} UFs, {len(ob['mun'])} municípios ({caminho})")
+    idx_arq.write_text(json.dumps(indice, indent=1, sort_keys=True), encoding="utf-8")
+    debug["contagens"] = dict(dbg.most_common(60))
     debug["fim"] = dt.datetime.now().isoformat(timespec="seconds")
     (PASTA / "debug.json").write_text(json.dumps(debug, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
-    log(f"Transferências: {feitos} consultas, {debug['pendentes']} para a próxima execução, {len(debug['erros'])} erros.")
+    (PASTA / "sondagem.json").unlink(missing_ok=True)
+    log(f"Transferências: {len(debug['arquivos'])} arquivos, {len(debug['erros'])} erros.")
     return 0
 
 
