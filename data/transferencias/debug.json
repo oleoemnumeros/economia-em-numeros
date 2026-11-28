@@ -3,377 +3,408 @@
   {
    "caminho": "leitor",
    "mes": "2026-09",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "a43f61b/download/transferenciamensalmunicipios202610.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2026-08",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "21e4acf/download/transferenciamensalmunicipios202609.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2026-07",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "46d4bcb/download/transferenciamensalmunicipios202608.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2026-06",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "8d27a80/download/transferenciamensalmunicipios202607.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2026-05",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "3ffe0cd/download/transferenciamensalmunicipios202606.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2026-04",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "77798f6/download/transferenciamensalmunicipios202605.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2026-03",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "9e9c151/download/transferenciamensalmunicipios202604.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2026-02",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "3968836/download/transferenciamensalmunicipios202603.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2026-01",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "d38256c/download/transferenciamensalmunicipios202602.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-12",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "678c460/download/transferenciamensalmunicipios202512.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-11",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "660c21a/download/transferenciamensalmunicipios202512.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-10",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "f640df4/download/transferenciamensalmunicipios202511.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-09",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "be982df/download/transferenciamensalmunicipios202510.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-02",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "147cb53/download/transferenciamensalmunicipios202502.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-03",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "a60beb3/download/transferenciamensalmunicipios202503.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-04",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "2603244/download/transferenciamensalmunicipios202504.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-05",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "2672fb1/download/transferenciamensalmunicipios202505.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-06",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "d1878b8/download/transferenciamensalmunicipios202506.csv.csv"
   },
   {
+   "ignorado": "outro arquivo do mês é mais completo ou mais novo",
+   "mes": "2025-07",
+   "ufs": 26,
+   "url": "5d23df9/download/transferenciamensalmunicipios202507.csv.csv"
+  },
+  {
    "caminho": "leitor",
    "mes": "2025-07",
-   "municipios": 5480,
-   "ufs": 27,
+   "municipios": 5229,
+   "ufs": 26,
    "url": "5d23df9/download/transferenciamensalmunicipios202507.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-08",
-   "municipios": 5480,
+   "municipios": 5562,
    "ufs": 27,
    "url": "baf1a4e/download/transferenciamensalmunicipios202509.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2025-01",
-   "municipios": 5015,
-   "ufs": 26,
+   "municipios": 5562,
+   "ufs": 27,
    "url": "2770ff1/download/transferenciamensalmunicipios202501.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2023-03",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "03f852055a4/download/transferenciamensalmunicipios202303.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-12",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "ce6c3c8/download/transferenciamensalmunicipios202412.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-11",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "0fd5310/download/transferenciamensalmunicipios202412.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-10",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "2390e8e/download/transferenciamensalmunicipios202411.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-09",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "d4c33e4/download/transferenciamensalmunicipios202410.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-08",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "d70207b/download/transferenciamensalmunicipios202409.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-07",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "c736efa/download/transferenciamensalmunicipios202408.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-06",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "44172fa/download/transferenciamensalmunicipios202407.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-05",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "526d126/download/transferenciamensalmunicipios202406.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-04",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "411e96d/download/transferenciamensalmunicipios202405.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-03",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "71ec370/download/transferenciamensalmunicipios202404.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-02",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "67361c9/download/transferenciamensalmunicipios202403.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2024-01",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "73bdd24/download/transferenciamensalmunicipios202402.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2023-12",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "9d37c40/download/transferenciamensalmunicipios202312.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2023-11",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "a03de7d/download/transferenciamensalmunicipios202312.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2023-10",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "4d94e12/download/transferenciamensalmunicipios202311.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2023-09",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "3a1e8aa/download/transferenciamensalmunicipios202310.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2023-08",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "e2baa36/download/transferenciamensalmunicipios202309.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2023-07",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "ae67932/download/transferenciamensalmunicipios202308.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2023-06",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "970bef2/download/transferenciamensalmunicipios202307.csv.csv"
   },
   {
    "caminho": "leitor",
    "mes": "2023-05",
-   "municipios": 5479,
+   "municipios": 5561,
    "ufs": 27,
    "url": "36bfdd9/download/transferenciamensalmunicipios202306.csv.csv"
   },
   {
-   "caminho": "leitor",
+   "ignorado": "outro arquivo do mês é mais completo ou mais novo",
    "mes": "2023-04",
-   "municipios": 5479,
-   "ufs": 27,
+   "ufs": 26,
    "url": "3a0a6ee/download/transferenciamensalmunicipios202305.csv.csv"
   },
   {
    "caminho": "leitor",
+   "mes": "2023-04",
+   "municipios": 5123,
+   "ufs": 26,
+   "url": "3a0a6ee/download/transferenciamensalmunicipios202305.csv.csv"
+  },
+  {
+   "ignorado": "outro arquivo do mês é mais completo ou mais novo",
    "mes": "2023-03",
-   "municipios": 5479,
    "ufs": 27,
    "url": "454a238/download/transferenciamensalmunicipios202304.csv.csv"
+  },
+  {
+   "caminho": "leitor",
+   "mes": "2023-03",
+   "municipios": 5561,
+   "ufs": 27,
+   "url": "454a238/download/transferenciamensalmunicipios202304.csv.csv"
+  },
+  {
+   "ignorado": "outro arquivo do mês é mais completo ou mais novo",
+   "mes": "2023-03",
+   "ufs": 27,
+   "url": "3d7e5b176a2/download/transferenciamensalmunicipios202303.csv"
+  },
+  {
+   "caminho": "leitor",
+   "mes": "2023-03",
+   "municipios": 5561,
+   "ufs": 27,
+   "url": "3d7e5b176a2/download/transferenciamensalmunicipios202303.csv"
   }
  ],
  "caminho_ckan": "leitor",
  "contagens": {
-  "municipio_nao_achado": 57487,
-  "nao_achado:AL|Major Izidoro": 722,
-  "nao_achado:BA|Ara�as": 741,
-  "nao_achado:BA|Iui�": 670,
-  "nao_achado:BA|Muqu�m de S�o Francisco": 736,
-  "nao_achado:BA|Santa Teresinha": 754,
-  "nao_achado:CE|Acarap�": 704,
-  "nao_achado:CE|Itapag�": 717,
-  "nao_achado:ES|Atilio Vivacqua": 690,
-  "nao_achado:ES|Marataizes": 692,
-  "nao_achado:GO|S�o Jo�o DAlian�a": 660,
-  "nao_achado:MA|Olho D�gua das Cunh�s": 708,
-  "nao_achado:MG|Bar�o de Monte Alto": 609,
-  "nao_achado:MG|S�o Thom� das Letras": 641,
-  "nao_achado:MS|Amamba�": 623,
-  "nao_achado:MT|Figueir�polis DOeste": 630,
-  "nao_achado:MT|Lambari DOeste": 621,
-  "nao_achado:MT|Mirassol DOeste": 628,
-  "nao_achado:MT|Poxor�o": 610,
-  "nao_achado:MT|Santo Ant�nio do Leverger": 632,
-  "nao_achado:PA|Eldorado dos Caraj�s": 732,
-  "nao_achado:PA|Pau DArco": 675,
-  "nao_achado:PA|Santa Isabel do Par�": 686,
-  "nao_achado:PB|Olho D�gua": 631,
-  "nao_achado:PE|Bel�m de S�o Francisco": 705,
-  "nao_achado:PE|Iguaraci": 660,
-  "nao_achado:PE|Lagoa do Itaenga": 671,
-  "nao_achado:PE|Quixab�": 658,
-  "nao_achado:PE|S�o Vicente Ferrer": 663,
-  "nao_achado:PI|Barra DAlc�ntara": 689,
-  "nao_achado:PI|Capit�o Gerv�sio de Oliveira": 705,
-  "nao_achado:PI|Mass�pe do Piau�": 647,
-  "nao_achado:PI|Olho D�gua do Piau�": 700,
-  "nao_achado:PI|Pau DArco": 686,
-  "nao_achado:PR|Diamante DOeste": 637,
-  "nao_achado:PR|Itapejara DOeste": 625,
-  "nao_achado:PR|P�rola DOeste": 623,
-  "nao_achado:PR|S�o Jorge DOeste": 671,
-  "nao_achado:RJ|Trajano de Morais": 688,
-  "nao_achado:RN|A�u": 694,
-  "nao_achado:RN|Olho-D�gua do Borges": 655,
-  "nao_achado:RN|Presidente Juscelino": 624,
-  "nao_achado:RO|Alta Floresta DOeste": 647,
-  "nao_achado:RO|Alvorada DOeste": 624,
-  "nao_achado:RO|Machadinho DOeste": 650,
-  "nao_achado:RS|P�ntano Grande": 625,
-  "nao_achado:RS|Santana do Livramento": 634,
-  "nao_achado:SC|Herval DOeste": 652,
-  "nao_achado:SC|Lauro Muller": 645,
-  "nao_achado:SC|Presidente Castelo Branco": 615,
-  "nao_achado:SC|S�o Cristov�o do Sul": 653,
-  "nao_achado:SE|Itaporanga DAjuda": 703,
-  "nao_achado:SP|Aparecida DOeste": 640,
-  "nao_achado:SP|Flor�nia": 667,
-  "nao_achado:SP|Ita�ca": 671,
-  "nao_achado:SP|Palmeira DOeste": 667,
-  "nao_achado:SP|Santa Clara DOeste": 658,
-  "nao_achado:SP|Santa Rita DOeste": 639,
-  "nao_achado:SP|Santo Ant�nio do Aracangua": 663,
-  "nao_achado:SP|S�o Lu�s do Paraitinga": 654
+  "municipio_nao_achado": 5270,
+  "nao_achado:CE|Itapag�": 727,
+  "nao_achado:MT|Poxor�o": 620,
+  "nao_achado:PI|Pau DArco": 695,
+  "nao_achado:RN|A�u": 705,
+  "nao_achado:RN|Presidente Juscelino": 633,
+  "nao_achado:SP|Flor�nia": 679,
+  "parecido:AL|Major Izidoro->2704401": 731,
+  "parecido:BA|Ara�as->2902054": 753,
+  "parecido:BA|Iui�->2917334": 680,
+  "parecido:BA|Muqu�m de S�o Francisco->2922250": 746,
+  "parecido:BA|Santa Teresinha->2928505": 765,
+  "parecido:CE|Acarap�->2300150": 712,
+  "parecido:ES|Atilio Vivacqua->3200706": 700,
+  "parecido:ES|Marataizes->3203320": 704,
+  "parecido:GO|S�o Jo�o DAlian�a->5220009": 671,
+  "parecido:MA|Olho D�gua das Cunh�s->2107407": 718,
+  "parecido:MG|Bar�o de Monte Alto->3105509": 619,
+  "parecido:MG|S�o Thom� das Letras->3165206": 651,
+  "parecido:MS|Amamba�->5000609": 633,
+  "parecido:MT|Figueir�polis DOeste->5103809": 641,
+  "parecido:MT|Lambari DOeste->5105234": 631,
+  "parecido:MT|Mirassol DOeste->5105622": 638,
+  "parecido:MT|Santo Ant�nio do Leverger->5107800": 642,
+  "parecido:PA|Eldorado dos Caraj�s->1502954": 743,
+  "parecido:PA|Pau DArco->1505551": 686,
+  "parecido:PA|Santa Isabel do Par�->1506500": 696,
+  "parecido:PB|Olho D�gua->2510402": 641,
+  "parecido:PE|Bel�m de S�o Francisco->2601607": 716,
+  "parecido:PE|Iguaraci->2606903": 669,
+  "parecido:PE|Lagoa do Itaenga->2608503": 680,
+  "parecido:PE|Quixab�->2611533": 668,
+  "parecido:PE|S�o Vicente Ferrer->2613800": 672,
+  "parecido:PI|Barra DAlc�ntara->2201176": 699,
+  "parecido:PI|Capit�o Gerv�sio de Oliveira->2202455": 715,
+  "parecido:PI|Mass�pe do Piau�->2206050": 656,
+  "parecido:PI|Olho D�gua do Piau�->2207108": 710,
+  "parecido:PR|Diamante DOeste->4107157": 648,
+  "parecido:PR|Itapejara DOeste->4111209": 636,
+  "parecido:PR|P�rola DOeste->4119004": 634,
+  "parecido:PR|S�o Jorge DOeste->4125209": 682,
+  "parecido:RJ|Trajano de Morais->3305901": 700,
+  "parecido:RN|Olho-D�gua do Borges->2408409": 664,
+  "parecido:RO|Alta Floresta DOeste->1100015": 657,
+  "parecido:RO|Alvorada DOeste->1100346": 635,
+  "parecido:RO|Machadinho DOeste->1100130": 661,
+  "parecido:RS|P�ntano Grande->4313953": 635,
+  "parecido:RS|Santana do Livramento->4317103": 644,
+  "parecido:SC|Herval DOeste->4206702": 662,
+  "parecido:SC|Lauro Muller->4209607": 656,
+  "parecido:SC|Presidente Castelo Branco->4213906": 624,
+  "parecido:SC|S�o Cristov�o do Sul->4216057": 663,
+  "parecido:SE|Itaporanga DAjuda->2803203": 713,
+  "parecido:SP|Aparecida DOeste->3502606": 651,
+  "parecido:SP|Ita�ca->3522158": 682,
+  "parecido:SP|Palmeira DOeste->3535200": 683,
+  "parecido:SP|Santa Clara DOeste->3546108": 656,
+  "parecido:SP|Santa Rita DOeste->3547403": 638,
+  "parecido:SP|Santo Ant�nio do Aracangua->3548054": 660,
+  "parecido:SP|S�o Lu�s do Paraitinga->3550001": 649
  },
  "erros": [],
- "fim": "2026-11-28T00:53:30",
- "inicio": "2026-11-28T00:13:04",
- "pendentes": 2
+ "fim": "2026-11-28T09:57:38",
+ "inicio": "2026-11-28T09:17:34",
+ "pendentes": 1
 }
