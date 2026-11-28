@@ -1794,7 +1794,7 @@ class TestFpm(unittest.TestCase):
             reg = {}
             for i, cod in enumerate(mun["pop"]):
                 chave = cod[:6] if i % 2 else cod                  # a API pode trazer o código com 6 dígitos
-                reg[chave] = {"_uf": "XX", "FPM": [100.0 + i, 50.0, 80.0, 230.0 + i], "FUNDEB/FPM": [1.0, 1.0, 1.0, 3.0]}
+                reg[chave] = {"FPM/FPM": [100.0 + i, 50.0, 80.0, 230.0 + i], "FPM 1%/FPM 1%": [0.0, 0.0, 0.0, 0.0], "FUNDEB/FPM": [1.0, 1.0, 1.0, 3.0]}
             (tr / f"{ym}.json.gz").write_bytes(gzip.compress(json.dumps({"mes": ym, "ufs": ufs, "mun": reg}).encode()))
             a, m = (a + 1, 1) if m == 12 else (a, m + 1)
         (tr / "debug.json").write_text("{}", encoding="utf-8")
