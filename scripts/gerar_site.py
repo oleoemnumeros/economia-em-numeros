@@ -3916,7 +3916,7 @@ def pg_mun_uf(B: Base, a: dict) -> str:
                tabela(["Cidade", "Habitantes", "PIB", "PIB per capita (R$)", "Receita da prefeitura por habitante"], linhas, ["l", "r", "r", "r", "r"]) +
                f'<span class="src">Em ordem de PIB. Fonte: {esc(x["fonte"])}.</span>')
     corpo = f'{hero}<div class="tiles">{"".join(tiles)}</div>{mun_busca_html(B, "Busque uma cidade")}{tab}{card(mun_texto(B) + "<p class=small><a href=/municipios/>Voltar aos municípios do Brasil</a></p>")}'
-    return pagina(B, f"/municipios/{a['slug']}/", f"Cidades {uf_de(a['cod'], a['nome'])}: PIB, população e contas das prefeituras",
+    return pagina(B, f"/municipios/{a['slug']}/", f"Cidades {uf_de(a['cod'], a['nome'])}: são {nf(a['n'], 0)} municípios, com PIB, população e contas",
                   f"{nf(a['pop'], 0)} habitantes e PIB de {brl_abrev(a['pib'])} {uf_de(a['cod'], a['nome'])}. Fichas de {len(fichas)} cidades com PIB, população e contas da prefeitura, com dados do IBGE e do Tesouro Nacional.",
                   corpo, "/municipios/", [("/municipios/", "Municípios"), (None, a["nome"])])
 
